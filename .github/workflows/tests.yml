@@ -1,0 +1,57 @@
+# Automatische Tests bei jedem Pull Request und auf main. Nur erfundene Daten; die Tests gehen nie ins Netz.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Zielsystem des Servers: Ubuntu 24.04 mit Python 3.12 und genau den Paketen des Servers (Prüfsummen)
+          - python: '3.12'
+            install: 'pip install --require-hashes --only-binary=:all: -r server/requirements-server.txt'
+          # Python der Mac-App
+          - python: '3.13'
+            install: 'pip install -r requirements.txt'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Pakete installieren
+        run: ${{ matrix.install }}
+      - name: Tests (einschließlich Wächter test_repo.py – keine Daten oder Schlüssel im Repository)
+        env:
+          TZ: Europe/Berlin
+          LANG: C.UTF-8
+        run: python -m unittest discover
+
+  oberflaeche:
+    name: Oberfläche (Maskierung)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node tests/html_escape.mjs

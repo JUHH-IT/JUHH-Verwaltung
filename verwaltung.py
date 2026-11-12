@@ -1,0 +1,305 @@
+"""Verwaltung im Serverbetrieb (auf dem Ubuntu-Server über `sudo ju-finanzen …`).
+
+  passwort NAME        Passwort setzen bzw. ändern (legt den Benutzer an, wenn es ihn noch nicht gibt)
+  benutzer             Benutzer anzeigen (ohne Passwörter)
+  sicherung            Sicherung der Datenbank jetzt anlegen (Sicherungen/Manuell)
+  pruefen              Datenbank prüfen (Integrität, Anzahl Buchungen usw. – nur Zahlen)
+  uebernehmen DATEI    Daten aus der Mac-App übernehmen: ZIP aus „Sicherung herunterladen“ oder eine .sqlite3-Datei;
+                       nur bei gestopptem Dienst; vorhandene Daten nur mit --ersetzen (werden vorher gesichert)
+
+Ordner aus --data/--backups bzw. JU_FINANZEN_DATEN/JU_FINANZEN_SICHERUNGEN (siehe /etc/ju-finanzen/ju-finanzen.env).
+Gibt nie Passwörter oder Inhalte (Namen, Beträge, IBAN) aus – nur Anzahlen.
+"""
+import argparse
+import getpass
+import json
+import os
+import shutil
+import sqlite3
+import sys
+import time
+import urllib.request
+import zipfile
+from datetime import datetime
+from pathlib import Path
+
+import sicherung
+import zugang
+
+MAX_ZIP_MEMBER = 200 * 1024 * 1024
+MAX_ZIP_TOTAL = 2 * 1024 * 1024 * 1024
+NEEDED_TABLES = {'users', 'accounts', 'entries', 'bank', 'members', 'invoices', 'audit', 'settings'}
+
+
+def folders(args):
+    data = Path(args.data or os.environ.get('JU_FINANZEN_DATEN') or '')
+    if not str(data) or str(data) == '.':
+        raise SystemExit('Datenordner fehlt: --data angeben oder JU_FINANZEN_DATEN setzen.')
+    backups = Path(args.backups or os.environ.get('JU_FINANZEN_SICHERUNGEN') or data.parent / 'Sicherungen')
+    return data, backups
+
+
+def connect(db):
+    if not db.exists():
+        raise SystemExit(f'Keine Datenbank gefunden: {db}')
+    con = sqlite3.connect(db, timeout=10)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def ask_password():
+    if not sys.stdin.isatty():
+        first = sys.stdin.readline().rstrip('\n')   # für Skripte: Passwort zweimal über stdin
+        second = sys.stdin.readline().rstrip('\n')
+    else:
+        first = getpass.getpass('Neues Passwort (mindestens 12 Zeichen): ')
+        second = getpass.getpass('Passwort wiederholen: ')
+    if first != second:
+        raise SystemExit('Die Passwörter stimmen nicht überein. Nichts geändert.')
+    return first
+
+
+def cmd_passwort(args):
+    data, _ = folders(args)
+    db = data / 'finanzen.sqlite3'
+    if not db.exists():
+        # Neuinstallation ohne übernommene Daten: leere Datenbank mit allen Tabellen anlegen
+        from core import Store
+        data.mkdir(parents=True, exist_ok=True)
+        Store(db).db.close()
+    con = connect(db)
+    try:
+        exists = zugang.find_user(con, args.name) is not None
+        if not exists:
+            users = [r['name'] for r in con.execute('SELECT name FROM users ORDER BY id')]
+            if users and not args.neu:
+                raise SystemExit(f'Benutzer „{args.name}“ gibt es nicht. Vorhanden: {", ".join(users)}. '
+                                 'Neuen Benutzer mit --neu anlegen.')
+        password = ask_password()
+        try:
+            name = zugang.set_password(con, args.name, password, actor='Serververwaltung', create=True)
+        except ValueError as e:
+            raise SystemExit(f'{e} Nichts geändert.')
+    finally:
+        con.close()
+    print(f'Passwort für „{name}“ gesetzt.' if exists else f'Benutzer „{name}“ angelegt und Passwort gesetzt.')
+    print('Bereits angemeldete Sitzungen bleiben bis zum Neustart des Dienstes gültig (sudo systemctl restart ju-finanzen).')
+
+
+def cmd_benutzer(args):
+    data, _ = folders(args)
+    con = connect(data / 'finanzen.sqlite3')
+    try:
+        rows = con.execute('SELECT name,password FROM users ORDER BY id').fetchall()
+    finally:
+        con.close()
+    if not rows:
+        print('Noch keine Benutzer. Anlegen mit: sudo ju-finanzen passwort <Name>')
+    for r in rows:
+        print(f'{r["name"]}: ' + ('Passwort gesetzt' if zugang.is_set(r['password']) else 'kein Passwort (Anmeldung gesperrt)'))
+
+
+def cmd_sicherung(args):
+    data, backups = folders(args)
+    db = data / 'finanzen.sqlite3'
+    if not db.exists():
+        raise SystemExit(f'Keine Datenbank gefunden: {db}')
+    target = sicherung.named_backup(db, backups / 'Manuell', 'sicherung')
+    check = sqlite3.connect(target)
+    try:
+        ok = check.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+    finally:
+        check.close()
+    copied = sicherung.mirror_files(data / 'Belege', backups / 'Belege')
+    print(f'Sicherung: {target} ({"geprüft" if ok else "FEHLER bei der Prüfung"}); {copied} neue Belege gespiegelt.')
+    return 0 if ok else 1
+
+
+def counts(con):
+    one = lambda sql: con.execute(sql).fetchone()[0]
+    names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    result = {'integritaet': one('PRAGMA integrity_check'), 'fremdschluessel': len(con.execute('PRAGMA foreign_key_check').fetchall())}
+    for label, table in (('buchungszeilen', 'entries'), ('bankumsaetze', 'bank'), ('mitglieder', 'members'),
+                         ('rechnungen', 'invoices'), ('eingangsrechnungen', 'bills'), ('benutzer', 'users')):
+        result[label] = one(f'SELECT COUNT(*) FROM {table}') if table in names else None
+    if 'bank' in names and 'ledger' in [c[1] for c in con.execute('PRAGMA table_info(bank)')]:   # ab 0.25: Kassenbelege getrennt
+        result['bankumsaetze'] = one("SELECT COUNT(*) FROM bank WHERE ledger='bank'")
+        result['kassenbelege'] = one("SELECT COUNT(*) FROM bank WHERE ledger='cash'")
+    if 'entries' in names:
+        result['soll_gleich_haben'] = one('SELECT COALESCE(SUM(debit),0)-COALESCE(SUM(credit),0) FROM entries') == 0
+    return result
+
+
+def cmd_pruefen(args):
+    data, _ = folders(args)
+    con = connect(data / 'finanzen.sqlite3')
+    try:
+        result = counts(con)
+    finally:
+        con.close()
+    belege = data / 'Belege'
+    result['belege_dateien'] = sum(1 for f in belege.iterdir() if f.is_file()) if belege.is_dir() else 0
+    print(json.dumps(result, ensure_ascii=False, indent=1))
+    return 0 if result['integritaet'] == 'ok' and result['fremdschluessel'] == 0 else 1
+
+
+def server_running(port):
+    try:
+        with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/status', timeout=2) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def safe_member(name):
+    """Erlaubte Einträge der Sicherungs-ZIP: Daten/finanzen.sqlite3, Daten/Importe/<Datei>, Daten/Belege/<Datei>."""
+    parts = name.split('/')
+    if name == 'Daten/finanzen.sqlite3':
+        return 'db', None
+    if len(parts) == 3 and parts[0] == 'Daten' and parts[1] in ('Importe', 'Belege') and parts[2] \
+            and not parts[2].startswith('.') and '\\' not in parts[2] and parts[2] not in ('.', '..'):
+        return parts[1], parts[2]
+    return None, None
+
+
+def is_fresh(db):
+    """Leere Datenbank einer Neuinstallation (keine Buchungen, Umsätze, Mitglieder, Rechnungen; kein Passwort)?"""
+    con = sqlite3.connect(db)
+    try:
+        names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        for table in ('entries', 'bank', 'members', 'invoices', 'bills'):
+            if table in names and con.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]:
+                return False
+        return 'users' not in names or not any(zugang.is_set(r[0]) for r in con.execute('SELECT password FROM users'))
+    finally:
+        con.close()
+
+
+def check_db(path):
+    con = sqlite3.connect(path)
+    try:
+        if con.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+            raise SystemExit('Die übernommene Datenbank ist beschädigt (Integritätsprüfung). Nichts übernommen.')
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        missing = NEEDED_TABLES - tables
+        if missing:
+            raise SystemExit('Das ist keine Datenbank von JU Hamburg Finanzen (es fehlen: ' + ', '.join(sorted(missing)) + '). Nichts übernommen.')
+        con.row_factory = sqlite3.Row
+        return counts(con)
+    finally:
+        con.close()
+
+
+def cmd_uebernehmen(args):
+    data, backups = folders(args)
+    source = Path(args.datei)
+    if not source.is_file():
+        raise SystemExit(f'Datei nicht gefunden: {source}')
+    if server_running(args.port):
+        raise SystemExit('Der Dienst läuft noch. Bitte zuerst „sudo systemctl stop ju-finanzen“ (der Befehl „sudo ju-finanzen uebernehmen“ macht das automatisch).')
+    db = data / 'finanzen.sqlite3'
+    if db.exists() and not args.ersetzen and not is_fresh(db):
+        raise SystemExit('Im Datenordner liegen schon Daten. Zum Ersetzen „--ersetzen“ angeben (die bisherigen Daten werden vorher gesichert).')
+    data.parent.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    work = data.parent / f'.uebernahme-{stamp}'
+    work.mkdir(mode=0o700)
+    try:
+        new = work / 'Daten'
+        new.mkdir()
+        (new / 'Importe').mkdir()
+        (new / 'Belege').mkdir()
+        if zipfile.is_zipfile(source):
+            with zipfile.ZipFile(source) as z:
+                infos = [i for i in z.infolist() if not i.is_dir()]
+                if sum(i.file_size for i in infos) > MAX_ZIP_TOTAL:
+                    raise SystemExit('Die ZIP-Datei ist zu groß. Nichts übernommen.')
+                found = False
+                for info in infos:
+                    kind, name = safe_member(info.filename)
+                    if kind is None:
+                        print(f'Übersprungen (nicht vorgesehen): {info.filename[:80]}')
+                        continue
+                    if info.file_size > MAX_ZIP_MEMBER:
+                        raise SystemExit(f'Datei in der ZIP zu groß: {info.filename[:80]}. Nichts übernommen.')
+                    target = new / 'finanzen.sqlite3' if kind == 'db' else new / kind / name
+                    with z.open(info) as src, open(target, 'xb') as dst:
+                        shutil.copyfileobj(src, dst, 1024 * 1024)
+                    found = found or kind == 'db'
+                if not found:
+                    raise SystemExit('In der ZIP fehlt Daten/finanzen.sqlite3 – bitte die Datei aus „Sicherung herunterladen“ verwenden. Nichts übernommen.')
+        else:
+            # einzelne Datenbankdatei (z. B. aus Sicherungen/Automatisch) – konsistent über die Backup-Schnittstelle kopieren
+            src = sqlite3.connect(f'file:{source}?mode=ro', uri=True)
+            try:
+                dst = sqlite3.connect(new / 'finanzen.sqlite3')
+                try:
+                    src.backup(dst)
+                finally:
+                    dst.close()
+            except sqlite3.DatabaseError:
+                raise SystemExit('Die Datei ist weder eine Sicherungs-ZIP noch eine SQLite-Datenbank. Nichts übernommen.')
+            finally:
+                src.close()
+        result = check_db(new / 'finanzen.sqlite3')
+        if not zipfile.is_zipfile(source) and data.exists():
+            # nur die Datenbank zurückgeholt (z. B. Tagessicherung): vorhandene Belege und Importe bleiben in Gebrauch
+            for folder in ('Belege', 'Importe'):
+                if (data / folder).is_dir():
+                    for f in (data / folder).iterdir():
+                        if f.is_file():
+                            shutil.copy2(f, new / folder / f.name)
+        if data.exists():
+            # bisherigen Datenordner vollständig (inkl. Belege) zur Seite legen – nie löschen
+            old = backups / 'Vor Änderungen' / f'vor-uebernahme-{stamp}'
+            n = 1
+            while old.exists():
+                n += 1
+                old = old.with_name(f'vor-uebernahme-{stamp}-{n}')
+            old.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(data), str(old))
+            print(f'Bisheriger Datenordner gesichert unter: {old}')
+        for f in new.rglob('*'):
+            os.chmod(f, 0o700 if f.is_dir() else 0o600)
+        shutil.move(str(new), str(data))
+        os.chmod(data, 0o700)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    belege = sum(1 for f in (data / 'Belege').iterdir() if f.is_file())
+    print(f"Übernommen: {result['buchungszeilen']} Buchungszeilen, {result['bankumsaetze']} Bankumsätze, {result['mitglieder']} Mitglieder, "
+          f"{result['rechnungen']} Rechnungen, {result['eingangsrechnungen']} Eingangsrechnungen, {belege} Belege, {result['benutzer']} Benutzer.")
+    print(f"Prüfung: Integrität {result['integritaet']}, Soll = Haben: {'ja' if result.get('soll_gleich_haben') else 'NEIN'}. "
+          'Beim nächsten Start legt das Programm eine Sicherung „vor Version“ an und ergänzt fehlende Tabellen.')
+    con = sqlite3.connect(data / 'finanzen.sqlite3')
+    try:
+        if not any(zugang.is_set(r[0]) for r in con.execute('SELECT password FROM users')):
+            names = [r[0] for r in con.execute('SELECT name FROM users ORDER BY id')]
+            print('Jetzt ein Passwort setzen: sudo ju-finanzen passwort ' + (f'"{names[0]}"' if names else '<Name>'))
+    finally:
+        con.close()
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='ju-finanzen', description='Verwaltung von JU Hamburg Finanzen im Serverbetrieb')
+    parser.add_argument('--data', help='Datenordner (Standard: JU_FINANZEN_DATEN)')
+    parser.add_argument('--backups', help='Sicherungsordner (Standard: JU_FINANZEN_SICHERUNGEN)')
+    parser.add_argument('--port', type=int, default=int(os.environ.get('JU_FINANZEN_PORT') or 8769))
+    sub = parser.add_subparsers(dest='befehl', required=True)
+    p = sub.add_parser('passwort', help='Passwort setzen bzw. ändern')
+    p.add_argument('name')
+    p.add_argument('--neu', action='store_true', help='weiteren Benutzer anlegen')
+    sub.add_parser('benutzer', help='Benutzer anzeigen')
+    sub.add_parser('sicherung', help='Sicherung jetzt anlegen')
+    sub.add_parser('pruefen', help='Datenbank prüfen (nur Anzahlen)')
+    p = sub.add_parser('uebernehmen', help='Daten aus der Mac-App übernehmen (ZIP aus „Sicherung herunterladen“)')
+    p.add_argument('datei')
+    p.add_argument('--ersetzen', action='store_true', help='vorhandene Daten ersetzen (werden vorher gesichert)')
+    args = parser.parse_args(argv)
+    os.umask(0o077)
+    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'sicherung': cmd_sicherung,
+            'pruefen': cmd_pruefen, 'uebernehmen': cmd_uebernehmen}[args.befehl](args) or 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

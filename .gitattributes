@@ -1,0 +1,2 @@
+# Eingebundene Bibliotheken bleiben Byte für Byte wie geliefert (Prüfsumme in test_karte.py); Patches mit „git am --keep-cr“ einspielen
+static/vendor/** -text

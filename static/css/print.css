@@ -1,0 +1,23 @@
+/* Druckansicht: Gesamthaushalt im A4-Querformat */
+@page { size: A4 landscape; margin: 12mm; }
+html, body { background: #fff !important; font-size: 9pt; }
+.sidebar, .topbar, .scrim, .pagehead .actions, .page:has(.print-head) .pagehead, .tabs, .segmented, .no-print, #toast, dialog { display: none !important; }
+.shell { display: block; }
+.main { padding: 0 !important; }
+.page { max-width: none !important; gap: 8px; }
+.panel { border: 0 !important; padding: 0 !important; }
+.print-head { display: flex !important; justify-content: space-between; align-items: flex-end; border-bottom: 1.5pt solid #043770; padding-bottom: 6pt; margin-bottom: 4pt; }
+.print-head h1 { font-size: 16pt; }
+.print-head .meta { text-align: right; font-size: 8pt; color: #3c4d63; }
+.tablewrap { overflow: visible !important; }
+.hh-table { min-width: 0 !important; font-size: 8pt; }
+.hh-table th { position: static !important; font-size: 7.5pt; padding: 4pt 4pt; }
+.hh-table td { padding: 3pt 4pt; }
+.hh-table .usage-col { display: none; }
+.hh-table tr { break-inside: avoid; }
+.hh-table thead { display: table-header-group; }
+.plan-cell { border: 0 !important; padding: 0 !important; margin: 0 !important; }
+.notice { border: 0.5pt solid #ccd6e2; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+/* Kontenblatt und Kreisverbandsseite drucken: Bedienelemente ausblenden */
+.toolbar, .back-link, .konto-actions { display: none !important; }

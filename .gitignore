@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.venv*/
+Daten/
+Sicherungen/
+build/
+dist/
+*.sqlite3
+*.zip
+.DS_Store
+# Echte Bankdateien nie ins Repository
+*.xls
+*.xlsx
+!tests/fixtures/*.xls
+# Nie ins Repository (GitHub): Belege, Protokolle, Schlüssel, Einstellungen mit Geheimnissen – geprüft von test_repo.py
+*.pdf
+*.log
+*.env
+*.pem
+*.key
+*.p12
+Belege/
+Unterlagen/
+server/wheels/
+node_modules/
