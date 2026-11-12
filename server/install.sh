@@ -127,9 +127,11 @@ install -d -m 750 -o root -g "$SERVICE_USER" "$ETC"
 # ---------------------------------------------------------------- Programm
 RELEASE="$APP_ROOT/releases/$APP_VERSION-$(date +%Y%m%d-%H%M%S)"
 say "Programm nach $RELEASE kopieren"
-mkdir -p "$RELEASE"
-# scheitert ein Schritt bis zum Selbsttest (z. B. PyPI nicht erreichbar), bleibt kein halber Ordner zurück
+mkdir -p "$(dirname "$RELEASE")"
+mkdir "$RELEASE"    # ohne -p: zwei Läufe in derselben Sekunde teilen sich keinen Ordner
+# scheitert ein Schritt bis zum Selbsttest (z. B. PyPI nicht erreichbar, Sitzung abgerissen), bleibt kein halber Ordner zurück
 trap 'rm -rf -- "$RELEASE"' ERR
+trap 'rm -rf -- "$RELEASE"; exit 130' INT TERM HUP
 # nur Programmdateien – keine Daten, keine Mac-App, kein Git
 tar -C "$SRC" --exclude='./.git' --exclude='./.github' --exclude='./mac' --exclude='./Finanzen starten.cmd' --exclude='*/__pycache__' --exclude='./Daten' --exclude='./Sicherungen' \
     --exclude='./server/wheels' --exclude='*.sqlite3' --exclude='*.zip' -cf - . | tar -C "$RELEASE" -xf -
@@ -153,7 +155,7 @@ fi
   || { rm -rf "$RELEASE"; die "Selbsttest fehlgeschlagen – nichts umgestellt."; }
 chown -R root:root "$RELEASE"
 chmod -R go-w "$RELEASE"
-trap - ERR
+trap - ERR INT TERM HUP
 
 # ---------------------------------------------------------------- Einstellungen
 if [ -z "$PORT" ]; then PORT="$(env_value JU_FINANZEN_PORT)"; fi

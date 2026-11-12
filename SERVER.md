@@ -104,9 +104,10 @@ lesen** darf und nur für dieses eine Repository gilt („Deploy key“). Im Rep
 
    ```bash
    sudo mkdir -p /opt/ju-finanzen
-   sudo git clone --branch v0.33 \
+   sudo git clone --no-checkout \
      -c core.sshCommand="ssh -i /root/.ssh/ju-finanzen-github -o IdentitiesOnly=yes" \
      git@github.com:JUHH-IT/JUHH-Verwaltung.git /opt/ju-finanzen/quelle
+   sudo git -C /opt/ju-finanzen/quelle checkout --detach refs/tags/v0.33
    sudo /opt/ju-finanzen/quelle/server/install.sh --tailscale
    ```
 
@@ -114,7 +115,8 @@ lesen** darf und nur für dieses eine Repository gilt („Deploy key“). Im Rep
    `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU` (ED25519) steht – so veröffentlicht ihn GitHub unter
    „GitHub's SSH key fingerprints“.
 
-`--branch v0.33` holt genau die freigegebene Version 0.33, nicht den Entwicklungsstand. Der Ordner
+`refs/tags/v0.33` holt genau die freigegebene Version 0.33, nicht den Entwicklungsstand und auch keinen Zweig, der
+zufällig genauso heißt. Der Ordner
 `/opt/ju-finanzen/quelle` gehört root und wird nicht von Hand geändert. Welcher Stand läuft, zeigt
 `sudo ju-finanzen status` (Programmversion und Git-Stand zum Vergleich mit GitHub).
 
@@ -179,9 +181,11 @@ oder in Sicherungen. Ohne Haken gilt es nur bis zum nächsten Neustart des Diens
   sudo ju-finanzen aktualisieren 0.34          # genau diese Version
   ```
 
-  Der Befehl installiert nur freigegebene Versionen (Tag `v<Version>`, der zur Programmversion passt), nie
-  automatisch und nie eine ältere als die laufende. Wurde ein Tag nachträglich versetzt oder im Ordner
-  `/opt/ju-finanzen/quelle` etwas von Hand geändert, bricht er ab.
+  Der Befehl installiert nur freigegebene Versionen: ein Tag `v<Version>`, der auf `main` liegt, jetzt im Repository
+  steht und zur Programmversion passt. Nie automatisch und nie eine ältere als die laufende. Wurde ein Tag
+  nachträglich versetzt oder im Ordner `/opt/ju-finanzen/quelle` etwas von Hand geändert oder hinzugefügt, bricht er ab.
+  Nach `install.sh --zurueck` holt der Befehl ohne Versionsangabe wieder die neueste Version – also die, von der gerade
+  zurückgeschaltet wurde. Erst wieder aufrufen, wenn eine korrigierte Version freigegeben ist.
 
 Jede Version liegt in einem eigenen Ordner. Die Daten bleiben unverändert, und das Programm sichert die Datenbank
 vor dem ersten Start einer neuen Version. Startet die neue Version nicht, schaltet das Skript automatisch zurück.
@@ -237,7 +241,7 @@ Ein Neustart während eines E-Mail-Versands hält den Versand nach der aktuellen
   auf dem Server mit den Mitglieder- und Bankdaten läuft. Deshalb:
   - Repository privat halten; für alle Konten mit Schreibrecht die Zwei-Faktor-Anmeldung einschalten.
   - `main` und die Tags `v*` schützen (Settings → Rules): Änderungen an `main` nur über Pull Requests, Tags nicht
-    löschen oder versetzen.
+    löschen oder versetzen, keine Zweige mit Namen `v*` anlegen.
   - Der Schlüssel des Servers darf nur lesen. Der Server holt Updates nie von selbst, nur auf Befehl.
   - Daten, Sicherungen, Kennwörter und Schlüssel nie ins Repository, in Issues oder Pull Requests (`test_repo.py`).
 
@@ -246,6 +250,8 @@ Ein Neustart während eines E-Mail-Versands hält den Versand nach der aktuellen
 - **`ju-finanzen aktualisieren` meldet „Abruf fehlgeschlagen“:** `sudo git -C /opt/ju-finanzen/quelle fetch --tags origin`
   zeigt die Ursache. „Permission denied (publickey)“: Der Deploy key fehlt im Repository oder wurde entfernt.
   „would clobber existing tag“: Eine freigegebene Version wurde nachträglich versetzt – nicht installieren, klären.
+  Solange der Tag versetzt bleibt, installiert der Server nichts mehr. Rückweg: bei GitHub den Tag wieder auf den alten
+  Stand setzen (`sudo git -C /opt/ju-finanzen/quelle rev-parse v<Version>` zeigt ihn); nie mit `--force` holen.
 
 - **„Ungültiger Host“ oder „Ungültige Anfrageherkunft“:** Die aufgerufene Adresse fehlt in
   `JU_FINANZEN_ADRESSEN` (`/etc/ju-finanzen/ju-finanzen.env`). Dort eintragen und `sudo ju-finanzen neustart`

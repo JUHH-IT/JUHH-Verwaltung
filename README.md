@@ -21,12 +21,11 @@ Die Daten liegen immer außerhalb des Programms: auf dem Mac im Ordner `Daten/` 
 
 ## Auf den Server bringen
 
-Kurzfassung, ausführlich in `SERVER.md`:
+Schritt für Schritt in `SERVER.md`, Abschnitt „Weg B – direkt aus GitHub“ (Ubuntu Server 24.04 LTS, Tailscale, ein
+Schlüssel für den Server, der nur lesen darf). Danach genügt für jede neue Version:
 
 ```bash
-sudo git clone --branch v0.33 git@github.com:JUHH-IT/JUHH-Verwaltung.git /opt/ju-finanzen/quelle
-sudo /opt/ju-finanzen/quelle/server/install.sh --tailscale
-sudo ju-finanzen aktualisieren        # später: neueste freigegebene Version holen und installieren
+sudo ju-finanzen aktualisieren        # neueste freigegebene Version holen und installieren
 ```
 
 ## Entwickeln
@@ -47,4 +46,5 @@ Fachliche Regeln und offene Punkte: `REGELN-UND-OFFENE-PUNKTE.md`.
 
 - Entwickelt wird in eigenen Branches, zusammengeführt nur über Pull Requests nach Freigabe.
 - Eine freigegebene Version ist ein Tag `v<Version>` auf `main` (z. B. `v0.33`); `app.py` nennt dieselbe Version.
-- Der Server installiert ausschließlich solche Tags, und nur auf ausdrücklichen Befehl.
+- Der Server installiert ausschließlich solche Tags, und nur auf ausdrücklichen Befehl. Tags außerhalb von `main`
+  lehnt er ab; bei jedem Tag `v*` laufen die Tests und der Abgleich mit der Programmversion.

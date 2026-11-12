@@ -5,6 +5,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']      # freigegebene Version: Tests und Abgleich des Tags mit der Programmversion
 
 permissions:
   contents: read
@@ -37,6 +38,11 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Pakete installieren
         run: ${{ matrix.install }}
+      - name: Tag passt zur Programmversion
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(sed -n "s/^VERSION='\(.*\)'.*/\1/p" app.py | head -n 1)"
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME passt nicht zur Programmversion $version"; exit 1; }
       - name: Tests (einschließlich Wächter test_repo.py – keine Daten oder Schlüssel im Repository)
         env:
           TZ: Europe/Berlin

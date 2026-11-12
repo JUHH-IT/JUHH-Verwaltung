@@ -567,12 +567,14 @@ class AktualisierenTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
-        self.env = {**os.environ, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'LC_ALL': 'C.UTF-8',
+        # ohne GIT_*-Variablen der Umgebung: in einem Git-Hook zeigt GIT_DIR sonst auf das echte Repository
+        base = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
+        self.env = {**base, 'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'LC_ALL': 'C.UTF-8',
                     'GIT_AUTHOR_NAME': 'Test', 'GIT_AUTHOR_EMAIL': 'test@example.org',
                     'GIT_COMMITTER_NAME': 'Test', 'GIT_COMMITTER_EMAIL': 'test@example.org'}
         self.origin = self.base / 'origin'
         (self.origin / 'server').mkdir(parents=True)
-        self.git(self.origin, 'init', '--quiet')
+        self.git(self.origin, 'init', '--quiet', '--initial-branch', 'main')
         for version in ('0.2', '0.9', '0.10'):
             self.release(version)
         self.source = self.base / 'opt' / 'quelle'
@@ -660,6 +662,62 @@ class AktualisierenTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('nachträglich verändert', result.stderr)
         self.assertEqual(self.head(), before)
+
+    def test_tag_outside_main_is_refused(self):
+        self.git(self.origin, 'checkout', '--quiet', '-b', 'nebenzweig')
+        self.release('0.11')                                 # Tag auf einem Zweig, der nie nach main kam
+        self.git(self.origin, 'checkout', '--quiet', 'main')
+        before = self.head()
+        result = self.run_script('--ohne-installation', '0.11')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('nicht auf dem Zweig main', result.stderr)
+        self.assertEqual(self.head(), before)
+
+    def test_branch_named_like_a_tag_is_ignored(self):
+        self.git(self.origin, 'checkout', '--quiet', '-b', 'v0.10', 'v0.2')   # Zweig „v0.10“ mit altem Inhalt
+        self.git(self.origin, 'checkout', '--quiet', 'main')
+        result = self.run_script('--ohne-installation')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.head(), self.git(self.origin, 'rev-parse', 'refs/tags/v0.10^{commit}'))
+        self.assertEqual(self.version(), "VERSION='0.10'")
+
+    def test_annotated_tag_works(self):
+        self.release('0.11', tag='zwischen')
+        self.git(self.origin, 'tag', '-a', 'v0.11', '-m', 'Freigabe 0.11')
+        result = self.run_script('--ohne-installation')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.version(), "VERSION='0.11'")
+
+    def test_withdrawn_release_is_not_installed(self):
+        self.release('0.11')
+        self.assertEqual(self.run_script('--pruefen').returncode, 0)          # Tag v0.11 ist jetzt lokal bekannt
+        self.git(self.origin, 'tag', '-d', 'v0.11')                           # Freigabe im Repository zurückgezogen
+        result = self.run_script('--ohne-installation')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.version(), "VERSION='0.10'")
+        explicit = self.run_script('--ohne-installation', '0.11')
+        self.assertNotEqual(explicit.returncode, 0)
+        self.assertIn('gibt es nicht', explicit.stderr)
+
+    def test_extra_files_and_missing_origin_stop(self):
+        (self.source / 'sitecustomize.py').write_text('print(1)\n', encoding='utf-8')   # würde mitkopiert
+        result = self.run_script('--ohne-installation')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('hinzugefügt', result.stderr)
+        (self.source / 'sitecustomize.py').unlink()
+        self.git(self.source, 'remote', 'remove', 'origin')
+        result = self.run_script('--ohne-installation')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('origin', result.stderr)
+
+    def test_help_and_dotted_version(self):
+        text = self.run_script('--help').stdout
+        self.assertIn('aktualisieren', text)
+        self.assertNotIn('pipefail', text)
+        self.release('1.203')
+        result = self.run_script('--ohne-installation', '1.2.3')              # Punkt ist kein Platzhalter
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('gibt es nicht', result.stderr)
 
     def test_local_changes_and_wrong_folder_stop(self):
         (self.source / 'app.py').write_text("VERSION='0.9'\nprint('von Hand')\n", encoding='utf-8')
