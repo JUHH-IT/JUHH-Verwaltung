@@ -11,6 +11,7 @@ import socket
 import haushalt
 import workflow
 import sicherung
+import rollen
 import uebernahme
 import rechnung_pdf
 import versand
@@ -35,7 +36,7 @@ import erstattung
 import geheimnis
 import zugang
 
-VERSION='0.33'
+VERSION='0.34'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -47,6 +48,7 @@ MODE='mac'
 ADDRESSES=[]           # Servermodus: Adressen, unter denen die Oberfläche aufgerufen wird, z. B. https://ju-finanzen.beispiel.ts.net
 THROTTLE=zugang.Throttle()   # im Serverbetrieb mit Datei im Datenordner (main)
 MAC_PATHS=('/api/stop','/api/login-code','/api/login-device','/api/shutdown')
+NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltung (Benutzer und Rollen).'
 PUBLIC_PATHS=('/api/login','/api/stop','/api/login-code','/api/login-device')   # ohne Sitzung erreichbar
 UPLOAD_PATHS=('/api/members-preview','/api/gliederung-vorschau','/api/sepa-vorschau','/api/sepa-begleitzettel','/api/rpj-import-vorschau','/api/einvoice','/api/bill','/api/kasse-beleg','/api/preview-bank','/api/preview-master','/api/preview-kv-master')
 TAILNET=[ipaddress.ip_network('100.64.0.0/10'),ipaddress.ip_network('fd7a:115c:a1e0::/48')]
@@ -101,10 +103,10 @@ def user_fingerprint(name):
     enden bestehende Sitzungen bei der nächsten Anfrage."""
     try:
         con=sqlite3.connect(f'file:{DB}?mode=ro',uri=True,timeout=5)
-        try: row=con.execute('SELECT password FROM users WHERE name=?',(name,)).fetchone()
+        try: row=con.execute('SELECT password,active FROM users WHERE name=?',(name,)).fetchone()
         finally: con.close()
     except sqlite3.Error: return None
-    return zugang.fingerprint(row[0]) if row else None
+    return zugang.fingerprint(row[0]) if row and row[1] else None   # deaktiviert: keine gültige Sitzung mehr
 
 def log(text): print(time.strftime('%Y-%m-%d %H:%M:%S')+' '+text,flush=True)
 
@@ -255,7 +257,7 @@ class Handler(BaseHTTPRequestHandler):
     def session(self):
         if hasattr(self,'_session'): return self._session
         sid=self.session_id();s=SESSIONS.get(sid) if sid else None;now=time.time()
-        if s and (s['expires']<=now or (server_mode() and now-s['seen']>IDLE_MINUTES*60) or (server_mode() and s.get('fp')!=user_fingerprint(s['actor']))):
+        if s and (s['expires']<=now or (server_mode() and now-s['seen']>IDLE_MINUTES*60) or (server_mode() and (s.get('fp') is None or s.get('fp')!=user_fingerprint(s['actor'])))):
             SESSIONS.pop(sid,None);s=None   # abgelaufen, untätig oder Passwort inzwischen neu gesetzt
         if s: s['seen']=now
         self._session=s
@@ -268,6 +270,11 @@ class Handler(BaseHTTPRequestHandler):
                                                      'fp':user_fingerprint(actor) if server_mode() else None}
         self._session=SESSIONS[sid]
         return sid,SESSIONS[sid]
+    def rights(self,store):
+        """Rechte der angemeldeten Person (rollen.py); die Mac-App hat eine Person und prüft keine Rechte."""
+        s=self.session()
+        if not s: return {}
+        return rollen.rights_of(store.db,s['actor']) if server_mode() else dict(rollen.ALL)
     def from_proxy(self): return self.client_address[0] in ('127.0.0.1','::1')
     def device(self):
         """Gerät für Sperre und Protokoll: hinter Tailscale Serve (Anfrage von 127.0.0.1) Tailscale-Login bzw. Adresse aus
@@ -294,14 +301,24 @@ class Handler(BaseHTTPRequestHandler):
                 s=self.session()
                 configured=any(zugang.is_set(u['password']) for u in store.rows('SELECT password FROM users')) if server_mode() else bool(store.rows('SELECT id FROM users'))
                 return self.send(200,{'app':APP_NAME,'version':VERSION,'instance':INSTANCE,'mode':MODE,'auth':'password' if server_mode() else 'macos','configured':configured,
-                                      'mail_busy':versand.busy(),'user':s['actor'] if s else None,'csrf':s['csrf'] if s else None})
+                                      'mail_busy':versand.busy(),'user':s['actor'] if s else None,'csrf':s['csrf'] if s else None,
+                                      'rights':self.rights(store) if s else {}})
             if path.startswith('/api/'):
                 if not self.session(): return self.send(401,{'error':'Bitte anmelden.'})
-                if path=='/api/data': return self.send(200,{**store.snapshot(int(query.get('year',[time.localtime().tm_year])[0])),'last_backup':sicherung.last_daily(backups_dir()/'Automatisch'),'address_data':__import__('adressen').status(DATA)['available']})
-                if path=='/api/workflow': return self.send(200,workflow.details(store,int(query['year'][0])))
+                rights=self.rights(store)
+                if not rollen.allowed(rights,rollen.required('GET',path)): return self.send(403,{'error':NO_RIGHT})
+                if path=='/api/data': return self.send(200,rollen.filter_snapshot({**store.snapshot(int(query.get('year',[time.localtime().tm_year])[0])),'last_backup':sicherung.last_daily(backups_dir()/'Automatisch'),'address_data':__import__('adressen').status(DATA)['available']},rights))
+                if path=='/api/benutzer':   # Personen und Rollen (ohne Passwörter) – die Mac-App hat nur eine Person
+                    return self.send(200,rollen.overview(store.db)) if server_mode() else self.send(404,{'error':'Nur im Serverbetrieb.'})
+                if path=='/api/workflow':
+                    # die Oberfläche lädt das immer: ohne Recht gleiche Form ohne Inhalt (Parkkonto/Lernbeispiele: Buchhaltung; KV-Budgets: Verband)
+                    details=workflow.details(store,int(query['year'][0]))
+                    return self.send(200,{k:(v if rollen.can(rights,'buchhaltung') or (k=='budgets' and rollen.can(rights,'verband')) else rollen.blank(v)) for k,v in details.items()})
                 if path=='/api/suggestions': return self.send(200,workflow.suggest(store,int(query['id'][0])))
                 if path=='/api/dues-preview': return self.send(200,store.dues_preview(int(query['year'][0])))
-                if path=='/api/haushalt': return self.send(200,haushalt.report(store,int(query['year'][0])))
+                if path=='/api/haushalt':
+                    report=haushalt.report(store,int(query['year'][0]))
+                    return self.send(200,report if rollen.can(rights,'verband') or rollen.can(rights,'buchhaltung') else rollen.blank(report))
                 if path=='/api/haushalt-reference': return self.send(200,haushalt.reference())
                 if path=='/api/haushalt.pdf':
                     year=int(query['year'][0]);return self.send(200,haushalt.pdf_report(store,year),'application/pdf',inline=f'Haushalt-{year}.pdf')
@@ -399,14 +416,19 @@ class Handler(BaseHTTPRequestHandler):
                     import klaerfaelle
                     return self.send(200,{'items':klaerfaelle.items(store),'counts':klaerfaelle.counts(store)})
                 if path=='/api/member-dues': return self.send(200,beitraege.by_member(store,int(query['id'][0])))
-                if path=='/api/member-account': return self.send(200,{**mitgliederkonto.account(store,int(query['id'][0])),'sepa_refs':sepadatei.learned_for(store,int(query['id'][0]))})
+                if path=='/api/member-account':
+                    account={**mitgliederkonto.account(store,int(query['id'][0])),'sepa_refs':sepadatei.learned_for(store,int(query['id'][0]))}
+                    if not rollen.can(rights,'buchhaltung'):   # Mitgliederverwaltung ohne Buchhaltung: Stammdaten ja, Beitragskonto und Beträge nein
+                        account={k:(v if k in ('member','first','today') else rollen.blank(v)) for k,v in account.items()}
+                    return self.send(200,account)
                 if path in ('/api/auswertung','/api/auswertung.pdf','/api/auswertung.csv'):
                     q=lambda k:query.get(k,[''])[0] or None
                     args=(q('stichtag'),q('kv'),q('ov'))
-                    if path=='/api/auswertung': return self.send(200,auswertung.report(store,*args))
+                    amounts=rollen.can(rights,'buchhaltung')   # Beitragsbeträge nur mit Buchhaltung, Listen mit Namen nur mit Mitgliederverwaltung
+                    if path=='/api/auswertung': return self.send(200,auswertung.redact(auswertung.report(store,*args),amounts,rollen.can(rights,'mitglieder')))
                     stamp=re.sub(r'[^0-9-]','',args[0] or date.today().isoformat())[:10]
-                    if path=='/api/auswertung.pdf': return self.send(200,auswertung.pdf(store,*args),'application/pdf',inline=f'Mitgliederstatistik-{stamp}.pdf')
-                    return self.send(200,auswertung.csv(store,*args),'text/csv; charset=utf-8',attachment=f'Mitgliederstatistik-{stamp}.csv')
+                    if path=='/api/auswertung.pdf': return self.send(200,auswertung.pdf(store,*args,amounts=amounts),'application/pdf',inline=f'Mitgliederstatistik-{stamp}.pdf')
+                    return self.send(200,auswertung.csv(store,*args,amounts=amounts),'text/csv; charset=utf-8',attachment=f'Mitgliederstatistik-{stamp}.csv')
                 if path=='/api/beitrag-nach-alter':
                     q=lambda k:query.get(k,[''])[0]
                     if not re.fullmatch(r'\d{4}',q('year')): raise ValueError('Ungültiges Jahr.')
@@ -532,11 +554,13 @@ class Handler(BaseHTTPRequestHandler):
                     user=store.db.execute('SELECT name FROM users ORDER BY id LIMIT 1').fetchone()
                     if not user:   # erster Start: Benutzer mit dem Namen des Mac-Benutzers anlegen (kein Passwort)
                         name=mac_user_name()
-                        store.db.execute("INSERT INTO users(name,password) VALUES(?,'')",(name,))
+                        created=store.db.execute("INSERT INTO users(name,password) VALUES(?,'')",(name,)).lastrowid
+                        rollen._grant_owner(store.db,created)   # die eine Person der Mac-App darf alles
                         store.audit(name,'Benutzer eingerichtet (Anmeldung über macOS)',{})
                     actor=user['name'] if user else name
                 sid,s=self.new_session(actor);return self.send(200,{'csrf':s['csrf']},cookie=self.cookie(sid))
             actor=s['actor'];result={'ok':True}
+            if not rollen.allowed(self.rights(store),rollen.required('POST',path)): return self.send(403,{'error':NO_RIGHT})
             if path=='/api/logout':
                 for k,v in list(SESSIONS.items()):
                     if v is s: del SESSIONS[k]
@@ -556,6 +580,12 @@ class Handler(BaseHTTPRequestHandler):
                     if v['actor']==actor and v is not s: SESSIONS.pop(k,None)
                 s['fp']=user_fingerprint(actor)   # eigene Sitzung bleibt gültig
                 log(f'Passwort geändert: {actor}')
+            elif path in ('/api/benutzer','/api/rolle','/api/rolle-loeschen') and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
+            elif path=='/api/benutzer':
+                # Person anlegen/ändern (Verwaltung): ein neues Passwort oder das Deaktivieren beendet deren Sitzungen (Fingerabdruck)
+                result['id']=rollen.save_user(store.db,data,actor);log(f'Person gespeichert durch {actor}')
+            elif path=='/api/rolle': result['id']=rollen.save_role(store.db,data,actor)
+            elif path=='/api/rolle-loeschen': rollen.delete_role(store.db,data.get('id') or 0,actor)
             elif path=='/api/shutdown':
                 if versand.busy(): raise ValueError('Gerade läuft ein E-Mail-Versand. Bitte abwarten oder den Versand abbrechen, dann beenden.')
                 self.send(200,result)

@@ -1,4 +1,4 @@
-# JU Hamburg Finanzen – Anleitung (Version 0.33)
+# JU Hamburg Finanzen – Anleitung (Version 0.34)
 
 ## Auf dem Server (Browser, ab 0.23)
 
@@ -14,6 +14,22 @@ Verwaltung stehen in `SERVER.md`.
     Anmeldung.
   - Passwort ändern unter **Einstellungen → Anmeldung**. Passwort vergessen: auf dem Server
     `sudo ju-finanzen passwort "Name"`.
+- **Benutzer & Rollen (ab 0.34):** Unter **Verwaltung → Benutzer & Rollen** legt die Verwaltung Personen an, vergibt Rollen
+  und stellt ein, was jede Rolle darf.
+  - Bereiche: Mitgliederverwaltung, Buchhaltung, Verband (Haushalt, Budgets, RPJ), Auswertung, Einstellungen, Sicherung,
+    Benutzer. Je Bereich: kein Zugriff, lesen oder ändern.
+  - Anfangsbestand: Schatzmeister, Landesmitgliederbeauftragter, Landesgeschäftsführer, Landesvorsitzender, Administrator.
+    Rollen lassen sich ändern, ergänzen und – wenn niemand sie mehr hat – löschen. Eine Person kann mehrere Rollen haben.
+  - Jede Person sieht nur die Seiten ihrer Bereiche; der Server prüft jede Anfrage zusätzlich selbst. Die
+    Mitgliederverwaltung ohne Buchhaltung sieht keine Zahlungen, Salden und Beitragskonten. Sie sieht und pflegt aber die
+    Stammdaten der Mitglieder einschließlich Beitragshöhe und Zahlweg (sie kommen aus der Mitgliederliste) und bei einem
+    Klärfall den Betrag der Zahlung. In der Auswertung stehen Beitragsbeträge nur mit Buchhaltung. Der Administrator sieht keine Mitglieder- und
+    Finanzdaten; die Sicherung herunterladen darf nur, wer „Sicherung ändern“ hat (sie enthält alle Daten).
+  - Neue Person: Name, Rollen und ein erstes Passwort (mindestens 12 Zeichen); sie ändert es danach selbst. „Aktiv“
+    abwählen sperrt die Anmeldung sofort. Mindestens eine aktive Person muss „Benutzer ändern“ behalten.
+  - Unten auf der Seite steht, wer wem welche Rolle gegeben und welche Rechte geändert hat.
+  - Wer bisher angemeldet war, behält alle Rechte. Notzugang auf dem Server: `sudo ju-finanzen rolle "Name" Administrator`.
+  - In der Mac-App gibt es weiter nur eine Person mit allen Rechten.
 - **Bedienung wie am Mac.** Unterschiede: Es gibt kein „Programm beenden“, der Server läuft ständig. Esc schließt Dialoge.
 - **Bis 1100 px Breite** (Tablet, Handy) öffnet ☰ oben links die Seitenleiste. Dialoge füllen auf dem Handy den
   ganzen Bildschirm.

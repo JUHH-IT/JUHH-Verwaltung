@@ -197,7 +197,8 @@ Zur vorherigen Version zurück: `sudo /opt/ju-finanzen/current/server/install.sh
 | Befehl | Zweck |
 | --- | --- |
 | `sudo ju-finanzen passwort "Name"` | Passwort setzen/ändern (neuer Benutzer zusätzlich mit `--neu`) |
-| `sudo ju-finanzen benutzer` | Benutzer anzeigen (ohne Passwörter) |
+| `sudo ju-finanzen benutzer` | Benutzer mit Rollen anzeigen (ohne Passwörter) |
+| `sudo ju-finanzen rolle "Name" Administrator` | Notzugang: einer Person eine Rolle geben (`--entfernen` nimmt sie); sonst im Programm unter Verwaltung → Benutzer & Rollen |
 | `sudo ju-finanzen uebernehmen DATEI [--ersetzen]` | Daten übernehmen bzw. zurückholen (ZIP oder .sqlite3) |
 | `sudo ju-finanzen sicherung` | Sicherung jetzt anlegen |
 | `sudo ju-finanzen pruefen` | Datenbank prüfen (Integrität, Anzahlen) |
@@ -237,6 +238,15 @@ Ein Neustart während eines E-Mail-Versands hält den Versand nach der aktuellen
   - Anmeldungen mit Benutzername und Tailscale-Gerät;
   - bei Fehlern die Programmstelle.
   Mitgliedernamen, Beträge und IBANs stehen nie darin.
+- Rollen (ab 0.34): Jede Person hat nur die Rechte ihrer Rollen (Programm: Verwaltung → Benutzer & Rollen). Der Server
+  prüft jede Anfrage; unbekannte Adressen sind nur mit „Benutzer ändern“ erreichbar. Die erste Person, die auf dem Server
+  ein Passwort bekommt, erhält alle Rechte; weitere Personen legt die Verwaltung im Programm an. Wer auf dem Server root
+  ist, kann unabhängig von Rollen alle Daten lesen.
+  - Nach dem Update auf 0.34 einmal `sudo ju-finanzen benutzer` ansehen: Alle bisherigen Personen haben alle Rechte
+    behalten (Schatzmeister, Landesmitgliederbeauftragter, Administrator) – auch solche ohne Passwort aus der Mac-App.
+    Was nicht mehr passt, in der Verwaltung des Programms ändern.
+  - `sudo ju-finanzen passwort "Name"` gibt der Person alle Rechte, wenn sich sonst niemand mehr für „Benutzer und
+    Rollen“ anmelden kann (Notzugang). `sudo ju-finanzen rolle … --entfernen` lässt immer eine solche Person übrig.
 - GitHub (Weg B): Wer im Repository eine Version freigeben (einen Tag `v…` setzen) kann, bestimmt, welches Programm
   auf dem Server mit den Mitglieder- und Bankdaten läuft. Deshalb:
   - Repository privat halten; für alle Konten mit Schreibrecht die Zwei-Faktor-Anmeldung einschalten.

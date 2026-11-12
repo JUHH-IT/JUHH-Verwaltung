@@ -35,7 +35,7 @@ PYTHON_SHA256 = '8392b6ea51d94391befb2c31ebe75463f045d0b69dfcf5e1bb3234e1f5fa340
 APP_FILES = ['app.py', 'core.py', 'formate.py', 'stammdaten.py', 'rechnung_pdf.py', 'versand.py', 'geheimnis.py', 'verbindlichkeiten.py', 'freigabe.py', 'pdfschrift.py', 'lastschrift.py', 'kvbudget.py', 'kvabgleich.py', 'berichte.py', 'erechnung.py', 'erstattung.py',
              'schriften/LiberationSans-Regular.ttf', 'schriften/LiberationSans-Bold.ttf', 'schriften/LICENSE-Liberation.txt',
              'bankimport.py', 'uebernahme.py', 'haushalt.py', 'workflow.py', 'sicherung.py', 'bereinigung.py',
-             'kontenrahmen.py', 'mitglieder.py', 'gliederung.py', 'sepadatei.py', 'auswertung.py', 'opliste.py', 'klaerfaelle.py', 'adressen.py', 'karte.py', 'karte-gebiete.json', 'beitraege.py', 'mitgliederkonto.py', 'kasse.py', 'rpj.py', 'zugang.py', 'verwaltung.py',
+             'kontenrahmen.py', 'mitglieder.py', 'gliederung.py', 'sepadatei.py', 'auswertung.py', 'opliste.py', 'klaerfaelle.py', 'rollen.py', 'adressen.py', 'karte.py', 'karte-gebiete.json', 'beitraege.py', 'mitgliederkonto.py', 'kasse.py', 'rpj.py', 'zugang.py', 'verwaltung.py',
              'haushalt-vorlage.json', 'Kontoauszug-Vorlage.csv']
 # Python wird über einen Verweis in Contents/MacOS gestartet: So erkennt macOS den Prozess als diese App
 # (Name in der Menüleiste, Symbol, Info.plist) – wichtig für das eigene Programmfenster (mac/fenster.py).

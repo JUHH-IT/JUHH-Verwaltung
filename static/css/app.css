@@ -671,3 +671,7 @@ button.map-kv:hover { background: var(--surface-2); }
 .address-check:empty { display: none; }
 .address-check .ok { color: var(--teal-ink); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
 .address-check .warn { color: var(--orange-ink); font-weight: 500; }
+
+/* Benutzer & Rollen (ab 0.34): Name der Rolle als Verweis in der Tabelle */
+.panel .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--navy); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.panel .link-button:hover { color: var(--teal-ink); }

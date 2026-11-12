@@ -90,13 +90,50 @@ def cmd_benutzer(args):
     data, _ = folders(args)
     con = connect(data / 'finanzen.sqlite3')
     try:
-        rows = con.execute('SELECT name,password FROM users ORDER BY id').fetchall()
+        import rollen
+        rollen.init(con)
+        rows = con.execute('SELECT id,name,password,active FROM users ORDER BY id').fetchall()
+        roles = {r['id']: [x[0] for x in con.execute('SELECT ro.name FROM user_roles ur JOIN roles ro ON ro.id=ur.role_id WHERE ur.user_id=? ORDER BY ro.id', (r['id'],))] for r in rows}
     finally:
         con.close()
     if not rows:
         print('Noch keine Benutzer. Anlegen mit: sudo ju-finanzen passwort <Name>')
     for r in rows:
-        print(f'{r["name"]}: ' + ('Passwort gesetzt' if zugang.is_set(r['password']) else 'kein Passwort (Anmeldung gesperrt)'))
+        print(f'{r["name"]}: ' + ('Passwort gesetzt' if zugang.is_set(r['password']) else 'kein Passwort (Anmeldung gesperrt)')
+              + ('' if r['active'] else ', deaktiviert') + '; Rollen: ' + (', '.join(roles[r['id']]) or 'keine'))
+
+
+def cmd_rolle(args):
+    """Notzugang: einer Person eine Rolle geben oder nehmen, wenn sich niemand mehr für die Verwaltung anmelden kann."""
+    data, _ = folders(args)
+    con = connect(data / 'finanzen.sqlite3')
+    try:
+        import rollen
+        rollen.init(con)
+        user = zugang.find_user(con, args.name)
+        role = con.execute('SELECT id,name FROM roles WHERE lower(name)=lower(?)', (' '.join(args.rolle.split()),)).fetchone()
+        if not user:
+            raise SystemExit(f'Benutzer „{args.name}“ gibt es nicht.')
+        if not role:
+            names = ', '.join(r[0] for r in con.execute('SELECT name FROM roles ORDER BY id'))
+            raise SystemExit(f'Rolle „{args.rolle}“ gibt es nicht. Vorhanden: {names}')
+        with con:
+            reactivated = False
+            if args.entfernen:
+                con.execute('DELETE FROM user_roles WHERE user_id=? AND role_id=?', (user['id'], role['id']))
+                if not rollen._admins(con):   # sonst käme niemand mehr in die Verwaltung; der Abbruch macht das Entfernen rückgängig
+                    raise SystemExit('Nicht entfernt: Danach könnte sich niemand mehr für „Benutzer und Rollen“ anmelden.')
+            else:
+                con.execute('INSERT OR IGNORE INTO user_roles(user_id,role_id) VALUES(?,?)', (user['id'], role['id']))
+                reactivated = not user['active']
+                con.execute('UPDATE users SET active=1 WHERE id=?', (user['id'],))
+            con.execute('INSERT INTO audit(time,actor,action,detail) VALUES(?,?,?,?)',
+                        (datetime.now().isoformat(timespec='seconds'), 'Serververwaltung', 'Rolle entzogen' if args.entfernen else 'Rolle vergeben',
+                         json.dumps({'benutzer': user['name'], 'rolle': role['name']}, ensure_ascii=False)))
+    finally:
+        con.close()
+    print(f'Rolle „{role["name"]}“ für „{user["name"]}“ ' + ('entfernt.' if args.entfernen else 'vergeben.')
+          + (' Die Person war deaktiviert und ist jetzt wieder aktiv.' if reactivated else ''))
 
 
 def cmd_sicherung(args):
@@ -289,7 +326,11 @@ def main(argv=None):
     p = sub.add_parser('passwort', help='Passwort setzen bzw. ändern')
     p.add_argument('name')
     p.add_argument('--neu', action='store_true', help='weiteren Benutzer anlegen')
-    sub.add_parser('benutzer', help='Benutzer anzeigen')
+    sub.add_parser('benutzer', help='Benutzer mit Rollen anzeigen')
+    p = sub.add_parser('rolle', help='einer Person eine Rolle geben (Notzugang, sonst in der Verwaltung des Programms)')
+    p.add_argument('name')
+    p.add_argument('rolle')
+    p.add_argument('--entfernen', action='store_true', help='Rolle wieder nehmen')
     sub.add_parser('sicherung', help='Sicherung jetzt anlegen')
     sub.add_parser('pruefen', help='Datenbank prüfen (nur Anzahlen)')
     p = sub.add_parser('uebernehmen', help='Daten aus der Mac-App übernehmen (ZIP aus „Sicherung herunterladen“)')
@@ -297,7 +338,7 @@ def main(argv=None):
     p.add_argument('--ersetzen', action='store_true', help='vorhandene Daten ersetzen (werden vorher gesichert)')
     args = parser.parse_args(argv)
     os.umask(0o077)
-    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'sicherung': cmd_sicherung,
+    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'rolle': cmd_rolle, 'sicherung': cmd_sicherung,
             'pruefen': cmd_pruefen, 'uebernehmen': cmd_uebernehmen}[args.befehl](args) or 0
 
 

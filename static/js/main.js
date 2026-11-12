@@ -1,7 +1,7 @@
 // Einstieg: Anmeldung, Gerüst (Seitenleiste) und Seitenwechsel.
 import { api, setCsrf, onUnauthorized } from './api.js';
 import { html, mount } from './html.js';
-import { store, onChange, refresh, go, yearBank } from './store.js';
+import { store, onChange, refresh, go, can, yearBank } from './store.js';
 import { dialog, icon, safe, toast, closeTop } from './ui.js';
 import { overview } from './views/overview.js';
 import { bank, bankKeys } from './views/bank.js';
@@ -19,6 +19,7 @@ import { openItems } from './views/open-items.js';
 import { journal } from './views/journal.js';
 import { konten } from './views/konten.js';
 import { settings } from './views/settings.js';
+import { benutzer } from './views/benutzer.js';
 
 const root = document.getElementById('root');
 const app = () => window.webkit?.messageHandlers?.ju;   // eigenes Programmfenster der Mac-App (mac/fenster.py)
@@ -27,24 +28,29 @@ const server = () => store.mode === 'server';           // Serverbetrieb (Ubuntu
 // Aufbau nach Aufgabenbereichen (0.31, Wunsch Lennert Gust 10.11.2026): Mitgliederverwaltung, Buchhaltung, Verband, Verwaltung –
 // später sieht jede Rolle nur ihren Bereich. Start = Aufgaben je Bereich (ohne Gruppenüberschrift).
 const PAGES = [
+  // area: Bereich, für den die Person mindestens „lesen“ braucht (rollen.py); ohne Angabe für alle Angemeldeten
   { id: 'overview', label: 'Start', icon: 'home', view: overview, group: '' },
-  { id: 'members', label: 'Mitglieder', icon: 'users', view: members, group: 'Mitgliederverwaltung' },
-  { id: 'cases', label: 'Klärfälle', icon: 'alert', view: cases, group: 'Mitgliederverwaltung' },
-  { id: 'map', label: 'Karte', icon: 'map', view: karte, group: 'Mitgliederverwaltung' },
-  { id: 'bank', label: 'Kontoauszüge', icon: 'bank', view: bank, group: 'Buchhaltung' },
-  { id: 'dues', label: 'Beitragseingänge', icon: 'coins', view: dues, group: 'Buchhaltung' },
-  { id: 'cash', label: 'Kasse', icon: 'cash', view: cash, group: 'Buchhaltung' },
-  { id: 'invoices', label: 'Rechnungen', icon: 'file', view: invoices, group: 'Buchhaltung' },
-  { id: 'bills', label: 'Eingangsrechnungen', icon: 'inbox', view: bills, group: 'Buchhaltung' },
-  { id: 'openitems', label: 'Offene Posten', icon: 'scale', view: openItems, group: 'Buchhaltung' },
-  { id: 'journal', label: 'Buchungsjournal', icon: 'book', view: journal, group: 'Buchhaltung' },
-  { id: 'konten', label: 'Konten', icon: 'list', view: konten, group: 'Buchhaltung' },
-  { id: 'budgets', label: 'Haushalt & Budgets', icon: 'chart', view: budgets, group: 'Verband' },
-  { id: 'rpj', label: 'RPJ-Mittel', icon: 'layers', view: rpj, group: 'Verband' },
-  { id: 'auswertung', label: 'Auswertung', icon: 'trend', view: auswertung, group: 'Verband' },
-  { id: 'settings', label: 'Einstellungen', icon: 'settings', view: settings, group: 'Verwaltung' },
+  { id: 'members', label: 'Mitglieder', icon: 'users', view: members, group: 'Mitgliederverwaltung', area: 'mitglieder' },
+  { id: 'cases', label: 'Klärfälle', icon: 'alert', view: cases, group: 'Mitgliederverwaltung', area: 'mitglieder' },
+  { id: 'map', label: 'Karte', icon: 'map', view: karte, group: 'Mitgliederverwaltung', area: 'mitglieder' },
+  { id: 'bank', label: 'Kontoauszüge', icon: 'bank', view: bank, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'dues', label: 'Beitragseingänge', icon: 'coins', view: dues, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'cash', label: 'Kasse', icon: 'cash', view: cash, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'invoices', label: 'Rechnungen', icon: 'file', view: invoices, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'bills', label: 'Eingangsrechnungen', icon: 'inbox', view: bills, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'openitems', label: 'Offene Posten', icon: 'scale', view: openItems, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'journal', label: 'Buchungsjournal', icon: 'book', view: journal, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'konten', label: 'Konten', icon: 'list', view: konten, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'budgets', label: 'Haushalt & Budgets', icon: 'chart', view: budgets, group: 'Verband', area: 'verband' },
+  { id: 'rpj', label: 'RPJ-Mittel', icon: 'layers', view: rpj, group: 'Verband', area: 'verband' },
+  { id: 'auswertung', label: 'Auswertung', icon: 'trend', view: auswertung, group: 'Verband', area: 'auswertung' },
+  { id: 'users', label: 'Benutzer & Rollen', icon: 'users', view: benutzer, group: 'Verwaltung', area: 'verwaltung', serverOnly: true },
+  // Einstellungen: im Serverbetrieb für alle (eigenes Passwort ändern), die Reiter richten sich nach dem Recht „Einstellungen“
+  { id: 'settings', label: 'Einstellungen', icon: 'settings', view: settings, group: 'Verwaltung', area: 'einstellungen', always: 'server' },
 ];
 const GROUPS = [...new Set(PAGES.map((p) => p.group))];
+/** Seiten, die die angemeldete Person sieht (der Server prüft jede Anfrage unabhängig davon). */
+const visiblePages = () => PAGES.filter((p) => (!p.serverOnly || server()) && (!p.area || can(p.area) || (p.always === 'server' && server())));
 
 function years() {
   const now = new Date().getFullYear();
@@ -74,7 +80,8 @@ const menuOpen = () => !!root.querySelector('.shell.menu-open');
 
 function renderShell() {
   leaveMap();   // die Seite wird neu aufgebaut: eine offene Karte vorher freigeben (sonst bleibt sie über das Fenster erreichbar)
-  const page = PAGES.find((p) => p.id === store.page) || PAGES[0];
+  const pages = visiblePages();
+  const page = pages.find((p) => p.id === store.page) || pages[0];
   const openCount = yearBank().filter((b) => b.state === 'open').length;
   const cashOpen = store.data?.cash?.open || 0;
   const rpjOpen = store.data?.rpj?.open || 0;
@@ -92,9 +99,9 @@ function renderShell() {
       <label class="year-select">Haushaltsjahr
         <select id="year" aria-label="Haushaltsjahr">${years().map((y) => html`<option ${y === store.year ? 'selected' : ''}>${y}</option>`)}</select>
       </label>
-      <nav class="nav" aria-label="Hauptnavigation">${GROUPS.map((g) => html`
+      <nav class="nav" aria-label="Hauptnavigation">${GROUPS.filter((g) => pages.some((p) => p.group === g)).map((g) => html`
         ${g ? html`<p class="nav-group">${g}</p>` : ''}
-        ${PAGES.filter((p) => p.group === g).map((p) => html`
+        ${pages.filter((p) => p.group === g).map((p) => html`
         <button type="button" data-page="${p.id}" ${p.id === page.id ? html`aria-current="page"` : ''}>${icon(p.icon)} ${p.label}
           ${counts[p.id]?.[0] ? html`<span class="count" aria-label="${counts[p.id][0]} ${counts[p.id][1]}">${counts[p.id][0]}</span>` : ''}</button>`)}`)}
       </nav>

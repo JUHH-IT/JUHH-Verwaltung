@@ -6,6 +6,7 @@ export const store = {
   user: '',
   version: '',
   mode: 'mac',       // 'mac' (Programmfenster) oder 'server' (Browser, Anmeldung mit Passwort)
+  rights: {},        // Rechte der angemeldeten Person je Bereich: 'lesen' | 'schreiben' (ab 0.34; der Server prüft verbindlich)
   year: new Date().getFullYear(),
   page: 'overview',
   data: null,        // /api/data: Mitglieder, Rechnungen, Bank, Konten, Journal, Einstellungen …
@@ -26,13 +27,18 @@ export function render() {
   renderer();
 }
 
+const RANK = { lesen: 1, schreiben: 2 };
+/** Darf die angemeldete Person diesen Bereich lesen bzw. ändern? Nur für die Anzeige – verbindlich prüft der Server. */
+export const can = (area, level = 'lesen') => (RANK[store.rights?.[area]] || 0) >= RANK[level];
+
 export async function refresh() {
-  const [data, household, workflow] = await Promise.all([
+  const [data, household, workflow, status] = await Promise.all([
     api('/api/data?year=' + store.year),
     api('/api/haushalt?year=' + store.year),
     api('/api/workflow?year=' + store.year),
+    api('/api/status'),
   ]);
-  Object.assign(store, { data, household, workflow });
+  Object.assign(store, { data, household, workflow, rights: status.rights || {} });
   store.budgets.donations = null;  // Spenden-Reiter lädt nach jeder Änderung neu
   store.konten.listKey = store.konten.sheetKey = null;   // Kontenliste und Kontenblatt ebenso
   store.budgets.kvKey = null;      // Kreisverbandsseite ebenso

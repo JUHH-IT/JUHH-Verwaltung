@@ -228,6 +228,63 @@ try {
   check(!(await mob.locator('#modal').evaluate((d) => d.open)), 'Handy: Dialog schließt');
   await phone.close();
 
+  // ---------- Rollen und Rechte (ab 0.34) ----------
+  const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await guard(adminContext);
+  const ap = await adminContext.newPage();
+  watch(ap, 'Verwaltung');
+  await ap.goto(url);
+  await ap.fill('input[name=name]', 'Test Schatzmeisterin');
+  await ap.fill('input[name=password]', NEU);
+  await ap.click('#login-form button[type=submit]');
+  await ap.waitForSelector('.sidebar');
+  await ap.click('[data-page=users]');
+  await ap.waitForSelector('[data-new-user]');
+  check((await ap.locator('#main').textContent()).includes('Test Schatzmeisterin'), 'Benutzer & Rollen: eigene Person in der Liste');
+  check(await ap.locator('[data-role]').count() === 5, 'Benutzer & Rollen: fünf Rollen als Anfangsbestand');
+  await ap.screenshot({ path: join(shots, 's40-benutzer-rollen.png') });
+  await ap.click('[data-role] >> nth=1');
+  await ap.waitForSelector('#modal[open] #role-form');
+  await ap.screenshot({ path: join(shots, 's41-rolle-bearbeiten.png') });
+  await ap.locator('#modal [data-cancel]').click();
+  await ap.click('[data-new-user]');
+  await ap.waitForSelector('#modal[open] #user-form');
+  await ap.fill('#user-form input[name=name]', 'Test Mitgliederbeauftragte');
+  await ap.locator('#user-form label.check', { hasText: 'Landesmitgliederbeauftragter' }).locator('input').check();
+  await ap.fill('#user-form input[name=password]', PASSWORT);
+  await ap.screenshot({ path: join(shots, 's42-person-anlegen.png') });
+  await ap.click('#user-form button[type=submit]');
+  await ap.waitForFunction(() => document.getElementById('toast').textContent.includes('angelegt'));
+  check((await ap.locator('#main').textContent()).includes('Test Mitgliederbeauftragte'), 'Benutzer & Rollen: neue Person erscheint in der Liste');
+
+  const limited = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await guard(limited);
+  const mb = await limited.newPage();
+  watch(mb, 'Mitgliederbeauftragte');
+  await mb.goto(url);
+  await mb.fill('input[name=name]', 'Test Mitgliederbeauftragte');
+  await mb.fill('input[name=password]', PASSWORT);
+  await mb.click('#login-form button[type=submit]');
+  await mb.waitForSelector('.sidebar');
+  const nav = await mb.locator('.nav [data-page]').evaluateAll((els) => els.map((e) => e.dataset.page));
+  check(JSON.stringify(nav) === JSON.stringify(['overview', 'members', 'cases', 'map', 'auswertung', 'settings']), `Mitgliederbeauftragte: nur ihre Seiten (${nav.join(', ')})`);
+  check(await mb.locator('.cards').count() === 0 && await mb.locator('[data-monthly]').count() === 0, 'Mitgliederbeauftragte: Start ohne Finanzkennzahlen');
+  check(await mb.locator('.task-card').count() === 1, 'Mitgliederbeauftragte: Start zeigt nur die Mitgliederverwaltung');
+  await mb.screenshot({ path: join(shots, 's43-start-mitgliederbeauftragte.png') });
+  await mb.click('[data-page=members]');
+  await mb.waitForTimeout(400);
+  check(await mb.locator('#main table tbody tr').count() > 0, 'Mitgliederbeauftragte: Mitgliederliste sichtbar');
+  await mb.click('[data-page=settings]');
+  await mb.waitForTimeout(300);
+  const tabNames = await mb.locator('[data-tab]').evaluateAll((els) => els.map((e) => e.dataset.tab));
+  check(JSON.stringify(tabNames) === JSON.stringify(['zugang']), `Mitgliederbeauftragte: in den Einstellungen nur die eigene Anmeldung (${tabNames.join(', ')})`);
+  for (const path of ['/api/kasse?year=2026', '/api/benutzer', '/api/backup', '/api/journal.csv?year=2026']) {
+    const answer = await limited.request.get(url + path);
+    check(answer.status() === 403, `Mitgliederbeauftragte: Server lehnt ${path.split('?')[0]} ab (${answer.status()})`);
+  }
+  await limited.close();
+  await adminContext.close();
+
   // ---------- Sperre nach Fehlversuchen ----------
   for (let i = 0; i < 5; i++) {
     await fetch(`${url}/api/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url }, body: JSON.stringify({ name: 'x', password: 'falsch-falsch-falsch' }) });

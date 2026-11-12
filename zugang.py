@@ -94,7 +94,8 @@ def check_login(db, name, password):
     """Name des Benutzers bei richtigem Passwort, sonst None – in jedem Fall mit einer vollen scrypt-Prüfung."""
     user = find_user(db, name)
     usable = isinstance(password, str) and 0 < len(password) <= MAX_LENGTH
-    if not user or not is_set(user['password']) or not usable:
+    active = bool(user) and ('active' not in user.keys() or user['active'])   # deaktivierte Personen (rollen.py) melden sich nicht an
+    if not user or not active or not is_set(user['password']) or not usable:
         burn_time(password)
         return None
     return user['name'] if verify(password, user['password']) else None
@@ -119,12 +120,15 @@ def set_password(db, name, password, actor=None, create=False):
             clean = user['name']
             what = 'Passwort geändert'
         elif create:
-            db.execute('INSERT INTO users(name,password) VALUES(?,?)', (clean, hashed))
+            created = db.execute('INSERT INTO users(name,password) VALUES(?,?)', (clean, hashed)).lastrowid
             what = 'Benutzer angelegt (Serverbetrieb)'
         else:
             raise ValueError('Benutzer nicht gefunden.')
         db.execute('INSERT INTO audit(time,actor,action,detail) VALUES(?,?,?,?)',
                    (datetime.now().isoformat(timespec='seconds'), actor or clean, what, json.dumps({'benutzer': clean}, ensure_ascii=False)))
+        if create:   # nur über den Verwaltungsbefehl auf dem Server: die erste Person, die sich anmelden kann, bekommt alle Rechte
+            import rollen
+            rollen.on_user_created(db, user['id'] if user else created)   # in derselben Transaktion wie das Anlegen
     return clean
 
 
