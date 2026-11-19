@@ -17,6 +17,7 @@ Verwaltung stehen in `SERVER.md`.
 - **Anmelden mit dem JU-Konto (Keycloak, ab 0.36):** Ist auf dem Server Keycloak eingerichtet und eingeschaltet
   (`JU_FINANZEN_ANMELDUNG=keycloak`, siehe `SERVER.md`), heißt der Knopf **Mit JU-Konto anmelden**. Keycloak fragt
   Benutzername, Passwort und – je nach Person – den Code der Authenticator-App ab und schickt zurück ins Programm.
+  Die Anmeldeseiten von Keycloak sehen aus wie das Programm (Logo, Farben, Titel „JU Hamburg Verwaltung“).
   - Erste Anmeldung: mit dem **Startpasswort**, das die Verwaltung persönlich weitergibt. Keycloak verlangt sofort ein
     eigenes Passwort und – bei App-Pflicht – das Einrichten einer Authenticator-App (z. B. Google oder Microsoft
     Authenticator, 1Password): QR-Code scannen, Code eingeben.

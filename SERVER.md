@@ -177,7 +177,13 @@ Der Befehl:
   Die Account-Konsole ist gesperrt: Niemand kann seine Zwei-Faktor-Anmeldung selbst entfernen. Von den Pflichtschritten
   (Required Actions) bleiben nur „Passwort ändern“ und „Authenticator-App einrichten“ eingeschaltet – die übrigen
   (z. B. Anmeldedaten löschen, Profil ändern) ließen sich sonst über die Anmelde-Adresse selbst anstoßen. Kein Client des
-  Realms (auch nicht `admin-cli`) erlaubt die Anmeldung nur mit Passwort (Direct Access Grants aus);
+  Realms (auch nicht `admin-cli`) erlaubt die Anmeldung nur mit Passwort (Direct Access Grants aus). „Full scope allowed“
+  ist beim Client aus (ab 0.38; der Schalter ist in Keycloak veraltet): Tokens tragen nur die Rollen der
+  Nutzerverwaltung (`manage-users`, `view-users`, `query-users` aus `realm-management`; `query-groups` steckt in
+  `view-users`), Anmelde-Tokens von Personen keine;
+- kopiert die Anmeldeseiten im Aussehen der Anwendung (`server/keycloak-theme/ju-hamburg`) nach
+  `/opt/keycloak/<Version>/themes/ju-hamburg` (root, für andere nur lesbar) und stellt im Realm `loginTheme=ju-hamburg`
+  ein – siehe „Aussehen der Anmeldeseiten“ unten;
 - trägt `JU_FINANZEN_KEYCLOAK_*` in `/etc/ju-finanzen/ju-finanzen.env` ein (Rechte bleiben root:jufinanzen, 640).
   `JU_FINANZEN_ANMELDUNG` bleibt unverändert; das Programm liest die Werte nach `sudo ju-finanzen neustart`;
 - veröffentlicht über Tailscale Serve nur `/auth/realms/ju-hamburg` und `/auth/resources`. Die Admin-Konsole und der
@@ -231,6 +237,23 @@ sudo systemctl stop ju-keycloak
 sudo cat /var/backups/ju-keycloak/keycloak-2026-11-19.dump | sudo -u postgres pg_restore --clean --if-exists -d keycloak
 sudo systemctl start ju-keycloak
 ```
+
+**Aussehen der Anmeldeseiten (Theme `ju-hamburg`):** Anmeldung, neues Passwort, Authenticator-App einrichten,
+Code-Eingabe, Fehler- und Abmeldeseiten sehen aus wie die Anwendung (Farben, Schrift, Rundungen, Knöpfe, Logo, Titel
+„JU Hamburg Verwaltung“). Das Theme liegt im Programm unter `server/keycloak-theme/ju-hamburg/login/`:
+`theme.properties` (Eltern-Theme `keycloak.v2`), `resources/css/ju-hamburg.css` (Werte aus `static/css/app.css`),
+`resources/img/` (Logo, Symbol) und `messages/messages_de.properties` (Texte). Es enthält bewusst keine eigenen Vorlagen:
+Aufbau und Formulare kommen weiter von Keycloak, Updates brechen es nicht. Alles liegt lokal und kommt über den schon
+freigegebenen Pfad `/auth/resources`; die Content-Security-Policy von Keycloak bleibt unverändert.
+- Nach einem Update des Programms, das das Theme ändert, einmal `sudo ju-finanzen keycloak-einrichten` ausführen (kopiert
+  das Theme neu und startet Keycloak neu – Vorlagen und Texte liest Keycloak nur beim Start). Der Befehl hängt eine
+  Prüfsumme an die Adressen von CSS und Logo und leert Keycloaks Zwischenspeicher gepackter Dateien
+  (`/var/lib/keycloak/tmp/kc-gzip-cache`); sonst sähen Browser bis zu 30 Tage das alte Aussehen.
+- Seiten, die unsere Nutzer nicht erreichen (Registrierung, „Passwort vergessen“, Passkeys …), bekommen dieselben Farben,
+  aber die Standardtexte von Keycloak. Die Admin-Konsole (nur SSH-Tunnel) behält das Aussehen von Keycloak.
+- Nach einem Update von Keycloak die Seiten einmal ansehen: Das Theme hängt an den Klassennamen von `keycloak.v2`
+  (PatternFly 5). Zurück zum Standard im Notfall: Admin-Konsole → Realm `ju-hamburg` → Themes → Login theme leeren (der
+  nächste Lauf von `keycloak-einrichten` stellt `ju-hamburg` wieder ein).
 
 **Updates von Keycloak:** Keycloak liegt außerhalb der Programmversionen; `ju-finanzen aktualisieren` und `install.sh`
 lassen es unverändert. Eine neue Keycloak-Version kommt mit einer neuen Programmversion (Version und SHA-256 in
