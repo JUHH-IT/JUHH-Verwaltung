@@ -58,15 +58,20 @@ jobs:
             ergebnis="$(gh run list --repo "$REPO" --workflow tests.yml --commit "$SHA" --event push --json conclusion --jq '.[0].conclusion')"
             [ "$ergebnis" = success ] || { echo "::error::Die Tests für diesen Stand von main sind nicht grün (Ergebnis: ${ergebnis:-noch keins}). Bitte warten bzw. Actions → Tests ansehen."; exit 1; }
           fi
+          # Ein eben angelegter Entwurf steht noch nicht sofort in der Liste – deshalb nach dem Anlegen nichts mehr nachschlagen.
           draft="$(gh api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name==\"$tag\" and .draft) | .id" | head -n 1)"
-          if [ -z "$draft" ]; then
-            gh release create "$tag" --repo "$REPO" --draft --target "$SHA" --title "$version" --generate-notes
-            draft="$(gh api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name==\"$tag\" and .draft) | .id" | head -n 1)"
-          fi
           if [ "$FREIGEBEN" = true ]; then
-            gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" -F draft=false >/dev/null
+            if [ -n "$draft" ]; then
+              gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" -F draft=false >/dev/null
+            else
+              gh release create "$tag" --repo "$REPO" --target "$SHA" --title "$version" --generate-notes
+            fi
             echo "::notice::Version $version ist freigegeben (Tag $tag auf ${SHA:0:7}). Auf dem Server: sudo ju-finanzen aktualisieren"
           else
-            gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" >/dev/null
+            if [ -n "$draft" ]; then
+              gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" >/dev/null
+            else
+              gh release create "$tag" --repo "$REPO" --draft --target "$SHA" --title "$version" --generate-notes
+            fi
             echo "::notice::Release-Entwurf $tag steht auf ${SHA:0:7}. Freigeben: Actions → Release → Run workflow (oder Releases → Publish release)."
           fi
