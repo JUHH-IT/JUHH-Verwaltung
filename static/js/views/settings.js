@@ -2,7 +2,7 @@
 // E-Mail-Versand (Strato), Vorlagen, Sicherung; im Serverbetrieb zusätzlich Anmeldung (Passwort ändern).
 import { api, download } from '../api.js';
 import { html, mount, raw } from '../html.js';
-import { toInput } from '../format.js';
+import { toInput, weekdayDate } from '../format.js';
 import { store, refresh, can } from '../store.js';
 import { pageHead, safe, toast, icon, mailPreview, dialog, table, badge, empty, confirmAction, uploadProtected } from '../ui.js';
 import { ovLabel } from '../gliederung.js';
@@ -33,6 +33,7 @@ function schalter(s) {
   for (let y = first; y <= now + 1; y++) years.push(y);
   const on = s.kv_share_auto === 'yes', from = s.kv_share_auto_from || String(now + 1);
   const open = store.data.dues_open_all, waiting = store.data.cases?.unassigned || 0;
+  const wahl = store.data.wahl;   // Stichtage der Wahlberechtigung mit Vorschlag (wahlrecht.py)
   return html`<form data-save class="panel switch-list">
     <div class="switch-row">
       <div class="switch-text"><h2>Beitragsanteil der Kreisverbände automatisch aus den Mitgliedsbeiträgen</h2>
@@ -45,6 +46,21 @@ function schalter(s) {
           sonst fehlen sie im Anteil der Kreisverbände.</p>` : ''}</div>
       <label class="switch"><input type="checkbox" name="kv_share_auto" role="switch" aria-label="Beitragsanteil der Kreisverbände automatisch" ${on ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
         <span class="switch-label" data-switch-label>${on ? 'An' : 'Aus'}</span></label>
+    </div>
+    <div class="switch-row">
+      <div class="switch-text"><h2>Wahlberechtigung (Satzung § 37)</h2>
+        <p class="muted">Das Programm berechnet für jedes Mitglied den Status wahlberechtigt, nicht wahlberechtigt oder ausgetreten (Mitgliederverwaltung → Wahlberechtigung).
+          Wahlberechtigt ist, wer am Beitrittsstichtag Mitglied war und dessen bis zum Beitragsstichtag fällige Beiträge eingegangen sind. Vor dem gewählten Jahr
+          zeigt die Mitgliederliste nur aktiv und ausgetreten. Ein eingetragener Stichtag gilt für sein Kalenderjahr – ist er vorbei, schlägt das Programm wieder den nächsten vor.</p>
+        <div class="formgrid">
+          <label class="field">Wahlberechtigung auswerten ab Jahr<input name="wahlrecht_ab" type="number" min="2026" max="2100" step="1" required value="${s.wahlrecht_ab}"></label>
+          <label class="field">Beitrittsstichtag<input type="date" name="wahl_beitrittsstichtag" value="${s.wahl_beitrittsstichtag}" data-weekday>
+            <span class="small" data-weekday-text></span>
+            <span class="small muted">leer = 30.11. vor dem Beitragsstichtag: ${weekdayDate(wahl.vorschlag.beitritt)}</span></label>
+          <label class="field">Beitragsstichtag<input type="date" name="wahl_beitragsstichtag" value="${s.wahl_beitragsstichtag}" data-weekday="werktag">
+            <span class="small" data-weekday-text></span>
+            <span class="small muted">leer = Vorschlag (letzter Werktag im Januar): ${weekdayDate(wahl.vorschlag.beitrag)} – bitte prüfen: Samstag zählt hier als Werktag</span></label>
+        </div></div>
     </div>
     <div class="switch-row">
       <div class="switch-text"><h2>Karte: Hintergrund von OpenStreetMap laden</h2>
@@ -374,6 +390,16 @@ export async function settings(main) {
     if (known) main.querySelector('input[name="liability_name"]').value = known.name;
   });
   const form = main.querySelector('form[data-save]');
+  main.querySelectorAll('[data-weekday]').forEach((input) => {   // Stichtage der Wahlberechtigung: Wochentag zeigen; der Beitragsstichtag ist ein Werktag
+    const show = () => {
+      const sunday = input.dataset.weekday === 'werktag' && input.value && new Date(input.value + 'T12:00:00').getDay() === 0;
+      const text = input.parentElement.querySelector('[data-weekday-text]');
+      text.textContent = input.value ? `eingetragen: ${weekdayDate(input.value)}${sunday ? ' – ein Sonntag ist kein Werktag, bitte prüfen' : ''}` : '';
+      text.style.color = sunday ? 'var(--danger)' : '';
+    };
+    input.addEventListener('input', show);
+    show();
+  });
   main.querySelectorAll('.switch input').forEach((box) => box.addEventListener('change', () => {
     box.closest('.switch').querySelector('[data-switch-label]').textContent = box.checked ? 'An' : 'Aus';
   }));

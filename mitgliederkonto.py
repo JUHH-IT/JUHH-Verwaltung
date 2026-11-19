@@ -164,7 +164,8 @@ def _account(store, m, ctx):
     last = max((p['day'] for p in pays if p['amount'] > 0), default=None)
     return {'member_id': m['id'], 'years': years, 'postings': postings, 'balance': balance, 'arrears': max(-balance, 0),
             'credit': max(balance, 0), 'issues': issues, 'last_payment': last,
-            'arrear_years': [r['year'] for r in years if r['open']]}
+            'arrear_years': [r['year'] for r in years if r['open']],
+            'unclear_years': [r['year'] for r in years if r['soll'] is None]}      # Soll nicht berechenbar (wahlrecht.py)
 
 
 def account(store, member_id, today=None):
@@ -188,8 +189,14 @@ def overview(store, year=None, today=None):
         rows[m['id']] = {'soll': y['soll'] if y else 0, 'basis': y['basis'] if y else 'kein Beitrag', 'issue': y['issue'] if y else None,
                          'paid': y['paid'] if y else 0, 'open': y['open'] if y else 0, 'balance': acc['balance'], 'arrears': acc['arrears'],
                          'credit': acc['credit'], 'issues': acc['issues'], 'last_payment': acc['last_payment'], 'arrear_years': acc['arrear_years'],
-                         'mandate': m['id'] in mandates}
+                         'unclear_years': acc['unclear_years'], 'mandate': m['id'] in mandates}
     return rows
+
+
+def returned_after(store, after, years, today=None):
+    """Mitglieder, bei denen nach dem Tag `after` (bis heute) eine Rücklastschrift oder Rückzahlung für eines der Beitragsjahre gebucht ist."""
+    pay = _context(store, today)['pay']
+    return {mid for mid, rows in pay.items() if any(p['amount'] < 0 and p['day'] > after and p['year'] in years for p in rows)}
 
 
 def reconciliation(store, year, until=None):

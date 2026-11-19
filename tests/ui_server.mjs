@@ -55,7 +55,7 @@ async function seed() {
   await post('/api/logout', {});
 }
 
-const PAGES = ['overview', 'members', 'cases', 'map', 'bank', 'dues', 'invoices', 'bills', 'openitems', 'budgets', 'auswertung', 'journal', 'konten', 'settings'];
+const PAGES = ['overview', 'members', 'cases', 'map', 'wahl', 'bank', 'dues', 'invoices', 'bills', 'openitems', 'budgets', 'auswertung', 'journal', 'konten', 'settings'];
 // Der Durchlauf geht nie ins Netz: Kartenkacheln bekommen ein leeres Bild, jede andere Anfrage nach außen ist ein Fehler
 const outside = [];
 const guard = (context) => context.route((url) => !['127.0.0.1', 'localhost'].includes(url.hostname) && !['data:', 'blob:', 'about:'].includes(url.protocol), (route) => {
@@ -289,7 +289,7 @@ try {
   await mb.click('#login-form button[type=submit]');
   await mb.waitForSelector('.sidebar');
   const nav = await mb.locator('.nav [data-page]').evaluateAll((els) => els.map((e) => e.dataset.page));
-  check(JSON.stringify(nav) === JSON.stringify(['overview', 'members', 'cases', 'map', 'auswertung', 'settings']), `Mitgliederbeauftragte: nur ihre Seiten (${nav.join(', ')})`);
+  check(JSON.stringify(nav) === JSON.stringify(['overview', 'members', 'cases', 'map', 'wahl', 'auswertung', 'settings']), `Mitgliederbeauftragte: nur ihre Seiten (${nav.join(', ')})`);
   check(await mb.locator('.cards').count() === 0 && await mb.locator('[data-monthly]').count() === 0, 'Mitgliederbeauftragte: Start ohne Finanzkennzahlen');
   check(await mb.locator('.task-card').count() === 1, 'Mitgliederbeauftragte: Start zeigt nur die Mitgliederverwaltung');
   await mb.screenshot({ path: join(shots, 's43-start-mitgliederbeauftragte.png') });
@@ -304,6 +304,33 @@ try {
     const answer = await limited.request.get(url + path);
     check(answer.status() === 403, `Mitgliederbeauftragte: Server lehnt ${path.split('?')[0]} ab (${answer.status()})`);
   }
+  // 0.37: Wahlberechtigung und Austritt mit „Mitglieder ändern“ ohne Buchhaltung und ohne Einstellungen
+  await mb.click('[data-page=wahl]');
+  await mb.waitForSelector('.wr-page .cards');
+  check(await mb.locator('.wr-page [data-member]').count() > 0 && await mb.locator('.wr-page [data-settings]').count() === 0,
+    'Mitgliederbeauftragte: Wahlberechtigung mit Mitgliedern, ohne „Stichtage ändern“');
+  check(!(await mb.locator('.wr-page').textContent()).includes('€'), 'Mitgliederbeauftragte: Wahlberechtigung ohne Beträge');
+  for (const path of ['/api/wahlrecht', '/api/wahlrecht.pdf', '/api/wahlrecht.csv']) {
+    const answer = await limited.request.get(url + path);
+    check(answer.status() === 200, `Mitgliederbeauftragte: Server liefert ${path} (${answer.status()})`);
+  }
+  await mb.locator('.wr-page [data-member]').first().click();
+  await mb.waitForSelector('#modal [data-leave]');
+  await mb.click('#modal [data-leave]');
+  await mb.waitForSelector('#preview[open] #leave-form');
+  check(!(await mb.locator('#leave-form').textContent()).includes('€'), 'Mitgliederbeauftragte: Austritt-Dialog ohne Beträge');
+  check(await mb.locator('#leave-form [data-leave-year]').isVisible() && (await mb.locator('#leave-form [data-leave-year]').textContent()).includes('Austrittsjahres'),
+    'Austritt-Dialog warnt: Beitrag des Austrittsjahres muss festgelegt werden');
+  await mb.screenshot({ path: join(shots, 's44-austritt-mitgliederbeauftragte.png') });
+  await mb.click('#leave-form button[type=submit]');
+  check(await mb.waitForFunction(() => document.querySelector('#modal [data-status]')?.textContent.includes('ausgetreten'), null, { timeout: 5000 }).then(() => true, () => false),
+    'Mitgliederbeauftragte: Austritt eingetragen, Status ausgetreten');
+  await mb.click('#modal [data-leave]');
+  await mb.waitForSelector('#preview[open] #leave-form [data-undo]');
+  await mb.click('#leave-form [data-undo]');
+  check(await mb.waitForFunction(() => { const t = document.querySelector('#modal [data-status]')?.textContent || ''; return t && !t.includes('ausgetreten'); }, null, { timeout: 5000 })
+    .then(() => true, () => false), 'Mitgliederbeauftragte: Austritt zurückgenommen');
+  await mb.keyboard.press('Escape');
 
   // ---------- Sicherheit (ab 0.35): Lagebild, Ereignisse, Notfall mit Sperrbildschirm und Passwortbestätigung ----------
   // eigene, frische Sitzung: die Bestätigung von „Person anlegen“ gilt hier nicht, „Notfall beenden“ muss nachfragen

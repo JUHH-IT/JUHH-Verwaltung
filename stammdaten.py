@@ -7,7 +7,7 @@ import re
 
 from datetime import date
 
-from formate import money, iban_valid, iban_pretty, email_address, euro, german_date
+from formate import money, iban_valid, iban_pretty, email_address, euro, german_date, iso
 import lastschrift
 
 PLACEHOLDERS = {
@@ -48,6 +48,9 @@ DEFAULTS = {
     'kv_share_auto': 'no', 'kv_share_auto_from': '',
     # Karte (ab 0.32): Kartenhintergrund von OpenStreetMap laden (es gehen nur Kartenausschnitte ins Netz, keine Mitgliederdaten)
     'map_tiles': 'yes',
+    # Wahlberechtigung (ab 0.37, Satzung § 37, wahlrecht.py): auswerten ab diesem Jahr (2026 wird nicht ausgewertet, Entscheidung
+    # Lennert Gust 19.11.2026); Stichtage der nächsten turnusmäßigen Wahlen (JJJJ-MM-TT, leer = Vorschlag des Programms)
+    'wahlrecht_ab': '2027', 'wahl_beitrittsstichtag': '', 'wahl_beitragsstichtag': '',
     # Beiträge (Satzung § 49): Staffel nach Alter, anteilig im Eintrittsjahr
     'age_basis': 'jan1', 'dues_min_age': '14',   # Altersstichtag 01.01. (Entscheidung Lennert Gust 08.11.2026)
     'dues_young_max': '18', 'dues_young': '1000',
@@ -227,7 +230,19 @@ def clean(data, current):
             if v and not re.fullmatch(r'20\d\d', v):
                 raise ValueError('Beitragsanteil automatisch: bitte das Haushaltsjahr wählen, ab dem der Schalter gilt.')
             out[key] = v
+        elif key == 'wahlrecht_ab':
+            if not (re.fullmatch(r'\d{4}', v) and 2026 <= int(v) <= 2100):
+                raise ValueError('Wahlberechtigung auswerten ab: bitte ein Jahr von 2026 bis 2100 angeben (z. B. 2027).')
+            out[key] = v
+        elif key in ('wahl_beitrittsstichtag', 'wahl_beitragsstichtag'):
+            try:
+                out[key] = iso(v) if v else ''
+            except ValueError:
+                raise ValueError('Stichtag der Wahlberechtigung: Datum nicht erkannt.') from None
     merged = {**current, **out}
+    if any(key.startswith('wahl_') for key in out):
+        import wahlrecht
+        wahlrecht.pruefe_einstellungen(merged)   # Paarprüfung gegen den heute geltenden Stichtag (überholte Werte sperren nichts)
     if not int(merged['dues_min_age']) <= int(merged['dues_young_max']) < int(merged['dues_mid_max']):
         raise ValueError('Altersgrenzen der Beitragsstaffel: Mindestalter ≤ erste Grenze < zweite Grenze.')
     if merged['kv_share_auto'] == 'yes' and not merged['kv_share_auto_from']:

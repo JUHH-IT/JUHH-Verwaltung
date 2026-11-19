@@ -83,7 +83,8 @@ GET = {
                                   '/api/rpj-buchungen.csv', '/api/rpj-vorlage.csv', '/api/kv-ledger', '/api/kv.pdf', '/api/kv-detail')},
     # der Buchungsplatz braucht Haushaltstitel und RPJ-Projekte
     **{path: _r(_V, _B) for path in ('/api/haushalt-reference', '/api/rpj', '/api/rpj-offen')},
-    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account')},
+    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account',
+                                  '/api/wahlrecht', '/api/wahlrecht.pdf', '/api/wahlrecht.csv')},   # Status mit Gründen, ohne Beträge (0.37)
     '/api/beitrag-nach-alter': _r(_M, _B),
     '/api/adressen-status': _r(_M, 'einstellungen', 'verwaltung'),
     **{path: _r('auswertung') for path in ('/api/auswertung', '/api/auswertung.pdf', '/api/auswertung.csv')},
@@ -107,7 +108,7 @@ POST = {
     **{path: _w(_M) for path in (
         '/api/member', '/api/members-preview', '/api/members-import', '/api/gliederung-vorschau', '/api/gliederung-import',
         '/api/ortsverband', '/api/ortsverband-status', '/api/ortsverband-loeschen', '/api/kv-nummern', '/api/klaerfall-klaeren',
-        '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete')},
+        '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete', '/api/member-austritt')},
     '/api/adresse-pruefen': _r(_M), '/api/strassen-suche': _r(_M),
     '/api/adressen-laden': _w(_M, 'verwaltung'),
     **{path: _w(_B) for path in (

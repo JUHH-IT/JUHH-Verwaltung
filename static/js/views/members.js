@@ -1,11 +1,12 @@
 // Mitglieder (Mitgliederverwaltung): Liste mit Suche (Name, Anschrift, Nummer, E-Mail), Kreis- und Ortsverband, Status, Anlegen/Bearbeiten
 // mit allen Angaben der Mitgliederverwaltung (Kreisverband als Auswahl, Ortsverband nur aus dem gewählten Kreisverband – gliederung.js) und
-// Import einer Mitgliederliste (Excel/CSV, auch kennwortgeschützt). Ab 0.31 zeigt die Liste nur noch den Stand des Beitrags; Beträge,
+// Import einer Mitgliederliste (Excel/CSV, auch kennwortgeschützt). Ab 0.37 Status (wahlberechtigt / nicht wahlberechtigt / ausgetreten,
+// vom Server berechnet) und „Austritt eintragen“ im geöffneten Mitglied. Ab 0.31 zeigt die Liste nur noch den Stand des Beitrags; Beträge,
 // Beitragseingänge (views/dues.js) und OP-Listen (views/open-items.js) gehören zur Buchhaltung, Klärfälle zu views/klaerfaelle.js.
 // Das geöffnete Mitglied zeigt weiter sein Beitragskonto (mitgliederkonto.py): Jahre, Buchungen, Soll von Hand festlegen.
 import { api } from '../api.js';
 import { html, mount, raw } from '../html.js';
-import { eur, signed, date, toInput } from '../format.js';
+import { eur, signed, date, toInput, todayIso } from '../format.js';
 import { store, refresh, kvName, go } from '../store.js';
 import { pageHead, icon, table, empty, dialog, overlay, safe, toast, badge, uploadProtected } from '../ui.js';
 import { kvOvFields, bindKvOv, ovById, ovLabel, ovsOf } from '../gliederung.js';
@@ -17,7 +18,7 @@ let search = '';
 let kvFilter = '';
 let ovFilter = '';   // '' = alle, 'none' = ohne Ortsverband, sonst id
 let stateFilter = '';
-let memberFilter = 'active';   // aktiv | ausgetreten | alle
+let memberFilter = 'active';   // aktiv | ausgetreten | alle; mit Wahlberechtigung (0.37) auch wahlberechtigt | nicht
 const LIMIT = 500;   // Zeilen in der Liste (Suche grenzt ein)
 const STATES = { arrears: 'mit Rückstand', credit: 'mit Guthaben', issue: 'Beitrag zu klären', guest: 'Gastmitglieder', free: 'beitragsfrei' };
 const inState = (m) => !stateFilter || ({ arrears: m.balance < 0, credit: m.balance > 0, issue: m.dues_issues.length > 0, guest: !!m.guest,
@@ -25,6 +26,12 @@ const inState = (m) => !stateFilter || ({ arrears: m.balance < 0, credit: m.bala
 /** Kennzeichen Gastmitglied / beitragsfrei (Mitgliederverwaltung). */
 const statusBadges = (m) => html`${m.guest ? html` ${badge('Gast', 'navy')}` : ''}${m.dues_free ? html` ${badge('beitragsfrei', '')}` : ''}${
   m.no_mail ? html` ${badge('Postausschluss', 'warn')}` : ''}`;
+/** Mitgliederstatus (0.37): der Server rechnet (wahlrecht.py) – wahlberechtigt / nicht wahlberechtigt / ausgetreten mit Gründen ohne Beträge.
+ * Vor „Wahlberechtigung auswerten ab“ liefert er keinen Status; dann wie bisher nur aktiv/ausgetreten. */
+const WAHL = { wahlberechtigt: ['wahlberechtigt', 'ok'], nicht: ['nicht wahlberechtigt', 'warn'], ausgetreten: ['ausgetreten', ''] };
+export const wahlBadge = (status) => badge(...WAHL[status]);
+const isActive = (m, today = todayIso()) => !m.left_on || m.left_on > today;
+const memberStatus = (m) => (m.wahl ? wahlBadge(m.wahl.status) : isActive(m) ? badge('aktiv', 'ok') : badge('ausgetreten', ''));
 /** Volle Jahre zwischen zwei Daten (JJJJ-MM-TT) – Alter bzw. Jubiläumsjahre wie in der Mitgliederverwaltung. */
 const years = (from, to = new Date().toISOString().slice(0, 10)) => (from ? Number(to.slice(0, 4)) - Number(from.slice(0, 4)) - (to.slice(5) < from.slice(5) ? 1 : 0) : null);
 const text = (name, label, v, attrs = {}) => html`<label class="field">${label}<input name="${name}" autocomplete="off" maxlength="${attrs.max || 200}"
@@ -249,11 +256,13 @@ export function account(id, { back = null } = {}) {
   const el = dialog('Mitglied · ' + sortName(m), html`
     ${back ? html`<button type="button" class="link back-link" data-back>← Zurück zur Liste</button>` : ''}
     <div class="panel-head"><p class="muted">${m.number} · ${kvName(m.kv)}${m.ov_id ? ` · OV ${ovLabel(ovById(m.ov_id))}` : ''} · geboren ${date(m.birth)} (${years(m.birth)} Jahre)
-      · Eintritt ${date(m.joined)}${m.left_on ? ` · Austritt ${date(m.left_on)}` : ` (${years(m.joined)} Jahre Mitglied)`}${statusBadges(m)}<br>
+      · Eintritt ${date(m.joined)}${m.left_on ? ` · Austritt ${isActive(m) ? 'zum ' : ''}${date(m.left_on)}` : ` (${years(m.joined)} Jahre Mitglied)`}${statusBadges(m)}<br>
+      <span data-status>Status: ${memberStatus(m)}${m.wahl?.gruende.length ? html` <span class="small">${m.wahl.gruende.join(' · ')}</span>` : ''}</span><br>
       ${m.title ? `${m.title} ` : ''}${m.address.split('\n').map((l, i) => html`${i ? html`<br>` : ''}${l}`)}<br>${m.email || 'keine E-Mail-Adresse'} · Jahresbeitrag: ${duesLabel(m)}
       <span data-contact></span></p>
       <span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/api/member-account.pdf?id=${id}" target="_blank" rel="noopener">${icon('file', 16)} Beitragskonto (PDF)</a>
         <button type="button" class="btn" data-edit>${icon('edit', 16)} Bearbeiten</button>
+        <button type="button" class="btn" data-leave>${m.left_on ? 'Austritt ändern' : 'Austritt eintragen'}</button>
         <button type="button" class="btn ghost" data-delete>Löschen</button></span></div>
     <div data-account><p class="small muted">Wird geladen …</p></div>
     ${mandateSection(m)}
@@ -263,6 +272,7 @@ export function account(id, { back = null } = {}) {
       : empty('Keine Rechnungen', 'Beitragslauf unter „Rechnungen“ starten.')}`, { wide: true });
   el.querySelector('[data-edit]').onclick = () => safe(async () => memberDialog(full || (await api('/api/member-account?id=' + id)).member));
   el.querySelector('[data-delete]').onclick = () => deleteMember(m, () => el.close());
+  el.querySelector('[data-leave]').onclick = () => safe(async () => leaveDialog(m, await api('/api/member-account?id=' + id), () => account(id, { back })));
   el.querySelector('[data-back]')?.addEventListener('click', back);
   bindMandateSection(el, m, () => account(id, { back }));
   const load = () => safe(async () => {
@@ -272,7 +282,7 @@ export function account(id, { back = null } = {}) {
       full.mobile_work && `Handy dienstl. ${full.mobile_work}`, full.email_work && `E-Mail dienstl. ${full.email_work}`].filter(Boolean).join(' · ');
     const known = full.external_balance !== null && full.external_balance !== undefined;
     const line = el.querySelector('[data-contact]');
-    if (line) mount(line, html`${contact ? html`<br>${contact}` : ''}${known ? html`<br>Kontostand laut Mitgliederverwaltung: ${eur(full.external_balance)}` : ''}${
+    if (line) mount(line, html`${full.left_reason ? html`<br>Austrittsgrund: ${full.left_reason}` : ''}${contact ? html`<br>${contact}` : ''}${known ? html`<br>Kontostand laut Mitgliederverwaltung: ${eur(full.external_balance)}` : ''}${
       a.sepa_refs.length ? html`<br>Gemerkte Mandatsreferenzen (SEPA-Datei): ${a.sepa_refs.map((r, n) => html`${n ? ', ' : ''}${r.mandate}
         <button type="button" class="link" data-forget="${n}" title="Nicht mehr automatisch diesem Mitglied zuordnen">entfernen</button>`)}` : ''}`);
     el.querySelectorAll('[data-forget]').forEach((b) => (b.onclick = () => safe(async () => {
@@ -304,6 +314,43 @@ export function account(id, { back = null } = {}) {
     box.querySelectorAll('[data-target]').forEach((b) => (b.onclick = () => targetDialog(m, a.years.find((r) => r.year === Number(b.dataset.target)), load)));
   });
   load();
+}
+
+/** Austritt eintragen, ändern oder zurücknehmen (0.37): Datum (auch künftig), Grund optional; a = /api/member-account mit den Hinweisen
+ * des Servers (Ja/Nein, ohne Beträge). Die Hinweise sperren nichts. Der Status ergibt sich danach von selbst. */
+function leaveDialog(m, a, reopen) {
+  const hints = [a.austritt.offen && 'offene Beiträge', a.austritt.mandat && 'ein aktives SEPA-Mandat'].filter(Boolean);
+  const el = overlay(`Austritt · ${sortName(m)}`, html`<form id="leave-form" style="display:flex;flex-direction:column;gap:14px">
+    <div class="formgrid"><label class="field">Austrittsdatum<input name="left_on" type="date" required min="${m.joined}" max="${Number(todayIso().slice(0, 4)) + 2}-12-31" value="${m.left_on || todayIso()}">
+        <span class="small muted">Auch ein künftiges Datum ist möglich – bis dahin bleibt das Mitglied aktiv.</span></label>
+      <label class="field span">Grund<input name="reason" maxlength="200" autocomplete="off" value="${a.member.left_reason || ''}" placeholder="optional, z. B. Kündigung, Umzug, Altersgrenze"></label></div>
+    ${hints.length ? html`<p class="notice warn" data-leave-hints>Bitte prüfen: Das Mitglied hat ${hints.join(' und ')}. Der Austritt wird trotzdem gespeichert.</p>` : ''}
+    <p class="notice warn" data-leave-year hidden></p>
+    <div class="form-actions">${m.left_on ? html`<button type="button" class="btn ghost" data-undo>Austritt zurücknehmen</button>` : ''}
+      <button type="button" class="btn ghost" data-close>Abbrechen</button><button type="submit" class="btn primary">Austritt speichern</button></div></form>`, { wide: false });
+  // Austrittsjahr ohne festes Soll (Festlegung oder Beitragsrechnung): der Beitrag ist danach „zu klären“ und das Mitglied bis zur
+  // Festlegung nicht wahlberechtigt (wahlrecht.py) – vor dem Speichern deutlich sagen
+  const dayInput = el.querySelector('[name=left_on]'), box = el.querySelector('[data-leave-year]');
+  const warn = () => {
+    const year = Number(dayInput.value.slice(0, 4));
+    box.hidden = !year || !!m.guest || !!m.dues_free || a.austritt.festgelegt.includes(year);
+    box.textContent = `Der Beitrag des Austrittsjahres ${year} muss danach in der Buchhaltung festgelegt werden (Beitragskonto → Soll festlegen)${
+      dayInput.value > todayIso() ? ' – bis dahin gilt das Mitglied als nicht wahlberechtigt' : ''}.`;
+  };
+  dayInput.oninput = warn;
+  warn();
+  const save = (data, message) => safe(async () => {
+    await api('/api/member-austritt', { id: m.id, ...data });
+    el.close();
+    await refresh();
+    toast(message);
+    reopen();
+  });
+  el.querySelector('[data-undo]')?.addEventListener('click', () => save({ left_on: null }, 'Austritt zurückgenommen.'));
+  el.querySelector('#leave-form').onsubmit = (e) => {
+    e.preventDefault();
+    save(Object.fromEntries(new FormData(e.target)), 'Austritt eingetragen.');
+  };
 }
 
 /** Soll eines Jahres von Hand festlegen (z. B. Austrittsjahr, Befreiung, Erlass) – mit Grund, im Protokoll. */
@@ -404,9 +451,14 @@ export function members(main) {
   if (ovFilter && ovFilter !== 'none' && !ovsOf(kvFilter, ovFilter).some((o) => String(o.id) === ovFilter)) ovFilter = '';
   const today = new Date().toISOString().slice(0, 10), y = String(store.year);
   const all = store.data.members;
-  const isActive = (m) => !m.left_on || m.left_on > today;
-  const active = all.filter(isActive);
-  const list = matchMembers(all, search, kvFilter).filter(inState).filter((m) => memberFilter === 'all' || (memberFilter === 'left') !== isActive(m))
+  const active = all.filter((m) => isActive(m, today));
+  const wahl = all.some((m) => m.wahl);   // Server liefert den Status erst ab „Wahlberechtigung auswerten ab“
+  const filters = wahl ? [['active', 'alle aktiven'], ['wahlberechtigt', 'wahlberechtigt'], ['nicht', 'nicht wahlberechtigt'], ['left', 'ausgetreten'], ['all', 'alle']]
+    : [['active', 'aktiv'], ['left', 'ausgetreten'], ['all', 'alle']];
+  if (!filters.some(([k]) => k === memberFilter)) memberFilter = 'active';
+  const inMember = (m) => memberFilter === 'all' || (memberFilter === 'left' ? !isActive(m, today)
+    : isActive(m, today) && (memberFilter === 'active' || m.wahl?.status === memberFilter));
+  const list = matchMembers(all, search, kvFilter).filter(inState).filter(inMember)
     .filter((m) => !ovFilter || (ovFilter === 'none' ? !m.ov_id : String(m.ov_id) === ovFilter));
   const ovChoices = kvFilter ? (store.data.ovs || []).filter((o) => o.kv === kvFilter && (o.members || o.active)) : [];
   const withoutMail = active.filter((m) => !m.email).length;
@@ -434,9 +486,9 @@ export function members(main) {
       <label class="field inline">Kreisverband<select id="member-kv"><option value="">alle</option>${kvs.map((k) => html`<option value="${k.code}" ${k.code === kvFilter ? 'selected' : ''}>${k.name}</option>`)}</select></label>
       ${kvFilter ? html`<label class="field inline">Ortsverband<select id="member-ov"><option value="">alle</option><option value="none" ${ovFilter === 'none' ? 'selected' : ''}>ohne Ortsverband</option>
         ${ovChoices.map((o) => html`<option value="${o.id}" ${String(o.id) === ovFilter ? 'selected' : ''}>${ovLabel(o)} (${o.members})</option>`)}</select></label>` : ''}
-      <label class="field inline">Status<select id="member-active">${[['active', 'aktiv'], ['left', 'ausgetreten'], ['all', 'alle']].map(([k, v]) => html`<option value="${k}" ${k === memberFilter ? 'selected' : ''}>${v}</option>`)}</select></label>
+      <label class="field inline">Status<select id="member-active">${filters.map(([k, v]) => html`<option value="${k}" ${k === memberFilter ? 'selected' : ''}>${v}</option>`)}</select></label>
       <label class="field inline">Beitrag<select id="member-state"><option value="">alle</option>${Object.entries(STATES).map(([k, v]) => html`<option value="${k}" ${k === stateFilter ? 'selected' : ''}>${v}</option>`)}</select></label></div>
-    <section class="panel" style="padding:6px 12px">${all.length ? table(['Mitglied', 'Anschrift', 'Kreis- und Ortsverband', 'Kontakt', { label: 'Alter', className: 'num' }, `Beitrag ${store.year}`],
+    <section class="panel" style="padding:6px 12px">${all.length ? table(['Mitglied', 'Anschrift', 'Kreis- und Ortsverband', 'Kontakt', { label: 'Alter', className: 'num' }, `Beitrag ${store.year}`, ...(wahl ? ['Status'] : [])],
       list.slice(0, LIMIT).map((m) => {
         const [state, hint] = duesState(m), age = years(m.birth);
         return html`<tr class="clickable" data-member="${m.id}" tabindex="0"><td><strong style="font-weight:600">${sortName(m)}</strong>${statusBadges(m)}<span class="sub">${m.number}${
@@ -444,7 +496,8 @@ export function members(main) {
           <td class="small">${m.zip ? addressLine(m) : html`${addressLine(m)} ${badge('Anschrift prüfen', 'warn')}`}</td>
           <td>${kvName(m.kv)}${m.ov_id ? html`<span class="sub">${ovLabel(ovById(m.ov_id))}</span>` : ''}</td><td class="small">${m.email || badge('E-Mail fehlt', 'warn')}</td>
           <td class="num">${age ?? '—'}${age !== null && m.birth && Number(m.birth.slice(0, 4)) === store.year - 35 ? html`<span class="sub">wird 35</span>` : ''}</td>
-          <td title="${m.dues_basis || ''}">${state}${activeMandate(m.id) ? html` ${badge('Lastschrift', 'navy')}` : ''}${hint ? html`<span class="sub">${hint}</span>` : ''}</td></tr>`;
+          <td title="${m.dues_basis || ''}">${state}${activeMandate(m.id) ? html` ${badge('Lastschrift', 'navy')}` : ''}${hint ? html`<span class="sub">${hint}</span>` : ''}</td>
+          ${wahl ? html`<td>${m.wahl ? html`${wahlBadge(m.wahl.status)}${m.wahl.status === 'nicht' ? html`<span class="sub">${m.wahl.gruende.join(' · ')}</span>` : ''}` : ''}</td>` : ''}</tr>`;
       }))
       : empty('Noch keine Mitglieder', 'Einzeln anlegen oder eine Mitgliederliste (Excel/CSV) importieren.')}
       ${all.length && !list.length ? html`<p class="muted" style="padding:12px">Kein Mitglied passt zur Auswahl.</p>` : ''}</section>
