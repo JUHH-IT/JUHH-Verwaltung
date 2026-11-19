@@ -183,7 +183,9 @@ export function karte(main) {
 
   function drawMap() {
     const el = body.querySelector('[data-map]');
-    map = L.map(el, { preferCanvas: true, zoomSnap: 0.5, attributionControl: true, zoomControl: false, center: (view || START).center, zoom: (view || START).zoom, minZoom: 9, maxZoom: 19 });
+    // Leaflet 1.9.4: ein direktes Neuzeichnen (z. B. nach „moveend“) vergisst den schon angeforderten Frame – der liefe nach dem Abbau der Karte ins Leere (clearRect)
+    const renderer = new (L.Canvas.extend({ _redraw() { L.Util.cancelAnimFrame(this._redrawRequest); L.Canvas.prototype._redraw.call(this); } }))();
+    map = L.map(el, { renderer, zoomSnap: 0.5, attributionControl: true, zoomControl: false, center: (view || START).center, zoom: (view || START).zoom, minZoom: 9, maxZoom: 19 });
     live = map;
     L.control.zoom({ zoomInTitle: 'Vergrößern', zoomOutTitle: 'Verkleinern' }).addTo(map);
     map.attributionControl.setPrefix(false);
