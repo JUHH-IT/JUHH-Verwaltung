@@ -3,7 +3,7 @@
 // Passwort ändern, abgelaufene Sitzung. Aufruf: NODE_PATH=$(npm root -g) node tests/ui_server.mjs [Ordner für Bildschirmfotos]
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,14 @@ const check = (ok, message) => { if (!ok) failures.push(message); console.log((o
 
 // Passwort wie auf dem Server über verwaltung.py setzen (Passwort zweimal über stdin)
 execFileSync('python3', [join(repo, 'verwaltung.py'), '--data', data, 'passwort', 'Test Schatzmeisterin'], { input: `${PASSWORT}\n${PASSWORT}\n` });
-const env = { ...process.env, JU_FINANZEN_OHNE_SCHLUESSELBUND: '1', JU_FINANZEN_MODUS: 'server', JU_FINANZEN_GEHEIMNISSE: join(base, 'geheim') };
+// Bericht des Serverschutzes (0.39): erfundene Datei, wie sie der Zeitgeber der Betriebssystem-Härtung schreibt – mit einem Text, der maskiert werden muss
+const serverschutz = join(base, 'serverschutz.json');
+writeFileSync(serverschutz, JSON.stringify({ zeit: new Date().toISOString(), version: 1,
+  pruefungen: [{ id: 'firewall', titel: 'Firewall aktiv', stand: 'ok', detail: 'nftables, Standard: verwerfen' },
+    { id: 'ssh', titel: 'SSH nur mit Schlüssel', stand: 'ok', detail: 'Passwort-Anmeldung aus' },
+    { id: 'updates', titel: 'Sicherheitsupdates', stand: 'hinweis', detail: '2 Updates offen <b id="xss-serverschutz">fett</b>' }],
+  zahlen: { sperrliste_netze: 1837, sperrliste_stand: new Date().toISOString(), gebannt: 3, abgewiesen_24h: 412, updates_offen: 2, neustart_noetig: false } }));
+const env = { ...process.env, JU_FINANZEN_OHNE_SCHLUESSELBUND: '1', JU_FINANZEN_MODUS: 'server', JU_FINANZEN_GEHEIMNISSE: join(base, 'geheim'), JU_FINANZEN_SERVERSCHUTZ: serverschutz };
 const server = spawn('python3', [join(repo, 'tests', 'ui_start.py'), '--no-browser', '--port', String(port), '--data', data, '--backups', join(base, 'Sicherungen')], { stdio: 'ignore', env });
 
 async function waitForServer() {
@@ -73,6 +80,7 @@ try {
     page.on('pageerror', (e) => errors.push(`${label}: ${e.message}`));
     page.on('console', (m) => {
       if (m.location()?.url?.endsWith('/api/bestaetigen')) return;   // falsches Passwort in der Bestätigung (400) wird absichtlich geprüft
+      if (m.location()?.url?.endsWith('/api/schutz-sperren')) return;   // eigener Rechner lässt sich nicht sperren (400) – absichtlich geprüft
       if (m.type() === 'error' && !/status of (401|428|429|503)/.test(m.text())) errors.push(`${label}: ${m.text()}`);   // 428/503: Bestätigung, Sperre (ab 0.35)
     });
   };
@@ -360,6 +368,86 @@ try {
   const kinds = await sp.locator('.sec-page table tbody tr td:nth-child(2)').allTextContents();
   check(kinds.length > 0 && kinds.every((k) => k === 'Anmeldung'), `Sicherheit: Filter nach Art (${kinds.length} Anmeldungen)`);
   await sp.screenshot({ path: join(shots, 's52-sicherheit-ereignisse.png') });
+  // ---------- Abwehr (ab 0.39): Musterdaten wie von außen (X-Forwarded-For vom lokalen Proxy), Lagebild, Reiter „Firewall & Sperren“ ----------
+  const outsideCall = (path, ip, agent = 'Mozilla/5.0 (Musterdaten)') => fetch(url + path, { headers: { 'X-Forwarded-For': ip, 'User-Agent': agent } }).then((r) => r.status);
+  // Verlauf der letzten 24 Stunden: erfundene Zahlen direkt in die Stundenstatistik (die Uhr des Servers lässt sich nicht verstellen)
+  execFileSync('python3', ['-c', `import sqlite3, sys
+from datetime import datetime, timedelta
+con = sqlite3.connect(sys.argv[1], timeout=10)
+werte = [0, 2, 0, 0, 1, 0, 4, 9, 3, 0, 0, 6, 14, 5, 2, 0, 1, 0, 3, 7, 2, 0, 1]
+for h, n in enumerate(werte):
+    stunde = (datetime.now() - timedelta(hours=23 - h)).strftime('%Y-%m-%dT%H')
+    con.executemany('INSERT OR REPLACE INTO schutz_stunden(stunde,art,n) VALUES(?,?,?)', [(stunde, 'falle', n), (stunde, 'abgewiesen', n * 2), (stunde, 'sperre', n // 5)])
+con.commit()`, join(data, 'finanzen.sqlite3')]);
+  check(await outsideCall('/wp-login.php', '203.0.113.50') === 404, 'Abwehr: Falle antwortet wie eine unbekannte Adresse (404)');
+  check(await outsideCall('/api/status?q=%3Cscript%3Ealert(1)%3C/script%3E', '2001:db8:1::5') === 403, 'Abwehr: Angriffsmuster abgewiesen (403)');
+  check(await outsideCall('/', '198.51.100.23', 'sqlmap/1.7') === 403, 'Abwehr: Angriffswerkzeug abgewiesen (403)');
+  for (const path of ['/.env', '/.git/config', '/phpmyadmin/', '/backup.zip', '/cgi-bin/luci']) await outsideCall(path, '198.51.100.77');
+  check(await outsideCall('/', '198.51.100.77') === 403, 'Abwehr: nach fünf Treffern automatisch gesperrt – auch die Startseite');
+  check(await outsideCall('/', '198.51.100.78') === 200, 'Abwehr: andere Adressen bleiben frei');
+  // eigene Sitzung: die Passwortbestätigung hier darf weiter unten bei „Notfall beenden“ (Sitzung sp) nicht gelten
+  const fwContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await guard(fwContext);
+  const fp = await fwContext.newPage();
+  watch(fp, 'Abwehr');
+  await fp.goto(url);
+  await login(fp, 'Test Schatzmeisterin', NEU);
+  await fp.waitForSelector('.sidebar');
+  await fp.click('[data-page=security]');
+  await fp.waitForSelector('.sec-cols');
+  check(await fp.locator('.sec-cols li').count() === 24, 'Lagebild: Verlauf mit 24 Stunden');
+  check((await fp.locator('.sec-peak').textContent()).trim() === '42', 'Lagebild: Höchstwert am Balken beschriftet');
+  check((await fp.locator('.sec-stats').textContent()).includes('Fallen'), 'Lagebild: Abwehr der letzten 24 Stunden mit Zahlen');
+  check(await fp.locator('.sec-checks li').count() === 12, 'Lagebild: Konfigurationsprüfung mit 12 Punkten');
+  check(await fp.locator('.sec-page .card').count() === 8, 'Lagebild: Kennzahlen bleiben');
+  await fp.screenshot({ path: join(shots, 's55-lagebild-abwehr-1280.png'), fullPage: true });
+  await fp.locator('.sec-checks [data-ziel=firewall]').first().click();   // Sprung aus der Konfigurationsprüfung
+  await fp.waitForSelector('[data-fw-edit]');
+  check(await fp.locator('[data-tab=firewall]').getAttribute('aria-selected') === 'true', 'Konfigurationsprüfung: Sprung zum Reiter „Firewall & Sperren“');
+  const fwText = () => fp.locator('.sec-page').textContent();
+  // nach einer Aktion lädt der Reiter neu: auf den Text warten statt sofort zu lesen
+  const fwHas = (text, there = true) => fp.waitForFunction(([t, want]) => document.querySelector('.sec-page')?.textContent.includes(t) === want, [text, there], { timeout: 5000 }).then(() => true, () => false);
+  check((await fwText()).includes('198.51.100.77/32') && (await fwText()).includes('automatisch'), 'Firewall: automatische Sperre in der Sperrliste');
+  check((await fwText()).includes('Falle') && (await fwText()).includes('Angriffswerkzeug'), 'Firewall: Live-Verkehr zeigt Auffälligkeiten');
+  check(!(await fwText()).includes('alert(1)'), 'Firewall: Live-Verkehr ohne Abfrageparameter');
+  await fp.click('[data-fw-edit]');
+  await fp.waitForSelector('#modal[open] #sec-fw-form');
+  await fp.fill('#sec-fw-form input[name=schwelle]', '4');
+  await fp.click('#sec-fw-form button[type=submit]');
+  await confirmPassword(fp, NEU);                                         // Einstellungen ändern verlangt das Passwort
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Firewall-Einstellungen gespeichert'));
+  check(await fwHas('nach 4 Treffern'), 'Firewall: Einstellungen gespeichert (nach Passwortbestätigung)');
+  await fp.click('[data-fw-block]');
+  await fp.waitForSelector('#modal[open] #sec-block-form');
+  await fp.fill('#sec-block-form input[name=netz]', '127.0.0.1');
+  await fp.click('#sec-block-form button[type=submit]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('eigene Rechner'));
+  check(true, 'Firewall: der eigene Rechner lässt sich nicht sperren (Meldung statt Sperre)');
+  await fp.fill('#sec-block-form input[name=netz]', '192.0.2.99');
+  await fp.fill('#sec-block-form input[name=grund]', 'Musterdaten: Scan am Wochenende');
+  await fp.selectOption('#sec-block-form select[name=minuten]', '1440');
+  await fp.click('#sec-block-form button[type=submit]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('192.0.2.99/32 gesperrt'));
+  check(await fwHas('Musterdaten: Scan am Wochenende') && await outsideCall('/', '192.0.2.99') === 403, 'Firewall: von Hand gesperrte Adresse steht in der Liste und wird abgewiesen');
+  await fp.click('[data-fw-list]');
+  await fp.click('#modal[open] [data-ok]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Bedrohungsliste geladen: 66 Netze'));
+  check(await fwHas('66 Netze'), 'Firewall: Bedrohungsliste geladen (erfundene Liste, kein Abruf im Netz)');
+  check(await outsideCall('/', '192.0.2.200') === 403, 'Firewall: Adresse aus der Bedrohungsliste wird abgewiesen');
+  await fp.click('[data-fw-capture]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Mitschnitt gestartet'));
+  await fp.waitForFunction(() => [...document.querySelectorAll('.sec-page td')].some((td) => td.textContent.includes('/api/schutz')), null, { timeout: 12000 });
+  check(true, 'Firewall: Mitschnitt zeigt auch unauffällige Anfragen und frischt sich auf');
+  await fp.screenshot({ path: join(shots, 's56-firewall-1280.png'), fullPage: true });
+  await fp.click('[data-fw-edit]');
+  await fp.waitForSelector('#modal[open] #sec-fw-form');
+  await fp.screenshot({ path: join(shots, 's57-firewall-einstellungen.png') });
+  await fp.keyboard.press('Escape');
+  await fp.click('[data-tab=system]');
+  await fp.waitForSelector('.sec-checks');
+  check((await fp.locator('.sec-page').textContent()).includes('<b id="xss-serverschutz">'), 'System: Serverschutz-Bericht als Text (maskiert)');
+  check(await fp.locator('#xss-serverschutz').count() === 0, 'System: kein Markup aus dem Serverschutz-Bericht');
+  await fp.screenshot({ path: join(shots, 's58-system-serverschutz-1280.png'), fullPage: true });
   // Handy: alle Reiter ohne seitliches Scrollen
   await sp.setViewportSize({ width: 390, height: 844 });
   for (const t of secTabs) {
@@ -367,9 +455,20 @@ try {
     await sp.waitForTimeout(400);
     const wide = await sp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(wide <= 0, `Handy Sicherheit ${t}: kein seitliches Scrollen (${wide})`);
+    if (t === 'lagebild' || t === 'firewall') await sp.screenshot({ path: join(shots, `s59-handy-390-${t}.png`), fullPage: true });
   }
+  check(secTabs.includes('firewall'), 'Sicherheit: Reiter „Firewall & Sperren“');
   await sp.screenshot({ path: join(shots, 's53-handy-sicherheit-system.png') });
   await sp.setViewportSize({ width: 1440, height: 900 });
+  await fp.click('[data-tab=firewall]');
+  await fp.waitForSelector('[data-fw-capture]');
+  await fp.click('[data-fw-capture]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Mitschnitt beendet'));
+  await fp.click('[data-fw-free][data-netz="192.0.2.99/32"]');
+  await fp.click('#modal[open] [data-ok]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Adresse freigegeben'));
+  check(await fwHas('192.0.2.99/32', false), 'Firewall: Sperre von Hand freigegeben');
+  await fwContext.close();
   // Notfall auslösen
   await sp.click('[data-tab=notfall]');
   await sp.click('[data-emergency-on]');

@@ -2,6 +2,7 @@
 
   passwort NAME        Passwort setzen bzw. ändern (legt den Benutzer an, wenn es ihn noch nicht gibt)
   benutzer             Benutzer anzeigen (ohne Passwörter)
+  schutz-aus           Notausgang der Abwehr: alle Sperren löschen, Firewall auf „nur protokollieren“ (z. B. selbst ausgesperrt)
   sicherung            Sicherung der Datenbank jetzt anlegen (Sicherungen/Manuell)
   pruefen              Datenbank prüfen (Integrität, Anzahl Buchungen usw. – nur Zahlen)
   keycloak-verbinden NAME   bestehende Person in Keycloak anlegen (Startpasswort erscheint einmal auf der Konsole) bzw. mit
@@ -148,10 +149,30 @@ def cmd_notfall_aus(args):
             return 0
         if sicherheit.sperre(con)['art'] == 'notfall':
             sicherheit.notfall_aus(con, 'Serververwaltung')
+            import schutz
+            schutz.init(con)
+            schutz.notfall(con, False)   # Firewall zurück auf den Stand vor dem Notfall
         sicherheit.wartung(con, 'Serververwaltung', False)
     finally:
         con.close()
     print('Notfall- bzw. Wartungsmodus beendet. Alle können sich wieder anmelden.')
+    return 0
+
+
+def cmd_schutz_aus(args):
+    """Notausgang der Abwehr: alle Sperren löschen und die Firewall auf „nur protokollieren“ stellen (Ereignis in der Sicherheit)."""
+    data, _ = folders(args)
+    con = connect(data / 'finanzen.sqlite3')
+    try:
+        import rollen, sicherheit, schutz
+        rollen.init(con)
+        sicherheit.init(con)
+        schutz.init(con)
+        n = schutz.aus(con)
+    finally:
+        con.close()
+    print(f'{n} Sperre(n) gelöscht, Firewall auf „nur protokollieren“ – wirkt nach spätestens {schutz.NACHLADEN} Sekunden. '
+          'Wieder einschalten: Sicherheit → Firewall & Sperren → Einstellungen.')
     return 0
 
 
@@ -472,6 +493,7 @@ def main(argv=None):
     p.add_argument('--neu', action='store_true', help='weiteren Benutzer anlegen')
     sub.add_parser('benutzer', help='Benutzer mit Rollen anzeigen')
     sub.add_parser('notfall-aus', help='Notfall- und Wartungsmodus beenden (Notzugang)')
+    sub.add_parser('schutz-aus', help='Abwehr: alle Sperren löschen, Firewall auf „nur protokollieren“ (Notausgang)')
     p = sub.add_parser('rolle', help='einer Person eine Rolle geben (Notzugang, sonst in der Verwaltung des Programms)')
     p.add_argument('name')
     p.add_argument('rolle')
@@ -490,7 +512,7 @@ def main(argv=None):
     p.add_argument('--ersetzen', action='store_true', help='vorhandene Daten ersetzen (werden vorher gesichert)')
     args = parser.parse_args(argv)
     os.umask(0o077)
-    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'rolle': cmd_rolle, 'notfall-aus': cmd_notfall_aus, 'keycloak-verbinden': cmd_keycloak_verbinden, 'notzugang': cmd_notzugang, 'sicherung': cmd_sicherung,
+    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'rolle': cmd_rolle, 'notfall-aus': cmd_notfall_aus, 'schutz-aus': cmd_schutz_aus, 'keycloak-verbinden': cmd_keycloak_verbinden, 'notzugang': cmd_notzugang, 'sicherung': cmd_sicherung,
             'pruefen': cmd_pruefen, 'uebernehmen': cmd_uebernehmen}[args.befehl](args) or 0
 
 
