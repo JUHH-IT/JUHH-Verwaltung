@@ -17,6 +17,7 @@ Verwaltung stehen in `SERVER.md`.
 - **Anmelden mit dem JU-Konto (Keycloak, ab 0.36):** Ist auf dem Server Keycloak eingerichtet und eingeschaltet
   (`JU_FINANZEN_ANMELDUNG=keycloak`, siehe `SERVER.md`), heißt der Knopf **Mit JU-Konto anmelden**. Keycloak fragt
   Benutzername, Passwort und – je nach Person – den Code der Authenticator-App ab und schickt zurück ins Programm.
+  Die Anmeldeseiten von Keycloak sehen aus wie das Programm (Logo, Farben, Titel „JU Hamburg Verwaltung“).
   - Erste Anmeldung: mit dem **Startpasswort**, das die Verwaltung persönlich weitergibt. Keycloak verlangt sofort ein
     eigenes Passwort und – bei App-Pflicht – das Einrichten einer Authenticator-App (z. B. Google oder Microsoft
     Authenticator, 1Password): QR-Code scannen, Code eingeben.
@@ -71,7 +72,7 @@ Verwaltung stehen in `SERVER.md`.
   - In der Mac-App gibt es weiter nur eine Person mit allen Rechten.
 - **Sicherheit (ab 0.35, nur Server):** Unter **Verwaltung → Sicherheit**.
   - **Lagebild:** Notfall/Wartung, Fehlanmeldungen, verweigerte Zugriffe, Sitzungen, gesperrte und ungenutzte Konten
-    (über 90 Tage ohne Anmeldung), Konten mit Verwaltungsrechten, letzte Sicherung, Dateiprüfung. Ab 0.38 dazu
+    (über 90 Tage ohne Anmeldung), Konten mit Verwaltungsrechten, letzte Sicherung, Dateiprüfung. Ab 0.39 dazu
     **Abwehr der letzten 24 Stunden** (Treffer nach Art, abgewiesene Anfragen, automatische Sperren, Verlauf je Stunde –
     auch als Tabelle) und die **Konfigurationsprüfung**: eine Liste „in Ordnung / Hinweis / kritisch“ (Keycloak,
     Authenticator-Pflicht, Notzugang, Firewall, Bedrohungsliste, Dateiprüfung, Sicherung, HTTPS, ungenutzte Zugänge,
@@ -82,11 +83,11 @@ Verwaltung stehen in `SERVER.md`.
   - **Notfall:** Wer „Sicherheit lesen“ hat, kann ihn auslösen (mit Grund). Dann werden alle ohne „Sicherheit ändern“
     abgemeldet und gesperrt (sie sehen nur einen Hinweis), auf Wunsch auch alle anderen; der E-Mail-Versand hält an.
     Daten bleiben unverändert. Beenden nur mit „Sicherheit ändern“ und Passwort – oder auf dem Server mit
-    `sudo ju-finanzen notfall-aus`. Ab 0.38 stellt der Notfall auch die Firewall scharf (abweisen, Sperre ab dem ersten
+    `sudo ju-finanzen notfall-aus`. Ab 0.39 stellt der Notfall auch die Firewall scharf (abweisen, Sperre ab dem ersten
     Treffer für 7 Tage, Fehlerbremse 10, Bedrohungsliste an); beim Beenden gelten wieder die vorherigen Einstellungen –
     außer denen, die während des Notfalls von Hand geändert wurden. „Nie sperren“ bleibt immer unverändert.
   - **Wartung:** sperrt wie der Notfall, ohne Abmelden und ohne den Versand anzuhalten, mit optionalem Hinweistext.
-  - **Firewall & Sperren (ab 0.38):** Das Programm prüft jede Anfrage, bevor es sie bearbeitet.
+  - **Firewall & Sperren (ab 0.39):** Das Programm prüft jede Anfrage, bevor es sie bearbeitet.
     - **Was als Treffer zählt:** Aufrufe typischer Scanner-Adressen, die es hier nie gibt (z. B. `/wp-login.php`,
       `/.env`, `/phpmyadmin`) – sie bekommen dieselbe Antwort wie jede unbekannte Adresse; bekannte Angriffswerkzeuge;
       Angriffsmuster in der Adresse (und im Anmeldeformular); zu viele Fehlerantworten einer Adresse ohne Anmeldung
@@ -112,10 +113,10 @@ Verwaltung stehen in `SERVER.md`.
       Sperren und stellt die Firewall auf „nur protokollieren“ (wirkt nach spätestens 10 Sekunden).
   - **Passwortbestätigung:** Sicherung herunterladen, Personen und Rollen ändern, Mitglieder löschen, E-Mail-Passwort
     speichern, Notfall beenden, Sitzungen beenden und Sperren aufheben verlangen das eigene Passwort noch einmal (gilt
-    dann 5 Minuten). Ab 0.38 auch: Firewall-Einstellungen ändern, Adresse sperren oder freigeben, Bedrohungsliste laden.
+    dann 5 Minuten). Ab 0.39 auch: Firewall-Einstellungen ändern, Adresse sperren oder freigeben, Bedrohungsliste laden.
   - **Sitzungen & Konten, System** (nur „Sicherheit ändern“): Sitzungen anderer beenden, Sperren nach Fehlversuchen
     aufheben, Konten im Überblick, Version, Speicher, Sicherungen, Dateiprüfung der Programmdateien („Jetzt prüfen“;
-    sonst einmal am Tag beim Öffnen). Ab 0.38 unter System auch der **Serverschutz**: der Bericht, den der Server über
+    sonst einmal am Tag beim Öffnen). Ab 0.39 unter System auch der **Serverschutz**: der Bericht, den der Server über
     seine eigene Härtung ablegt (Firewall des Betriebssystems, Sperrlisten, Updates). Das Programm zeigt ihn nur an;
     fehlt er oder ist er älter als 60 Minuten, steht dort „Kein aktueller Bericht vom Server“.
   - Anfangsrechte: Administrator ändern; Schatzmeister, Landesgeschäftsführer, Landesvorsitzender lesen.

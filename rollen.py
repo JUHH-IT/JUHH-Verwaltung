@@ -95,7 +95,7 @@ GET = {
     # Sicherheit (0.35): Lage und Ereignisse lesen; Sitzungen, Konten und System nur mit „ändern“
     **{path: _r('sicherheit') for path in ('/api/sicherheit', '/api/sicherheit-ereignisse', '/api/sicherheit-ereignisse.csv')},
     '/api/sicherheit-verwaltung': _w('sicherheit'),
-    '/api/schutz': _r('sicherheit'),   # Abwehr (0.38): Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr
+    '/api/schutz': _r('sicherheit'),   # Abwehr (0.39): Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr
 }
 POST = {
     '/api/logout': FREE, '/api/password': FREE,

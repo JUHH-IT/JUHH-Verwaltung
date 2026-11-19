@@ -114,7 +114,7 @@ class Store:
         import sicherheit
         sicherheit.init(self.db)  # Sicherheitsereignisse, Notfall/Wartung, Dateiprüfung (0.35)
         import schutz
-        schutz.init(self.db)      # Abwehr: Sperrliste und Stundenstatistik (0.38)
+        schutz.init(self.db)      # Abwehr: Sperrliste und Stundenstatistik (0.39)
         if self.db.execute("SELECT 1 FROM settings WHERE key='age_basis' AND value=''").fetchone() and \
                 not self.db.execute("SELECT 1 FROM settings WHERE key='age_basis_decided'").fetchone():
             with self.db:   # einmalig: „noch ungeklärt“ → 01.01. (Entscheidung Lennert Gust 08.11.2026), danach in den Stammdaten änderbar

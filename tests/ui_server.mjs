@@ -23,7 +23,7 @@ const check = (ok, message) => { if (!ok) failures.push(message); console.log((o
 
 // Passwort wie auf dem Server über verwaltung.py setzen (Passwort zweimal über stdin)
 execFileSync('python3', [join(repo, 'verwaltung.py'), '--data', data, 'passwort', 'Test Schatzmeisterin'], { input: `${PASSWORT}\n${PASSWORT}\n` });
-// Bericht des Serverschutzes (0.38): erfundene Datei, wie sie der Zeitgeber der Betriebssystem-Härtung schreibt – mit einem Text, der maskiert werden muss
+// Bericht des Serverschutzes (0.39): erfundene Datei, wie sie der Zeitgeber der Betriebssystem-Härtung schreibt – mit einem Text, der maskiert werden muss
 const serverschutz = join(base, 'serverschutz.json');
 writeFileSync(serverschutz, JSON.stringify({ zeit: new Date().toISOString(), version: 1,
   pruefungen: [{ id: 'firewall', titel: 'Firewall aktiv', stand: 'ok', detail: 'nftables, Standard: verwerfen' },
@@ -368,7 +368,7 @@ try {
   const kinds = await sp.locator('.sec-page table tbody tr td:nth-child(2)').allTextContents();
   check(kinds.length > 0 && kinds.every((k) => k === 'Anmeldung'), `Sicherheit: Filter nach Art (${kinds.length} Anmeldungen)`);
   await sp.screenshot({ path: join(shots, 's52-sicherheit-ereignisse.png') });
-  // ---------- Abwehr (ab 0.38): Musterdaten wie von außen (X-Forwarded-For vom lokalen Proxy), Lagebild, Reiter „Firewall & Sperren“ ----------
+  // ---------- Abwehr (ab 0.39): Musterdaten wie von außen (X-Forwarded-For vom lokalen Proxy), Lagebild, Reiter „Firewall & Sperren“ ----------
   const outsideCall = (path, ip, agent = 'Mozilla/5.0 (Musterdaten)') => fetch(url + path, { headers: { 'X-Forwarded-For': ip, 'User-Agent': agent } }).then((r) => r.status);
   // Verlauf der letzten 24 Stunden: erfundene Zahlen direkt in die Stundenstatistik (die Uhr des Servers lässt sich nicht verstellen)
   execFileSync('python3', ['-c', `import sqlite3, sys

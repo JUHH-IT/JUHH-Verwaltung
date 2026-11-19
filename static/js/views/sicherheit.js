@@ -1,4 +1,4 @@
-// Verwaltung → Sicherheit (ab 0.35, nur Serverbetrieb): Lagebild, Ereignisse, Notfall & Wartung, Firewall & Sperren (0.38),
+// Verwaltung → Sicherheit (ab 0.35, nur Serverbetrieb): Lagebild, Ereignisse, Notfall & Wartung, Firewall & Sperren (0.39),
 // Sitzungen & Konten, System. Nur Anzeige und Auslöser – der Server prüft jede Anfrage selbst (rollen.py, sicherheit.py,
 // schutz.py) und verlangt bei kritischen Aktionen das Passwort erneut (api.onConfirm).
 // Diagramm „Abwehr je Stunde“: HTML/CSS ohne Bibliothek, eine Reihe in --teal, nur der Höchstwert beschriftet, jeder Wert

@@ -1,4 +1,4 @@
-"""Abwehr in der Anwendung (schutz.py, ab 0.38): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Serverschutz-Bericht.
+"""Abwehr in der Anwendung (schutz.py, ab 0.39): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Serverschutz-Bericht.
 Nur erfundene Daten, nie ins Netz – Adressen ausschließlich aus den Dokumentationsbereichen (192.0.2.0/24, 198.51.100.0/24,
 203.0.113.0/24, 2001:db8::/32)."""
 import os

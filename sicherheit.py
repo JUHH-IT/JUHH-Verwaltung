@@ -34,7 +34,7 @@ ARTEN = {
     'wartung_aus': 'Wartung ausgeschaltet',
     'sicherung': 'Sicherung heruntergeladen',
     'dateipruefung': 'Dateiprüfung',
-    # Abwehr (schutz.py, ab 0.38)
+    # Abwehr (schutz.py, ab 0.39)
     'schutz_sperre': 'Adresse gesperrt',
     'schutz_frei': 'Adresse freigegeben',
     'schutz_einstellung': 'Firewall-Einstellungen geändert',

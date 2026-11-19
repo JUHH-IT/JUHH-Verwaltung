@@ -998,7 +998,7 @@ Tests: test_keycloak_app.py, test_schutz.py, test_sicherheit.py
 
 ### schutz.py
 
-Abwehr in der Anwendung im Serverbetrieb (ab 0.38): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Prüfungen.
+Abwehr in der Anwendung im Serverbetrieb (ab 0.39): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Prüfungen.
 
 Tabellen: `schutz_sperren`, `schutz_stunden`
 

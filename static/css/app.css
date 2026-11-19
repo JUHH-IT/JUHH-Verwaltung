@@ -692,7 +692,7 @@ button.map-kv:hover { background: var(--surface-2); }
 .sec-page h3 { font-size: 14px; margin: 16px 0 0; }
 .sec-filter { justify-content: flex-start; }
 .sec-filter [data-csv] { margin-left: auto; }
-/* 0.38: Abwehr, Konfigurationsprüfung, Firewall & Sperren */
+/* 0.39: Abwehr, Konfigurationsprüfung, Firewall & Sperren */
 .sec-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px 24px; margin: 0; }
 .sec-stats div { min-width: 0; }
 .sec-stats dt { font-size: 13px; font-weight: 500; color: var(--muted); }
@@ -763,7 +763,7 @@ button.map-kv:hover { background: var(--surface-2); }
   .wr-page .sub.wr-narrow { display: block; }
 
 
-/* ---------- 0.38: Auswertung – Diagramme aus HTML/CSS (Werte stehen als Text am Balken) ---------- */
+/* ---------- 0.39: Auswertung – Diagramme aus HTML/CSS (Werte stehen als Text am Balken) ---------- */
 :root {
   /* Geschlecht: geprüfte Farbreihe (Farbfehlsichtigkeit, Kontrast); divers/ohne Angabe neutral. Einfarbige Balken bleiben --teal. */
   --aw-w: var(--orange); --aw-m: var(--map-seq-4); --aw-x: #8b9aad;

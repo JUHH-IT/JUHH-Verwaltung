@@ -1,4 +1,4 @@
-"""Abwehr in der Anwendung im Serverbetrieb (ab 0.38): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Prüfungen.
+"""Abwehr in der Anwendung im Serverbetrieb (ab 0.39): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Prüfungen.
 
 - Ein Einstieg vor jeder Anfrage (`eingang`, aus `app.Handler.abwehr`) und einer danach (`nachher`): gesperrte Adresse
   (von Hand, automatisch, Bedrohungsliste Spamhaus DROP), Fallen für Scanner-Pfade, Angriffswerkzeuge, Angriffsmuster,
