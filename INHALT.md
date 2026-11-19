@@ -390,7 +390,7 @@ Tests: test_auswertung.py
 - `report(store, stichtag=…, kv=…, ov=…, today=…)` – Auswertung zum Stichtag (JJJJ-MM-TT); kv: Kostenstelle, ov: id oder 'none' (ohne Ortsverband).
 - `redact(r, amounts=…, names=…)` – Auswertung für eine Rolle (rollen.py, ab 0.34): ohne Buchhaltung keine Beitragsbeträge, ohne Mitgliederverwaltung
 - `pdf(store, stichtag=…, kv=…, ov=…, amounts=…)` – Mitgliederstatistik als PDF – nur Zahlen, keine Namen (für Vorstand und Gremien); `amounts=False`: ohne Beitragsbeträge.
-- `csv(store, stichtag=…, kv=…, ov=…, amounts=…)` – Kennzahlen je Kreis- und Ortsverband als CSV (nur Zahlen); `amounts=False`: ohne Beitragsbeträge.
+- `csv(store, stichtag=…, kv=…, ov=…, amounts=…)` – Kennzahlen je Kreis- und Ortsverband, Altersgruppen, Eintrittsalter, Geschlecht, Ein- und Austritte je Monat als CSV (nur Zahlen);
 
 ## Mitgliedsbeiträge
 
