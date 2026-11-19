@@ -820,7 +820,20 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('[data-page=auswertung]');
   await page.waitForSelector('.aw-page .cards');
   check((await page.locator('.aw-page .cards').textContent()).includes('Mitglieder am Stichtag'), 'Auswertung mit Kennzahlen');
-  check(await page.locator('.aw-page .aw-bars').count() >= 4, 'Auswertung: Alter, Mitgliedsdauer, Geschlecht, Zahlweg');
+  check(await page.locator('.aw-page .aw-bars').count() >= 4, 'Auswertung: Altersgruppen, Eintrittsalter, Mitgliedsdauer, Zahlweg');
+  // 0.38: Diagramme – jeder Wert steht als Text am Balken (ohne Zeigen lesbar), nichts läuft auf dem Handy über
+  check(await page.locator('.aw-page .aw-two tbody tr').count() >= 7 && (await page.locator('.aw-page .aw-two').first().textContent()).includes('35 und älter'),
+    'Auswertung: Alterspyramide nach Geschlecht');
+  check((await page.locator('.aw-page .aw-sex li').first().textContent()).includes('weiblich') && await page.locator('.aw-page .aw-sex li').count() >= 2,
+    'Auswertung: Geschlechteranteile gesamt und bei den Eintritten');
+  check(await page.locator('.aw-page .aw-cols').count() === 3 && await page.locator('.aw-page .aw-cols').last().locator('li').count() === 12,
+    'Auswertung: Bestand, Ein-/Austritte je Jahr, Eintritte je Monat');
+  check(await page.evaluate(() => [...document.querySelectorAll('.aw-page .aw-bars li, .aw-page .aw-two tbody tr, .aw-page .aw-cols li:not([aria-hidden])')]
+    .every((e) => /\d/.test(e.textContent))), 'Auswertung: jedes Diagramm nennt seine Zahlen als Text');
+  await page.setViewportSize({ width: 390, height: 844 });
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Auswertung: Handy (390 px) ohne seitliches Scrollen');
+  await shot('38-auswertung-handy');
+  await page.setViewportSize({ width: 1440, height: 900 });
   const awPdf = await page.evaluate(async () => (await fetch(document.querySelector('.aw-page a[href^="/api/auswertung.pdf"]').href)).headers.get('content-type'));
   check(awPdf === 'application/pdf', 'Auswertung als PDF');
   await shot('38-auswertung');

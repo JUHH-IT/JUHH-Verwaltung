@@ -283,7 +283,17 @@ Bucht die Bank eine Sammellastschrift oder Sammelgutschrift als **eine** Zeile, 
 
 ## Auswertung (ab 0.29)
 
-Seitenleiste → **Auswertung**: Mitgliederdaten zu einem **Stichtag** (Standard heute), für alle oder einen **Kreisverband** und **Ortsverband**. Kennzahlen (Mitglieder am Stichtag, Eintritte/Austritte im Jahr, Durchschnitts- und Medianalter, Anteil mit E-Mail, SEPA-Mandat, Ortsverband), **Entwicklung** der letzten bis zu zehn Jahre (Eintritte, Austritte, Bestand am 31.12.), **Alter** nach Beitragsstaffel, **Kreisverbände** (Mitglieder, Anteil, Ø Alter, Ein-/Austritte, Beitrag Soll und gezahlt im Jahr, Rückstand – mit Knopf zur OP-Liste), **Ortsverbände**, Mitgliedsdauer, Geschlecht, Zahlweg und Vereinigungen. **Listen zum Handeln** (Klick öffnet das Mitglied): **Altersgrenze 35** (Satzung § 2 Abs. 1 Nr. 4, erreicht oder in den nächsten 12 Monaten; Ausnahme Amtsträger nach Abs. 2 bitte selbst prüfen), **Jubiläen** (5/10/15/20 Jahre), **Geburtstage** (nächste 30 Tage), **neue Mitglieder** (letzte 90 Tage) und **Datenlücken** (ohne E-Mail, Telefon, Ortsverband, PLZ; Postausschluss). Mitglied am Stichtag: eingetreten bis dahin und nicht vorher ausgetreten. **PDF** (nur Zahlen, keine Namen – z. B. für den Vorstand) und **CSV** (Kreis- und Ortsverbände).
+Seitenleiste → **Auswertung**: Mitgliederdaten zu einem **Stichtag** (Standard heute), für alle oder einen **Kreisverband** und **Ortsverband**. Oben die Kennzahlen (Mitglieder am Stichtag, Eintritte/Austritte im Jahr, Durchschnitts- und Medianalter, Frauenanteil, Anteil mit E-Mail, SEPA-Mandat, Ortsverband). Darunter, ab 0.38 als Diagramme – jede Zahl steht als Text am Balken, nichts muss angetippt werden:
+
+- **Altersstruktur:** Altersgruppen (unter 16, 16–17, 18–20, 21–24, 25–29, 30–34, 35 und älter) mit Anzahl und Anteil, **Alterspyramide** (männlich links, weiblich rechts) und Durchschnitts- und Medianalter je Geschlecht. Alter in vollendeten Jahren am Stichtag; wer am Stichtag Geburtstag hat, zählt schon zum neuen Alter.
+- **Geschlecht:** Anteile gesamt, bei den Eintritten des Jahres und je Kreisverband (ein Balken je Zeile = 100 %). In diesen Vergleichen zählen „divers“ und „ohne Angabe“ zusammen.
+- **Kreisverbände:** Mitglieder und Anteil (Klick auf den Namen wertet nur diesen Kreisverband aus), Ø Alter, Aus- und Eintritte mit Saldo; darunter die Tabelle mit Frauenanteil, Beitrag Soll und gezahlt im Jahr, Rückstand und Knopf zur OP-Liste. **Ortsverbände** als Tabelle.
+- **Entwicklung** der letzten bis zu zehn Jahre: Bestand am 31.12. (laufendes Jahr: am Stichtag), Eintritte (nach oben) und Austritte (nach unten) je Jahr, Eintritte des Jahres je Monat; „Zahlen als Tabelle“ klappt die Werte auf.
+- **Alter beim Eintritt**, Mitgliedsdauer, Zahlweg und Vereinigungen.
+
+Kleine Gruppen: Durchschnitts- und Medianalter je Geschlecht gibt es erst ab 3 Personen. Wer die Auswertung ohne Mitgliederverwaltung sieht, bekommt in den Vergleichen nach Geschlecht statt 1 oder 2 Personen nur „< 3“; im PDF und in der CSV gilt das immer.
+
+**Listen zum Handeln** (Klick öffnet das Mitglied): **Altersgrenze 35** (Satzung § 2 Abs. 1 Nr. 4, erreicht oder in den nächsten 12 Monaten; Ausnahme Amtsträger nach Abs. 2 bitte selbst prüfen), **Jubiläen** (5/10/15/20 Jahre), **Geburtstage** (nächste 30 Tage), **neue Mitglieder** (letzte 90 Tage) und **Datenlücken** (ohne E-Mail, Telefon, Ortsverband, PLZ; Postausschluss). Mitglied am Stichtag: eingetreten bis dahin und nicht vorher ausgetreten. **PDF** (nur Zahlen, keine Namen – z. B. für den Vorstand; die neuen Zahlen als Tabellen, ohne Diagramme) und **CSV** (Kreis- und Ortsverbände, Altersgruppen, Eintrittsalter, Geschlecht, Eintritte je Monat).
 
 ## Rechnungen
 
