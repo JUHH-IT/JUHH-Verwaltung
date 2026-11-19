@@ -7,6 +7,13 @@ Z="$W/zustand"
 NAME="$(basename "$0")"
 printf '%s %s\n' "$NAME" "$*" >> "$W/aufrufe.log"
 if [ -e "$Z/scheitert-$NAME" ] && [ "$*" = "$(cat "$Z/scheitert-$NAME")" ]; then exit 1; fi   # Test: genau dieser Aufruf scheitert
+# Test: bei genau diesem Aufruf trifft ein Signal die ganze Prozessgruppe – wie Strg-C oder ein geschlossenes Fenster
+if [ -e "$Z/signal-$NAME" ] && [ "$*" = "$(sed -n 2p "$Z/signal-$NAME")" ]; then
+  s="$(sed -n 1p "$Z/signal-$NAME")"; rm -f "$Z/signal-$NAME"; kill -s "$s" 0; sleep 5
+fi
+LIB="$W/var/lib/ju-serverschutz"
+# Tabelle neu geladen: Regeln aus ju_schutz.nft (Mengen leer), danach die Sperrliste aus ju_mengen.nft, falls vorhanden
+tabelle_an() { touch "$Z/tabelle"; rm -f "$Z/mengen"; if [ -f "$LIB/ju_mengen.nft" ]; then cp "$LIB/ju_mengen.nft" "$Z/mengen"; fi; }
 
 case "$NAME" in
   systemctl)
@@ -20,19 +27,24 @@ case "$NAME" in
       disable) da || exit 1; echo disabled > "$Z/enabled-$unit"; case " $* " in *" --now "*) echo inactive > "$Z/active-$unit" ;; esac ;;
       start|restart|reload) da || exit 1; echo active > "$Z/active-$unit"
         if [ "$unit" = ju-serverschutz.service ]; then
-          [ -f "$W/var/lib/ju-serverschutz/ju_schutz.nft" ] || exit 1; touch "$Z/tabelle"
+          [ -f "$LIB/ju_schutz.nft" ] || exit 1; tabelle_an
           if [ -e "$Z/firewall-bricht" ]; then touch "$Z/nicht-erreichbar"; fi   # Test: nach dem Laden ist der Dienst weg
         fi ;;
-      stop) echo inactive > "$Z/active-$unit"; if [ "$unit" = ju-serverschutz.service ]; then rm -f "$Z/tabelle"; fi ;;
+      stop) echo inactive > "$Z/active-$unit"; if [ "$unit" = ju-serverschutz.service ]; then rm -f "$Z/tabelle" "$Z/mengen"; fi ;;
       try-restart|daemon-reload) ;;
       *) exit 1 ;;
     esac ;;
   nft)
     case "$*" in
       "list table inet ju_schutz") [ -e "$Z/tabelle" ] ;;
-      "delete table inet ju_schutz") rm -f "$Z/tabelle" ;;
+      "delete table inet ju_schutz") rm -f "$Z/tabelle" "$Z/mengen" ;;
+      "-j list set inet ju_schutz drop4")
+        [ -e "$Z/tabelle" ] || exit 1
+        if grep -qs '^add element inet ju_schutz drop4' "$Z/mengen"; then echo '{"nftables": [{"set": {"name": "drop4", "elem": [{"prefix": {"addr": "192.0.2.0", "len": 30}}]}}]}'
+        else echo '{"nftables": [{"set": {"name": "drop4"}}]}'; fi ;;
       "-j list counters table inet ju_schutz") cat "$Z/zaehler.json" 2>/dev/null || echo '{"nftables": [{"counter": {"name": "sperrliste", "packets": 7}}, {"counter": {"name": "ssh_takt", "packets": 3}}]}' ;;
-      "-c -f "*) grep -q 'table inet ju_schutz' "$3" ;;
+      "-c -f "*) if grep -q '^flush set' "$3"; then [ -e "$Z/tabelle" ]; else grep -q 'table inet ju_schutz' "$3"; fi ;;   # Mengen brauchen die Tabelle
+      "-f "*) [ -e "$Z/tabelle" ] && grep -q '^flush set inet ju_schutz drop4' "$2" && cp "$2" "$Z/mengen" ;;
       *) exit 1 ;;
     esac ;;
   ufw)
@@ -45,13 +57,15 @@ case "$NAME" in
         cat "$Z/ufw-status" 2>/dev/null ;;
       "show added") echo "Added user rules (see 'ufw status' for running firewall):"; cat "$Z/ufw-regeln" 2>/dev/null ;;
       "default deny incoming") sed -i 's/^DEFAULT_INPUT_POLICY=.*/DEFAULT_INPUT_POLICY="DROP"/' "$W/etc/default/ufw" ;;
+      "default allow incoming") sed -i 's/^DEFAULT_INPUT_POLICY=.*/DEFAULT_INPUT_POLICY="ACCEPT"/' "$W/etc/default/ufw" ;;
       "--force enable") rm -f "$Z/ufw-aus"; echo "ENABLED=yes" > "$W/etc/ufw/ufw.conf" ;;
       "--force disable") touch "$Z/ufw-aus"; echo "ENABLED=no" > "$W/etc/ufw/ufw.conf" ;;
-      reload) cp "$W/etc/ufw/user.rules" "$Z/ufw-regeln" ;;   # der Test hält user.rules im Format von „show added“
-      allow*) echo "ufw $*" >> "$Z/ufw-regeln"; echo "ufw $*" >> "$W/etc/ufw/user.rules" ;;
+      allow*) echo "ufw $*" >> "$Z/ufw-regeln"; echo "ufw $*" >> "$W/etc/ufw/user.rules" ;;   # der Test hält user.rules im Format von „show added“
+      "delete allow"*) shift; for f in "$Z/ufw-regeln" "$W/etc/ufw/user.rules"; do grep -vxF "ufw $*" "$f" > "$f.neu"; mv "$f.neu" "$f"; done ;;
       *) exit 1 ;;
     esac ;;
   sshd)
+    [ -d "$W/run/sshd" ] || { echo "Missing privilege separation directory: /run/sshd" >&2; exit 255; }
     case "$*" in
       -t) ! grep -qs KAPUTT "$W/etc/ssh/sshd_config.d/"*.conf ;;
       -T)  # wie sshd: der zuerst gelesene Wert gilt – erst die Dateien in sshd_config.d, dann die Vorgaben
@@ -60,8 +74,15 @@ case "$NAME" in
       *) exit 1 ;;
     esac ;;
   sysctl)
-    [ "$1 $2" = "-q -w" ] || exit 1
-    name="${3%%=*}"; mkdir -p "$(dirname "$W/proc/sys/${name//.//}")"; printf '%s\n' "${3#*=}" > "$W/proc/sys/${name//.//}" ;;
+    setzen() {   # wie der Kern: das Umschalten der Weiterleitung setzt accept_redirects auf „nicht Router = annehmen“ zurück
+      mkdir -p "$(dirname "$W/proc/sys/${1//.//}")"; printf '%s\n' "$2" > "$W/proc/sys/${1//.//}"
+      if [ "$1" = net.ipv4.ip_forward ]; then echo $((1 - $2)) > "$W/proc/sys/net/ipv4/conf/all/accept_redirects"; fi
+    }
+    case "$1 $2" in
+      "-q -w") setzen "${3%%=*}" "${3#*=}" ;;
+      "-q -p") while IFS= read -r zeile; do case "$zeile" in [a-z]*" = "*) setzen "${zeile%% = *}" "${zeile#* = }" ;; esac; done < "$3" ;;
+      *) exit 1 ;;
+    esac ;;
   tailscale)
     case "$*" in
       "status --json") cat "$Z/tailscale-status" 2>/dev/null || echo '{"BackendState": "Running"}' ;;
@@ -79,6 +100,7 @@ case "$NAME" in
     esac ;;
   dpkg-query) if grep -qsx "$3" "$Z/pakete"; then printf 'install ok installed'; else exit 1; fi ;;
   apt-get)
+    if [ "$1" = -o ]; then shift 2; fi
     case "$1" in
       update) ;;
       install) echo "${*: -1}" >> "$Z/pakete"; touch "$Z/unit-fail2ban.service" ;;
@@ -96,5 +118,8 @@ case "$NAME" in
   ip) case "$*" in "-j addr") cat "$Z/ip-addr" 2>/dev/null ;; *) echo '[]' ;; esac ;;
   journalctl) cat "$Z/journal" 2>/dev/null ;;
   findmnt) ;;
+  systemd-run)   # transiente Timer-Unit: der Name ist vergeben, solange sie läuft; den Aufruf selbst hält aufrufe.log fest
+    [ "$(cat "$Z/active-ju-haertung-ruecknahme.timer" 2>/dev/null)" != active ] || exit 1
+    echo active > "$Z/active-ju-haertung-ruecknahme.timer" ;;
   *) exit 127 ;;
 esac

@@ -4,7 +4,8 @@
 Hilfsprogramm von server/haerten.sh (läuft als root mit dem Python des Systems, nur Standardbibliothek):
 
     serverschutz.py liste DROP4 DROP6     heruntergeladene Spamhaus-Listen prüfen und als letzte gute Liste ablegen
-    serverschutz.py regelwerk             Regelwerk der Tabelle „inet ju_schutz“ ausgeben (für nft -f)
+    serverschutz.py regelwerk --ssh-nur-tailscale=ja|nein   Regeln der Tabelle „inet ju_schutz“ ausgeben (für nft -f)
+    serverschutz.py mengen                Sperrliste als Austausch der Mengen drop4/drop6 ausgeben (für nft -f)
     serverschutz.py status [--zeigen]     /var/lib/ju-serverschutz/status.json schreiben (und lesbar ausgeben)
 
 WURZEL (nur Tests): nachgestelltes Wurzelverzeichnis; Systembefehle kommen dann ausschließlich aus $WURZEL/stub.
@@ -198,14 +199,12 @@ def ssh_ports():
     return ports or [22]
 
 
-def regelwerk(netze4, netze6, ports, takt=12, nur_tailscale=False):
-    """Text für „nft -f“: ersetzt genau die Tabelle inet ju_schutz in einem Schritt (nie „flush ruleset“)."""
-    def menge(name, typ, netze):
-        inhalt = ''
-        if netze:
-            inhalt = '\n\t\telements = {\n' + ''.join(f'\t\t\t{n},\n' for n in netze) + '\t\t}'
-        return f'\tset {name} {{\n\t\ttype {typ}; flags interval; auto-merge;{inhalt}\n\t}}\n'
+def regelwerk(ports, takt=12, nur_tailscale=False):
+    """Text für „nft -f“: ersetzt genau die Tabelle inet ju_schutz in einem Schritt (nie „flush ruleset“).
 
+    Die Mengen drop4/drop6 entstehen leer; ihren Inhalt lädt `mengen` – so tauscht der tägliche Zeitgeber die Sperrliste
+    aus, ohne je die Regeln (und damit den SSH-Zustand) anzufassen.
+    """
     p = ', '.join(str(int(x)) for x in ports)
     takt = max(1, min(int(takt), 600))
     fremd = f'\t\ttcp dport {{ {p} }} ct state new counter name ssh_fremd drop\n' if nur_tailscale else ''
@@ -219,7 +218,13 @@ table inet ju_schutz {{
 	counter ungueltig {{ }}
 	counter ssh_takt {{ }}
 	counter ssh_fremd {{ }}
-{menge('drop4', 'ipv4_addr', netze4)}{menge('drop6', 'ipv6_addr', netze6)}	set ssh_takt4 {{
+	set drop4 {{
+		type ipv4_addr; flags interval; auto-merge;
+	}}
+	set drop6 {{
+		type ipv6_addr; flags interval; auto-merge;
+	}}
+	set ssh_takt4 {{
 		type ipv4_addr; size 65536; flags dynamic,timeout; timeout 2m;
 	}}
 	set ssh_takt6 {{
@@ -234,6 +239,8 @@ table inet ju_schutz {{
 		ct state established,related accept
 		ip saddr {{ {FREI4} }} accept
 		ip6 saddr {{ {FREI6} }} accept
+		# Nachbar- und Router-Erkennung (ICMPv6 133–136) kommt auch von globalen Adressen – ohne sie fällt IPv6 aus
+		icmpv6 type {{ nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert }} accept
 		ip saddr @drop4 counter name sperrliste drop
 		ip6 saddr @drop6 counter name sperrliste drop
 		meta l4proto ipv6-icmp accept
@@ -245,15 +252,28 @@ table inet ju_schutz {{
 '''
 
 
-def regelwerk_aktuell():
+def mengen(netze4, netze6):
+    """Text für „nft -f“: tauscht nur den Inhalt der Mengen drop4/drop6 der geladenen Tabelle aus (ein Schritt)."""
+    text = ('#!/usr/sbin/nft -f\n# JU Hamburg Finanzen – Sperrliste der Schutztabelle. Erzeugt von server/haertung/serverschutz.py.\n'
+            '# Tauscht nur den Inhalt der beiden Mengen aus; die Regeln stehen in ju_schutz.nft.\n'
+            'flush set inet ju_schutz drop4\nflush set inet ju_schutz drop6\n')
+    for name, netze in (('drop4', netze4), ('drop6', netze6)):
+        if netze:
+            text += f'add element inet ju_schutz {name} {{\n' + ''.join(f'\t{n},\n' for n in netze) + '}\n'
+    return text
+
+
+def mengen_aktuell():
     eigene = eigene_netze()
-    netze4, _ = ohne_eigene(gute_liste(4), eigene)
-    netze6, _ = ohne_eigene(gute_liste(6), eigene)
+    return mengen(ohne_eigene(gute_liste(4), eigene)[0], ohne_eigene(gute_liste(6), eigene)[0])
+
+
+def regelwerk_aktuell(nur_tailscale):
     try:
         takt = int(einstellung('SSH_NEU_JE_MINUTE', '12'))
     except ValueError:
         takt = 12
-    return regelwerk(netze4, netze6, ssh_ports(), takt, an('SSH_NUR_TAILSCALE', 'nein'))
+    return regelwerk(ssh_ports(), takt, nur_tailscale)
 
 
 # ---------------------------------------------------------------- Statusbericht
@@ -316,8 +336,9 @@ def ufw_durchlass(lage, proto, port):
     for ziel, aktion, quelle in lage['regeln']:
         if aktion not in ('ALLOW', 'LIMIT') or re.search(r' on tailscale\d*$', ziel):
             continue
-        ziel = re.sub(r' on \S+$', '', ziel)
-        angabe = ziel.split()[-1]
+        # „22/tcp (OpenSSH)“, „80,443/tcp (Nginx Full)“: ufw nennt die Ports selbst und hängt den Namen des Profils an
+        ziel = re.sub(r'\s*\(.*\)$', '', re.sub(r' on \S+$', '', ziel))
+        angabe = ziel.split()[-1] if ziel.split() else ''
         if angabe == 'OpenSSH':
             angabe = '22/tcp'
         m = re.fullmatch(r'([\d,:]+)(?:/(tcp|udp))?', angabe)
@@ -325,7 +346,6 @@ def ufw_durchlass(lage, proto, port):
             trifft = (m.group(2) in (None, proto)) and any(
                 int(a) <= port <= int(b or a) for a, _, b in (t.partition(':') for t in m.group(1).split(',') if t))
         else:
-            # shortcut: andere Anwendungsprofile (z. B. „Nginx Full“) werden nicht aufgelöst – bei Bedarf „ufw app info“ auswerten
             trifft = angabe == 'Anywhere'
         if trifft:
             if quelle == 'Anywhere':
@@ -403,7 +423,14 @@ def bericht():
         pruefung('schutztabelle', 'Schutztabelle geladen', 'ok' if tabelle else 'kritisch',
                  'Tabelle ju_schutz geladen' if tabelle else 'Tabelle ju_schutz fehlt')
 
-    # Sperrliste
+    # Sperrliste: zählt nur, wenn sie in der geladenen Tabelle steht – die Datei allein hält niemanden ab
+    geladen = False
+    if tabelle:
+        try:
+            daten = json.loads(befehl('nft', '-j', 'list', 'set', 'inet', 'ju_schutz', 'drop4')[1])['nftables']
+            geladen = any(e.get('set', {}).get('elem') for e in daten)
+        except (ValueError, KeyError, TypeError, AttributeError):
+            geladen = False
     try:
         alter = time.time() - os.stat(pfad(f'{LIB}/drop4.txt')).st_mtime
         zahlen['sperrliste_netze'] = len(gute_liste(4)) + len(gute_liste(6))
@@ -414,6 +441,10 @@ def bericht():
         pruefung('sperrliste', 'Sperrliste aktuell', 'hinweis', 'abgeschaltet (SPERRLISTE=nein)')
     elif alter is None:
         pruefung('sperrliste', 'Sperrliste aktuell', 'kritisch', 'noch keine Liste geladen')
+    elif not an('FIREWALL'):
+        pruefung('sperrliste', 'Sperrliste aktuell', 'hinweis', 'Liste vorhanden, wirkt aber nicht (FIREWALL=nein)')
+    elif not geladen:
+        pruefung('sperrliste', 'Sperrliste aktuell', 'kritisch', 'Liste vorhanden, aber nicht in der Schutztabelle geladen')
     else:
         tage = int(alter // 86400)
         stand = 'ok' if tage < 3 else 'hinweis' if tage < 14 else 'kritisch'
@@ -422,6 +453,15 @@ def bericht():
             stand = 'hinweis'
         if lesen(f'{LIB}/sperrliste.fehler'):
             detail += ', letzter Abruf gescheitert'
+        # jeder Lauf des täglichen Zeitgebers schreibt die Liste oder den Fehler neu – ist beides alt, läuft er nicht mehr
+        ruhe = alter
+        try:
+            ruhe = min(alter, time.time() - os.stat(pfad(f'{LIB}/sperrliste.fehler')).st_mtime)
+        except OSError:
+            pass
+        if ruhe > 2 * 86400:
+            stand = 'hinweis' if stand == 'ok' else stand
+            detail += f', der tägliche Zeitgeber ist seit {int(ruhe // 86400)} Tagen nicht gelaufen'
         pruefung('sperrliste', 'Sperrliste aktuell', stand, detail)
 
     # fail2ban
@@ -438,7 +478,8 @@ def bericht():
     ports = ssh_ports()
     rc, sshd = befehl('sshd', '-T')
     passwort = re.search(r'^passwordauthentication (\S+)', sshd, re.M)
-    durchlass = 'zu' if an('SSH_NUR_TAILSCALE', 'nein') and tabelle else max(
+    # was die Tabelle mit SSH tut, steht in ihren Regeln – der Schalter in haertung.conf allein belegt nichts
+    durchlass = 'zu' if tabelle and 'ssh_fremd drop' in (lesen(f'{LIB}/ju_schutz.nft') or '') else max(
         (ufw_durchlass(lage, 'tcp', p) for p in ports), key=('zu', 'begrenzt', 'offen').index)
     wo = {'zu': 'nur über Tailscale und die Konsole des Anbieters', 'begrenzt': 'durch die Firewall auf einzelne Quellen begrenzt',
           'offen': 'aus dem Internet erreichbar'}[durchlass]
@@ -567,8 +608,11 @@ def status(zeigen):
 def main(argv):
     if argv[:1] == ['liste'] and len(argv) == 3:
         return liste_uebernehmen(argv[1], argv[2])
-    if argv == ['regelwerk']:
-        sys.stdout.write(regelwerk_aktuell())
+    if argv in (['regelwerk', '--ssh-nur-tailscale=ja'], ['regelwerk', '--ssh-nur-tailscale=nein']):
+        sys.stdout.write(regelwerk_aktuell(argv[1].endswith('=ja')))
+        return 0
+    if argv == ['mengen']:
+        sys.stdout.write(mengen_aktuell())
         return 0
     if argv[:1] == ['status'] and argv[1:] in ([], ['--zeigen']):
         return status(bool(argv[1:]))

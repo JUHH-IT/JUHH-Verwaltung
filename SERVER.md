@@ -34,7 +34,7 @@ sudo tailscale up --ssh                          # Link im Browser öffnen; --ss
 ```
 
 Der Dienst lauscht nur auf 127.0.0.1 und ist ohne Tailscale nicht erreichbar. Den Server selbst zusätzlich absichern
-(ab 0.38 übernimmt `sudo ju-finanzen haerten` die Härtung des Betriebssystems – Abschnitt 7; die Regeln hier bleiben die Grundlage):
+(ab 0.40 übernimmt `sudo ju-finanzen haerten` die Härtung des Betriebssystems – Abschnitt 7; die Regeln hier bleiben die Grundlage):
 - SSH nur noch über Tailscale:
   ```bash
   sudo ufw default deny incoming
@@ -290,7 +290,7 @@ den Ereignissen. Zurück zur Passwort-Anmeldung für alle: `sudo ju-finanzen anm
 Die Verwaltungsbefehle lesen `JU_FINANZEN_KEYCLOAK_*` selbst aus `/etc/ju-finanzen/ju-finanzen.env`; das Client-Secret
 steht nie in der Befehlszeile (Prozessliste).
 
-## 7. Härtung des Betriebssystems (ab 0.38)
+## 7. Härtung des Betriebssystems (ab 0.40)
 
 Das Programm ist nur im Tailnet erreichbar. Der Server selbst hängt trotzdem am Internet (SSH, Tailscale). Der Befehl
 `haerten` stellt ihn so ein, dass er sich auch ohne Tailscale selbst schützt: Firewall mit Sperrliste, fail2ban,
@@ -299,35 +299,73 @@ Oberstes Gebot: **niemanden aussperren, nichts stillschweigend ändern.**
 
 ### Ablauf
 
-Vorher einmal prüfen, dass das Browser-Terminal des Anbieters (Hostinger: VPS → „Browser-Terminal“) funktioniert – es ist
-der Rückweg, falls SSH einmal nicht mehr geht. Empfohlen: vor dem ersten Lauf beim Anbieter einen Snapshot anlegen.
+Der erste Lauf, Schritt für Schritt:
 
-```bash
-sudo ju-finanzen haerten --pruefen     # 1. nur ansehen: je Maßnahme Stand → Änderung → Risiko (ändert nichts)
-sudo ju-finanzen haerten               # 2. anwenden (fragt nach der Firewall-Änderung einmal nach)
-sudo ju-finanzen schutz-status         # 3. Ergebnis ansehen
-sudo ju-finanzen haerten --zurueck     # zurück auf den Stand vor dem letzten Lauf
-```
+1. **Snapshot beim Anbieter anlegen** (Hostinger: VPS → „Snapshots“). Er ist der letzte Rückweg, falls alles andere versagt.
+2. **Browser-Terminal des Anbieters öffnen und offen lassen** (Hostinger: VPS → „Browser-Terminal“). Es ist der Rückweg,
+   falls SSH einmal nicht mehr geht.
+3. **Ansehen, was geschehen würde** – ändert nichts:
+   ```bash
+   sudo ju-finanzen haerten --pruefen
+   ```
+   Die Ausgabe lesen: je Maßnahme *Stand* (wie es jetzt ist), *Änderung* (was der Lauf täte), *Risiko*, *Hinweis* (nur Meldung).
+4. **Anwenden:**
+   ```bash
+   sudo ju-finanzen haerten
+   ```
+   Der Lauf endet mit der Aufforderung „Öffne jetzt ein ZWEITES Fenster …“. Die Änderungen gelten ab jetzt auf Probe:
+   Nach fünf Minuten nimmt der Server sie von selbst zurück, wenn sie niemand bestätigt.
+5. **Zweites Fenster öffnen und dort neu anmelden** (ein weiteres Browser-Terminal oder eine neue SSH-Verbindung) – das
+   erste Fenster bleibt offen. Gelingt die neue Anmeldung nicht: nichts tun, nach fünf Minuten gilt wieder der alte Stand.
+6. **Im zweiten Fenster bestätigen:**
+   ```bash
+   sudo ju-finanzen haerten --bestaetigen
+   ```
+7. **Ergebnis ansehen:**
+   ```bash
+   sudo ju-finanzen schutz-status
+   ```
+8. **Neustart zu einem ruhigen Zeitpunkt** (`sudo reboot`, niemand arbeitet gerade im Programm), danach neu anmelden und
+   noch einmal `sudo ju-finanzen schutz-status`: Schutztabelle, Sperrliste und Dienste müssen auch nach dem Start „ok“ sein.
+
+Jederzeit zurück auf den Stand vor dem letzten Lauf: `sudo ju-finanzen haerten --zurueck` – notfalls im Browser-Terminal
+des Anbieters.
 
 `haerten` ohne Schalter wendet an, `--pruefen` berichtet nur – wie bei `install.sh --pruefen` und
-`aktualisieren --pruefen`. Das ist vertretbar, weil das Anwenden gesichert und wiederholbar ist und alles, womit man
-sich aussperren könnte, einen eigenen Schalter mit Nachweis braucht (siehe „SSH“).
-
-Nach dem Anwenden: die Sitzung offen lassen, in einem zweiten Fenster neu anmelden und das Programm im Browser öffnen.
-Geht etwas nicht: `sudo ju-finanzen haerten --zurueck` – notfalls im Browser-Terminal des Anbieters.
+`aktualisieren --pruefen`. Das ist vertretbar, weil das Anwenden gesichert und wiederholbar ist, alles am Zugang zum Server
+erst nach der Bestätigung aus einem zweiten Fenster bleibt und alles, womit man sich aussperren könnte, zusätzlich einen
+eigenen Schalter mit Nachweis braucht (siehe „SSH“).
 
 So schützt der Befehl vor Fehlern:
 - Geändert wird an genau einer Stelle im Skript; `--pruefen` durchläuft denselben Weg und berichtet nur.
-- Jede geänderte Datei liegt vorher in `/var/backups/ju-haertung/<Zeit>/dateien/` (nur root), dazu `MANIFEST` (Dateien,
-  Rechte, Dienste, Kern-Werte vor dem Lauf) und `protokoll.log`. Ein Lauf ohne Änderung legt nichts an.
-- Jede Maßnahme läuft für sich. Scheitert ein Schritt, wird die begonnene Maßnahme zurückgenommen und der Lauf endet;
-  frühere Maßnahmen bleiben (alles zurück: `--zurueck`). Danach einfach erneut aufrufen.
+- **Rücknahme, die nicht an der Sitzung hängt.** Ändert ein Lauf die Firewall-Maßnahme oder einen der beiden SSH-Schalter,
+  plant er *vor* der ersten Änderung eine eigene Timer-Unit (`systemd-run`, Unit `ju-haertung-ruecknahme`), die nach fünf
+  Minuten `haerten --zurueck` ausführt. Sie läuft auch, wenn das Fenster geschlossen wird, die Verbindung abreißt oder der
+  Lauf abstürzt. Nur `haerten --bestaetigen` sagt sie ab – und nur aus einer *anderen* Anmeldung als der, die den Lauf
+  gestartet hat: Eine bestehende Verbindung beweist nicht, dass eine neue noch gelingt. Aus derselben Anmeldung wird die
+  Bestätigung abgelehnt. Lässt sich die Rücknahme nicht planen, werden diese Maßnahmen nicht angewendet (der Rest schon).
+  Solange eine Rücknahme aussteht, zeigen `--pruefen` und `schutz-status` sie mit der Restzeit, und ein neuer Lauf beginnt
+  nicht. Ansehen: `systemctl list-timers ju-haertung-ruecknahme`. Nach einem Neustart innerhalb der fünf Minuten gibt es die
+  Unit nicht mehr – dann selbst entscheiden: `--bestaetigen` oder `--zurueck`.
+- Jede geänderte Datei liegt vorher in `/var/backups/ju-haertung/<Zeit>/dateien/` (nur root), dazu `MANIFEST` (Dateien mit
+  Prüfsumme nach dem Lauf, Rechte, Dienste, Kern-Werte vor dem Lauf, Gegenbefehle für ufw) und `protokoll.log`. Ein Lauf ohne
+  Änderung legt nichts an.
+- Jede Maßnahme läuft für sich. Scheitert ein Schritt, wird die begonnene Maßnahme zurückgenommen und der Lauf geht mit
+  den übrigen weiter; am Ende steht die Liste „nicht angewendet: … (Grund)“ und der Befehl endet mit einem Fehler. Nach dem
+  Beheben einfach erneut aufrufen. Strg-C oder ein geschlossenes Fenster nehmen die begonnene Maßnahme ebenfalls zurück;
+  eine schon geplante Rücknahme bleibt bestehen.
 - Firewall: Das Regelwerk wird vor dem Laden geprüft (`nft -c`). Nach dem Laden prüft der Befehl, dass Tailscale, das
   Programm (127.0.0.1), Keycloak und der Weg nach außen weiter erreichbar sind – was vorher ging, muss weiter gehen,
-  sonst nimmt er die Maßnahme zurück. Am Terminal fragt er zusätzlich: Wer nicht binnen 90 Sekunden die Eingabetaste
-  drückt (weil die Verbindung hängt), bekommt den alten Stand zurück. Ohne Terminal: `--ohne-rueckfrage`.
-- `--zurueck` nimmt den letzten Lauf zurück, ein weiteres `--zurueck` den davor. Neu installierte Pakete bleiben
-  installiert, ihre Dienste werden abgeschaltet. `--zurueck --pruefen` zeigt nur, was zurückgenommen würde.
+  sonst nimmt er die Maßnahme zurück.
+- `--zurueck` nimmt den letzten Lauf zurück, ein weiteres `--zurueck` den davor. Es nimmt nur zurück, was der Lauf selbst
+  getan hat: In ufw führt es die Gegenbefehle zu den eigenen Ergänzungen aus (später ergänzte Regeln bleiben), in
+  `/etc/ufw/sysctl.conf` stellt es nur die eigenen Zeilen zurück, und eine Datei, die seit dem Lauf von Hand geändert wurde,
+  überschreibt es nicht, sondern meldet sie. Neu installierte Pakete bleiben installiert, ihre Dienste werden abgeschaltet.
+  Statusbericht und Sperrliste (`status.json`, `drop4.txt`, `drop6.txt`, `ju_mengen.nft`, `zaehler.json`) werden gelöscht,
+  damit das Programm keinen veralteten Stand als „ok“ zeigt. `--zurueck --pruefen` zeigt nur, was zurückgenommen würde.
+- `--ohne-rueckfrage` heißt: keine Bestätigung nötig, es wird keine Rücknahme geplant. Der Schalter ist für die
+  Rücknahme-Unit und die Tests da – **für den Aufruf von Hand nicht empfohlen**, weil damit genau das Netz fehlt, das vor
+  dem Aussperren schützt.
 
 ### Maßnahmen und Schalter
 
@@ -336,7 +374,7 @@ Schalter stehen in `/etc/ju-finanzen/haertung.conf` (legt der erste Lauf an; Vor
 
 | Nr. | Schalter (Vorgabe) | Was geschieht | Risiko |
 | --- | --- | --- | --- |
-| 1 | `FIREWALL=ja` | ufw bleibt die Grundlage: eingehend gesperrt, `tailscale0` erlaubt, Tailscale-UDP 41641 erlaubt. Vorhandene Regeln bleiben; SSH wird so gelassen wie vorgefunden und nur gemeldet. Dazu die eigene Tabelle `inet ju_schutz` (unten). | gering; öffnet zusätzlich nur 41641/udp |
+| 1 | `FIREWALL=ja`, `TAILSCALE_PORT=nein` | ufw bleibt die Grundlage: eingehend gesperrt, `tailscale0` erlaubt. Ergänzt wird nur, was fehlt (stimmt das schon, ändert der Lauf an ufw nichts); vorhandene Regeln bleiben, SSH wird so gelassen wie vorgefunden und nur gemeldet. Dazu die eigene Tabelle `inet ju_schutz` (unten). | gering; öffnet nichts |
 | 2 | `SPERRLISTE=ja` | Spamhaus DROP (IPv4 und IPv6) täglich laden, prüfen, in die Tabelle übernehmen | gering |
 | 3 | `FAIL2BAN=ja` | fail2ban für SSH (5 Fehlversuche in 10 Minuten → 1 Stunde, wachsend bis 1 Woche) und „recidive“ (3 Sperren an einem Tag → 1 Woche, alle Ports) | gering |
 | 4 | `KERN=ja` | Kern-Einstellungen in `/etc/sysctl.d/80-ju-haertung.conf`, sofort wirksam | gering |
@@ -351,17 +389,22 @@ Schalter stehen in `/etc/ju-finanzen/haertung.conf` (legt der erste Lauf an; Vor
 **1 Firewall – Tabelle `inet ju_schutz`.** Sie lebt neben ufw und Tailscale und greift vor ufw (Priorität −150, nach der
 Verbindungsverfolgung). Sie kann nur zusätzlich verwerfen, nie etwas öffnen: Ein „accept“ beendet nur die eigene Kette,
 danach entscheidet weiter ufw. Reihenfolge: zuerst angenommen werden `lo`, `tailscale0`, bestehende Verbindungen,
-127.0.0.0/8, 169.254.0.0/16 (von dort kommt das Browser-Terminal des Anbieters), 100.64.0.0/10 und die entsprechenden
-IPv6-Bereiche. Dann verworfen: Absender aus der Sperrliste, ungültige Pakete, mehr als 12 neue SSH-Verbindungen je Quelle und
+127.0.0.0/8, 169.254.0.0/16 (von dort kommt das Browser-Terminal des Anbieters), 100.64.0.0/10, die entsprechenden
+IPv6-Bereiche (auch fe80::/10) und die Nachbar- und Router-Erkennung von IPv6 (ICMPv6 133–136). Dann verworfen: Absender aus der Sperrliste, ungültige Pakete, mehr als 12 neue SSH-Verbindungen je Quelle und
 Minute. Ausgehend wird nichts beschränkt – Updates, Tailscale, der Abruf der Sperrliste, die Adressdaten der Stadt
 (`api.hamburg.de`) und der E-Mail-Versand (SMTP) gehen unverändert.
-Die Tabelle lädt der Dienst `ju-serverschutz` beim Start (früh wie `ufw.service`) aus
-`/var/lib/ju-serverschutz/ju_schutz.nft`. Bewusst nicht über `/etc/nftables.conf` und `nftables.service`: Diese Datei beginnt
-üblicherweise mit `flush ruleset` und würde die Regeln von ufw und Tailscale löschen. Der eigene Dienst ersetzt immer nur
-die eigene Tabelle in einem Schritt. Lädt sie beim Start nicht, startet der Server trotzdem und ufw schützt weiter; der
+Die Tabelle lädt der Dienst `ju-serverschutz` beim Start (früh wie `ufw.service`): zuerst die Regeln aus
+`/var/lib/ju-serverschutz/ju_schutz.nft`, dann die Sperrliste aus `ju_mengen.nft`. Die Regeln ändert ausschließlich ein
+`haerten`-Lauf; der tägliche Zeitgeber tauscht nur den Inhalt der beiden Mengen der Sperrliste aus (ein Schritt, vorher mit
+`nft -c` geprüft). Ein von Hand gesetzter Schalter wird so nie nebenbei wirksam.
+Bewusst nicht über `/etc/nftables.conf` und `nftables.service`: Diese Datei beginnt üblicherweise mit `flush ruleset` und
+würde die Regeln von ufw und Tailscale löschen; den Dienst `nftables` fasst der Befehl deshalb nie an (gebraucht wird nur
+das Programm `nft`). Der eigene Dienst ersetzt immer nur die eigene Tabelle in einem Schritt. Lädt sie beim Start nicht, startet der Server trotzdem und ufw schützt weiter; der
 Statusbericht meldet es als kritisch.
 Notaus: `sudo systemctl stop ju-serverschutz` entfernt nur diese Tabelle (wieder an: `sudo systemctl start ju-serverschutz`).
 Zähler ansehen: `sudo nft list counters table inet ju_schutz`.
+Tailscale-Port: `tailscaled` öffnet seinen Port 41641/udp selbst (eigene Kette `ts-input`); in ufw braucht er keine Regel.
+`TAILSCALE_PORT=ja` ergänzt `ufw allow 41641/udp` – nur nötig, wenn Tailscale mit `--netfilter-mode=off` oder `nodivert` läuft.
 Hinweis: Der Anbieter hat zusätzlich eine eigene Firewall vor dem Server (Hostinger-Verwaltung) – sie ist unabhängig davon.
 
 **2 Sperrliste.** Quelle: `https://www.spamhaus.org/drop/drop.txt` und `dropv6.txt` (nur HTTPS, 60 Sekunden, höchstens 2 MB),
@@ -385,11 +428,14 @@ Redirects, kein Source-Routing, unmögliche Absender protokollieren, `kptr_restr
 für root, `protected_*`, `suid_dumpable=0`. Strengere vorhandene Werte bleiben. Verträglichkeit:
 - `rp_filter` bleibt bzw. wird 2 (locker) – so steht es auf Ubuntu 24.04 bereits. Strikt (1) verträgt sich nicht mit
   Tailscale (Exit-Nodes und Subnetz-Routen; Tailscale meldet das selbst als Störung) und wird deshalb nie gesetzt.
-- `net.ipv4.ip_forward` wird nur dann 0, wenn kein Docker-Container existiert und Tailscale keine Routen und keinen
-  Exit-Node anbietet; sonst nur eine Meldung.
+- `net.ipv4.ip_forward` wird nur dann 0, wenn kein Docker-Container existiert, Tailscale keine Routen und keinen
+  Exit-Node anbietet und keine andere Datei (`/etc/sysctl.conf`, `/etc/sysctl.d/`, `/usr/lib/sysctl.d/`, z. B.
+  `99-tailscale.conf`) die Weiterleitung einschaltet; sonst nur eine Meldung. Weil der Kern beim Abschalten der
+  Weiterleitung `accept_redirects` wieder einschaltet, wendet der Befehl seine Datei als Ganzes an (`sysctl -p`), die
+  Weiterleitung zuerst.
 - Nicht angefasst: IPv6-Router-Ankündigungen (`accept_ra`, Netz des Anbieters), `kernel.unprivileged_userns_clone`, `kernel.sysrq`.
-- ufw setzt beim Start eigene Werte aus `/etc/ufw/sysctl.conf`; dort trägt der Befehl dieselben Werte ein (sonst
-  stellte ufw z. B. das Protokollieren wieder ab).
+- ufw setzt beim Start eigene Werte aus `/etc/ufw/sysctl.conf`; dort stellt der Befehl die betroffenen Zeilen auf
+  dieselben Werte (sonst stellte ufw z. B. das Protokollieren wieder ab) und merkt sich je Zeile den alten Wert.
 
 **5 Updates.** `/etc/apt/apt.conf.d/52ju-haertung`: Paketlisten und Sicherheitsupdates täglich, kein automatischer Neustart
 (`UPDATES_NEUSTART=ja`: Neustart um 04:30). Steht ein Neustart aus, meldet es der Statusbericht: `sudo reboot` zu einer
@@ -398,11 +444,13 @@ passenden Zeit. Tailscale kommt aus einer eigenen Paketquelle: `sudo tailscale s
 **7 SSH.** Ohne Schalter nur Gefahrloses: `MaxAuthTries 3`, `LoginGraceTime 30`, `X11Forwarding no`,
 `AllowAgentForwarding no`, `AllowTcpForwarding local` (der Tunnel zur Keycloak-Konsole aus Abschnitt 6 geht weiter),
 `PermitEmptyPasswords no`, hängende Verbindungen nach zehn Minuten beenden. `PermitRootLogin` und die Anmeldung per
-Passwort bleiben unverändert. Vor jedem Neuladen läuft `sshd -t`; laufende Sitzungen bleiben. Wer viele Schlüssel im
-SSH-Agenten hat, meldet sich mit `ssh -o IdentitiesOnly=yes -i <Schlüssel> …` an.
+Passwort bleiben unverändert. Vor jedem Neuladen läuft `sshd -t` (den dafür nötigen Ordner `/run/sshd` legt der Befehl an,
+falls der SSH-Dienst seit dem Start noch nicht lief); laufende Sitzungen bleiben. `MaxAuthTries 3`: Wer sich von außen mit
+dem Passwort anmeldet und Schlüssel im SSH-Agenten hat, nimmt `ssh -o PubkeyAuthentication=no …` – sonst verbrauchen die
+Schlüssel die drei Versuche, und solche Fehlverbindungen zählen bei fail2ban mit.
 
 Die beiden riskanten Schalter nimmt der Befehl nur an, wenn der Nachweis gelingt – sonst bricht er ab, bevor er
-irgendetwas ändert:
+irgendetwas ändert. Auch danach gelten sie erst auf Probe, bis `haerten --bestaetigen` aus einem zweiten Fenster kommt:
 
 ```bash
 sudo ju-finanzen haerten --ssh-nur-schluessel   # Anmeldung per Passwort abschalten
@@ -418,7 +466,8 @@ sudo ju-finanzen haerten --ssh-nur-tailscale    # neue SSH-Verbindungen nur noch
   SSH-Verbindung über das Tailnet. Die Schutztabelle verwirft dann neue SSH-Verbindungen von außen; die Regeln in ufw
   bleiben unverändert, das Browser-Terminal des Anbieters (169.254.0.0/16) geht weiter.
 - Zurück: in `/etc/ju-finanzen/haertung.conf` den Schalter auf `nein` stellen und `sudo ju-finanzen haerten` aufrufen –
-  oder `--zurueck`, wenn es der letzte Lauf war.
+  oder `--zurueck`, wenn es der letzte Lauf war. Ein von Hand auf `ja` gestellter Schalter bewirkt allein nichts: Wirksam
+  wird er nur in einem `haerten`-Lauf, der den Nachweis besteht – nie durch den nächtlichen Zeitgeber.
 
 **8 Rechte und Dateien.** `/etc/ju-finanzen` 750 root:jufinanzen, `ju-finanzen.env` 640, `keycloak-admin.env` 600,
 `/var/backups/ju-keycloak` und `/var/backups/ju-haertung` 700; im Datenordner `/var/lib/ju-finanzen` ändert root nichts
@@ -438,7 +487,9 @@ Dienst `ju-finanzen` kann sie lesen (`ProtectSystem=strict` macht nur schreibges
 
 `stand` ist `ok`, `hinweis` oder `kritisch`. Prüfungen (`id`): `firewall`, `schutztabelle`, `sperrliste`, `fail2ban`,
 `ssh_passwort`, `ssh_erreichbar`, `ports`, `updates`, `updates_offen`, `neustart`, `kern`, `tailscale`, `dienste`, `docker`,
-`keycloak_sicherung` (nur mit Keycloak), `rechte`, `platz`. `ports` ist nur kritisch, wenn außer SSH und Tailscale etwas auf
+`keycloak_sicherung` (nur mit Keycloak), `rechte`, `platz`. `schutztabelle` ist nur „ok“, wenn die Tabelle wirklich geladen
+ist; `sperrliste` nur, wenn ihre Einträge in der geladenen Tabelle stehen (`SPERRLISTE=ja` mit `FIREWALL=nein`: Hinweis
+„wirkt nicht“) – läuft der tägliche Zeitgeber seit zwei Tagen nicht mehr, wird daraus ein Hinweis. `ports` ist nur kritisch, wenn außer SSH und Tailscale etwas auf
 allen Adressen lauscht **und** ufw es durchlässt; nur lokal Gebundenes (auch `[::ffff:127.0.0.1]`, so erscheint Keycloak) zählt
 nicht. `abgewiesen_24h` zählt die von der Schutztabelle verworfenen Pakete. Der Bericht enthält nie Adressen, Namen oder
 Geheimnisse. `sudo ju-finanzen schutz-status` schreibt ihn neu und zeigt ihn an.
@@ -465,11 +516,21 @@ umgesetzt): ein Reverse Proxy auf dem Server (z. B. Caddy) mit eigener Domain un
 127.0.0.1:8769 bzw. die Keycloak-Anmeldeseiten (`/auth/realms/ju-hamburg`, `/auth/resources`) weiterreicht. Dazu gehören:
 `ufw allow 443/tcp`, die Domain in `JU_FINANZEN_ADRESSEN` und in der Keycloak-Einrichtung, die Anmeldung über Keycloak mit
 Zwei-Faktor als Pflicht, ein fail2ban-Abschnitt für den Proxy und der Port 443 in den erwarteten Ports des Statusberichts.
+Der Proxy muss auf demselben Server laufen und die Adresse des Aufrufers in `X-Forwarded-For` selbst **setzen** oder als
+letzten Eintrag **anhängen** – nie den Kopf des Clients durchreichen: Die Abwehr der Anwendung (ab 0.39, `schutz.py`) wertet
+nur den letzten Eintrag aus; fehlt der Kopf oder steht dort eine lokale Adresse, gilt jede Anfrage als lokal und die Abwehr
+ist wirkungslos (die Konfigurationsprüfung auf der Seite „Sicherheit“ meldet das als kritisch).
 Sperrliste, Schutztabelle, Kern-Einstellungen und Updates gelten dann unverändert weiter.
 
 ### Wenn etwas nicht geht
 
-- **Keine SSH-Anmeldung mehr:** Browser-Terminal des Anbieters öffnen, `sudo ju-finanzen haerten --zurueck`.
+- **Keine SSH-Anmeldung mehr:** Browser-Terminal des Anbieters öffnen, `sudo ju-finanzen haerten --zurueck`. War der Lauf
+  noch nicht bestätigt, genügt Warten: Nach fünf Minuten gilt von selbst wieder der alte Stand.
+- **„Nicht bestätigt: … derselben Anmeldung“:** Die Bestätigung muss aus einem zweiten Fenster mit eigener, neuer Anmeldung
+  kommen – nicht aus dem Fenster, in dem `haerten` lief.
+- **„nicht angewendet: … (Grund)“ am Ende eines Laufs:** Diese Maßnahme wurde zurückgenommen, die übrigen gelten. Grund
+  beheben (bei einem Paket: einige Minuten warten, dann `sudo apt-get update && sudo apt-get install <Paket>`) und
+  `sudo ju-finanzen haerten` erneut aufrufen.
 - **Eigene Adresse gesperrt:** `sudo fail2ban-client unban <Adresse>`; dauerhaft ausnehmen: `NIE_SPERREN=` in
   `/etc/ju-finanzen/haertung.conf`, dann `sudo ju-finanzen haerten`.
 - **Verdacht auf die Schutztabelle:** `sudo systemctl stop ju-serverschutz` (Notaus), prüfen, wieder starten.
@@ -535,6 +596,7 @@ Zur vorherigen Version zurück: `sudo /opt/ju-finanzen/current/server/install.sh
 | `sudo ju-finanzen keycloak-verbinden "Name" [--kc-name name]` | bestehende Person mit Keycloak verbinden (Startpasswort einmal) |
 | `sudo ju-finanzen notzugang [--minuten N \| --aus]` | Keycloak-Betrieb: Notzugang (Passwort-Anmeldung der Verwaltung) befristet öffnen bzw. schließen |
 | `sudo ju-finanzen haerten [--pruefen \| --zurueck]` | Betriebssystem härten: Firewall mit Sperrliste, fail2ban, Kern, Updates, SSH (Abschnitt 7); `--pruefen` ändert nichts |
+| `sudo ju-finanzen haerten --bestaetigen` | nach `haerten` aus einem zweiten Fenster (neu angemeldet): Änderungen an Firewall und SSH-Zugang behalten – sonst nimmt der Server sie nach fünf Minuten zurück |
 | `sudo ju-finanzen haerten --ssh-nur-schluessel` bzw. `--ssh-nur-tailscale` | SSH enger stellen – nur nach bestandenem Nachweis (Abschnitt 7, „SSH“) |
 | `sudo ju-finanzen schutz-status` | Statusbericht des Serverschutzes (derselbe, den das Programm liest) |
 | `sudo ju-finanzen protokoll [Zeilen]` | Protokoll des Dienstes |
@@ -564,7 +626,7 @@ Ein Neustart während eines E-Mail-Versands hält den Versand nach der aktuellen
   - Anfragegrößen sind begrenzt; die Sitzung wird geprüft, bevor größere Daten gelesen werden.
   - Höchstens 48 gleichzeitige Verbindungen.
   - systemd begrenzt den Speicher (768 MB).
-- Betriebssystem (ab 0.38, Abschnitt 7): Firewall mit Sperrliste (Spamhaus DROP), fail2ban, Kern-Einstellungen, automatische
+- Betriebssystem (ab 0.40, Abschnitt 7): Firewall mit Sperrliste (Spamhaus DROP), fail2ban, Kern-Einstellungen, automatische
   Sicherheitsupdates, SSH-Grundhärtung; der Stand steht alle 15 Minuten in `/var/lib/ju-serverschutz/status.json`.
 - Der Dienst läuft als eigener Benutzer ohne Anmeldung. systemd beschränkt ihn: Er darf nur
   `/var/lib/ju-finanzen` beschreiben und hat keinen Zugriff auf `/home`, Geräte oder Kernel-Einstellungen.

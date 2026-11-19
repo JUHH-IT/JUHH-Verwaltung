@@ -4,23 +4,30 @@
 # Aufruf über den Verwaltungsbefehl:
 #   sudo ju-finanzen haerten --pruefen     nur berichten: je Maßnahme Stand → Änderung → Risiko (ändert nichts)
 #   sudo ju-finanzen haerten               anwenden: sichert jede geänderte Datei vorher, beliebig oft wiederholbar
+#   sudo ju-finanzen haerten --bestaetigen aus einem ZWEITEN Fenster: Änderungen an Firewall/SSH-Zugang behalten
 #   sudo ju-finanzen haerten --zurueck     Stand vor dem letzten Lauf wiederherstellen (mit --pruefen: nur zeigen)
 #   sudo ju-finanzen schutz-status         Statusbericht des Serverschutzes auf der Konsole
 # Riskante Schalter – werden nur angenommen, wenn der Nachweis gelingt (sonst Abbruch, bevor etwas geändert wird):
 #   --ssh-nur-schluessel   SSH-Anmeldung per Passwort abschalten (nur wenn ein Schlüssel hinterlegt und benutzt wurde)
 #   --ssh-nur-tailscale    neue SSH-Verbindungen nur noch aus dem Tailnet (nur wenn Tailscale läuft und SSH dort geht)
-#   --ohne-rueckfrage      nach einer Firewall-Änderung nicht auf die Bestätigung am Terminal warten
+#
+# Ändert ein Lauf die Firewall oder einen der beiden SSH-Schalter, plant er VORHER mit systemd-run eine Rücknahme, die
+# nicht an der Sitzung hängt (Unit ju-haertung-ruecknahme, Vorgabe 5 Minuten). Nur „haerten --bestaetigen“ aus einer
+# anderen Anmeldesitzung sagt sie ab – das beweist, dass eine neue Anmeldung noch gelingt.
+# --ohne-rueckfrage: keine Bestätigung nötig, es wird keine Rücknahme geplant (nur für Tests und die Rücknahme-Unit, die
+# „--zurueck --ohne-rueckfrage“ aufruft und damit ausschließlich einen noch unbestätigten Lauf zurücknimmt).
 #
 # Maßnahmen und Schalter: /etc/ju-finanzen/haertung.conf (Vorlage server/haertung/haertung.conf), Beschreibung in
 # SERVER.md, Abschnitt „Härtung“. Sicherung und Protokoll je Lauf: /var/backups/ju-haertung/<Zeit>/.
 # Zeitgeber rufen auf: haerten.sh sperrliste (täglich) und haerten.sh status-schreiben (alle 15 Minuten).
 #
 # Grundsätze: niemanden aussperren. Geändert wird nur über tu() – mit --pruefen berichtet tu() bloß. Jede Maßnahme
-# läuft für sich; scheitert sie, wird sie zurückgenommen und der Lauf endet. An der Art der SSH-Anmeldung und an
-# vorhandenen Firewall-Regeln ändert das Skript ohne die Schalter oben nichts.
+# läuft für sich; scheitert sie, wird sie zurückgenommen und der Lauf geht mit den übrigen weiter (am Ende: Liste und
+# Rückgabe 1). An der Art der SSH-Anmeldung und an vorhandenen Firewall-Regeln ändert das Skript ohne die Schalter nichts.
 # WURZEL (nur Tests): nachgestelltes Wurzelverzeichnis; Systembefehle kommen dann ausschließlich aus $WURZEL/stub.
 # shellcheck disable=SC1111        # deutsche Anführungszeichen in Meldungen sind Absicht
-# shellcheck disable=SC2030,SC2031  # GEAENDERT/GETAN gelten bewusst nur innerhalb einer Maßnahme (eigene Shell)
+# shellcheck disable=SC2030,SC2031  # GEAENDERT/GETAN/RISKANT gelten bewusst nur innerhalb einer Maßnahme (eigene Shell)
+# shellcheck disable=SC2329        # Maßnahmen und ihre Schritte ruft das Skript über massnahme() und tu() auf
 set -euo pipefail
 umask 022
 export LC_ALL=C.UTF-8 DEBIAN_FRONTEND=noninteractive
@@ -32,28 +39,45 @@ CONF="$W$ETC/haertung.conf"
 LIB=/var/lib/ju-serverschutz
 SICHERUNGEN="$W/var/backups/ju-haertung"
 UNITS=/etc/systemd/system
-NFT_DATEI=$LIB/ju_schutz.nft
+NFT_DATEI=$LIB/ju_schutz.nft        # Regeln: ändert nur ein haerten-Lauf (steht im MANIFEST)
+MENGEN_DATEI=$LIB/ju_mengen.nft     # Sperrliste: tauscht auch der tägliche Zeitgeber aus (Arbeitsdatei, nie im MANIFEST)
+RUECK_UNIT=ju-haertung-ruecknahme
 SSH_DATEI=/etc/ssh/sshd_config.d/00-ju-haertung.conf
 KERN_DATEI=/etc/sysctl.d/80-ju-haertung.conf
 PY="${JU_PYTHON:-/usr/bin/python3}"
 PAUSE="${JU_PAUSE:-3}"            # Sekunden bis zur Nachprüfung der Firewall (Tests: 0)
-FRIST="${JU_FRIST:-90}"           # Sekunden für die Bestätigung am Terminal (Tests: kürzer)
-LOG=""; MANIFEST=""; SICHERUNG=""
-PRUEFEN=0; ZURUECK=0; RUECKFRAGE=1; OPT_SCHLUESSEL=0; OPT_TAILSCALE=0; BEFEHL=haerten
-APT_AKTUELL=0; GEAENDERT=0; GETAN=0
+FRIST="${JU_FRIST:-300}"          # Sekunden bis zur geplanten Rücknahme (Tests: kürzer)
+LOG=""; MANIFEST=""; SICHERUNG=""; TMP=""
+PRUEFEN=0; ZURUECK=0; BESTAETIGEN=0; RUECKFRAGE=1; OPT_SCHLUESSEL=0; OPT_TAILSCALE=0; BEFEHL=haerten
+APT_AKTUELL=0; GEAENDERT=0; GETAN=0; RISKANT=0; LAUFEND=""; MARKE=0
 
-aus()     { printf '%s\n' "$*"; if [ -n "$LOG" ]; then printf '%s\n' "$*" >> "$LOG"; fi; }
+# „|| true“: ein abgerissenes Terminal darf weder Lauf noch Rücknahme mitten im Schritt beenden – das Protokoll bekommt die Zeile
+aus()     { printf '%s\n' "$*" 2>/dev/null || true; if [ -n "$LOG" ]; then printf '%s\n' "$*" >> "$LOG"; fi; }
 say()     { aus ""; aus "==> $*"; }
 info()    { aus "    $*"; }
 stand()   { aus "    Stand:    $*"; }
 hinweis() { aus "    Hinweis:  $*"; }
 risiko()  { aus "    Risiko:   $*"; }
-die()     { printf '\nFEHLER: %s\n' "$*" >&2; if [ -n "$LOG" ]; then printf 'FEHLER: %s\n' "$*" >> "$LOG"; fi; exit 1; }
+die() {
+  printf '\nFEHLER: %s\n' "$*" >&2 || true
+  if [ -n "$LOG" ]; then printf 'FEHLER: %s\n' "$*" >> "$LOG"; fi
+  if [ -n "$TMP" ]; then printf '%s' "$*" > "$TMP/grund"; fi   # massnahme() nennt den Grund in der Liste am Ende
+  exit 1
+}
+
+# Test-Schalter gelten nie für die installierte Version: sonst ließe sich root ein fremdes Wurzelverzeichnis oder Python unterschieben
+if [ "$(id -u)" -eq 0 ] && [[ "$(readlink -f "$HIER")" == /opt/ju-finanzen/* ]] && [ -n "${WURZEL:-}${JU_PYTHON:-}${JU_FRIST:-}${JU_PAUSE:-}" ]; then
+  die "WURZEL, JU_PYTHON, JU_FRIST und JU_PAUSE sind Test-Schalter und für die installierte Version gesperrt (unset WURZEL JU_PYTHON JU_FRIST JU_PAUSE)."
+fi
 
 # Systembefehle: im Test nur aus $WURZEL/stub – so fasst ein Test nie das echte System an
 hat() { if [ -n "$W" ]; then [ -x "$W/stub/$1" ]; else command -v "$1" >/dev/null 2>&1; fi; }
-x()   { local c="$1"; shift; if [ -n "$W" ]; then "$W/stub/$c" "$@"; else command "$c" "$@"; fi; }
-py()  { WURZEL="$W" "$PY" "$HIER/haertung/serverschutz.py" "$@"; }
+# 9>&-: Kinder erben die Sperrdatei nicht – ein von apt gestarteter Dienst hielte sie sonst über das Ende des Laufs hinaus
+x()   { local c="$1"; shift; if [ -n "$W" ]; then "$W/stub/$c" "$@" 9>&-; else command "$c" "$@" 9>&-; fi; }
+py()  { WURZEL="$W" "$PY" "$HIER/haertung/serverschutz.py" "$@" 9>&-; }
+# sshd -t/-T brauchen /run/sshd; der Ordner fehlt, solange ssh.service seit dem Start nie lief (Socket-Aktivierung)
+sshd_bereit() { if [ ! -d "$W/run/sshd" ] && hat sshd; then install -d -m 755 "$W/run/sshd"; fi; }
+sshd_x() { if [ "$PRUEFEN" -eq 0 ]; then sshd_bereit; fi; x sshd "$@"; }   # der Prüflauf legt auch diesen Ordner nicht an
 enthaelt() { grep -E -- "$1" >/dev/null; }   # ohne -q: liest die Eingabe zu Ende (sonst bricht pipefail die Pipe)
 
 wert() {   # NAME VORGABE – Wert aus haertung.conf (die Datei wird gelesen, nie ausgeführt)
@@ -71,7 +95,11 @@ an() {     # NAME VORGABE – Schalter ja/nein
 tu() {
   local text="$1"; shift
   echo x >> "$ZAEHLER"; GETAN=1
-  if [ "$PRUEFEN" -eq 1 ]; then aus "    Änderung: $text"; return 0; fi
+  if [ "$PRUEFEN" -eq 1 ]; then
+    if [ "$RISKANT" -eq 1 ]; then : > "$TMP/riskant"; fi
+    aus "    Änderung: $text"; return 0
+  fi
+  if [ "$RISKANT" -eq 1 ]; then ruecknahme_planen; fi   # vor der Änderung – ohne Plan findet sie nicht statt
   aus "    Ändere:   $text"
   "$@"
 }
@@ -104,11 +132,15 @@ datei_schreiben() {
   mkdir -p "$(dirname "$W$2")"   # nicht „install -d -m“: das würde die Rechte eines vorhandenen Ordners ändern
   install -m "$3" "$1" "$W$2.ju-neu"
   mv -f "$W$2.ju-neu" "$W$2"
+  summe_merken "$2"
 }
+# Stand nach der eigenen Änderung: --zurueck überschreibt eine Datei nicht, die danach jemand von Hand geändert hat
+summe() { if [ -e "$W$1" ]; then sha256sum < "$W$1" | cut -d' ' -f1; else echo -; fi; }
+summe_merken() { printf 'summe\t%s\t%s\n' "$1" "$(summe "$1")" >> "$MANIFEST"; }
 datei_entfernen() {
   if [ -e "$W$1" ]; then GEAENDERT=1; tu "$1 entfernen" datei_loeschen "$1"; fi
 }
-datei_loeschen() { merke_datei "$1"; rm -f -- "$W$1"; }
+datei_loeschen() { merke_datei "$1"; rm -f -- "$W$1"; summe_merken "$1"; }
 
 rechte_soll() {   # PFAD MODUS BESITZER – nur vorhandene Pfade, nie Verweise
   local p="$1" ist
@@ -151,10 +183,14 @@ paket() {
   tu "Paket $1 aus den Ubuntu-Quellen installieren" paket_installieren "$1"
 }
 paket_installieren() {
-  dienst_merken "$1.service"   # Zustand vor der Installation: --zurueck schaltet einen neu installierten Dienst wieder ab
+  # Zustand vor der Installation: --zurueck schaltet einen neu installierten Dienst wieder ab. Nie nftables.service:
+  # dessen ExecStop ist „flush ruleset“ und löschte die Regeln von ufw und Tailscale – gebraucht wird nur der Befehl nft.
+  if [ "$1" != nftables ]; then dienst_merken "$1.service"; fi
   printf 'paket\t%s\n' "$1" >> "$MANIFEST"
-  if [ "$APT_AKTUELL" -eq 0 ]; then x apt-get update -qq; APT_AKTUELL=1; fi
-  x apt-get install -y -qq "$1" >/dev/null
+  # wartet bis zu zwei Minuten, falls gerade ein anderes Update läuft (unattended-upgrades hält dann die Sperre von dpkg)
+  if [ "$APT_AKTUELL" -eq 0 ]; then x apt-get -o DPkg::Lock::Timeout=120 update -qq || true; APT_AKTUELL=1; fi
+  x apt-get -o DPkg::Lock::Timeout=120 install -y -qq "$1" >/dev/null \
+    || die "Das Paket $1 ließ sich nicht installieren. Was tun: einige Minuten warten (oft läuft gerade ein anderes Update), dann „sudo apt-get update && sudo apt-get install $1“ von Hand ausführen, die Meldung lesen und danach erneut: sudo ju-finanzen haerten"
 }
 
 conf_setzen() {   # NAME WERT – Schalter in haertung.conf eintragen (Datei entsteht bei Bedarf aus der Vorlage)
@@ -166,14 +202,14 @@ conf_setzen() {   # NAME WERT – Schalter in haertung.conf eintragen (Datei ent
 }
 
 # Manifest eines Laufs ab Zeile MARKE rückwärts zurücknehmen: erst Dienste (solange ihre Units noch da sind), dann
-# Dateien und Rechte, dann Kern-Werte; zuletzt lesen die betroffenen Dienste den alten Stand wieder ein.
+# Dateien, Rechte, Kern-Werte und die eigenen Änderungen an ufw; zuletzt lesen die betroffenen Dienste den alten Stand ein.
 zurueck_ab() {
-  local sich="$1" marke="$2" teil art a b c fehler=0
-  local ssh=0 ufw="" journald=0 units=0 f2b=0 nft=0
+  local sich="$1" marke="$2" teil art a b c soll fehler=0
+  local ssh=0 journald=0 units=0 f2b=0 nft=0
   teil="$(mktemp "$TMP/zurueck.XXXXXX")"
   tail -n "+$((marke + 1))" "$sich/MANIFEST" | tac > "$teil"
   while IFS=$'\t' read -r art a b c; do
-    if [ "$art" != dienst ]; then continue; fi
+    if [ "$art" != dienst ] || [ "$a" = nftables.service ]; then continue; fi   # nftables.service nie: ExecStop ist „flush ruleset“
     case "$b" in
       enabled) x systemctl enable -q "$a" || fehler=1 ;;
       disabled|not-found|unbekannt) x systemctl disable -q "$a" 2>/dev/null || true ;;
@@ -187,6 +223,11 @@ zurueck_ab() {
   while IFS=$'\t' read -r art a b c; do
     case "$art" in
       datei)
+        soll="$(awk -F'\t' -v p="$a" '$1 == "summe" && $2 == p { s = $3 } END { print s }' "$sich/MANIFEST")"
+        if [ -n "$soll" ] && [ "$(summe "$a")" != "$soll" ]; then
+          aus "    HINWEIS:  $a wurde seit dem Lauf von Hand geändert – bleibt, wie es ist$(if [ "$b" = vorhanden ]; then echo " (Fassung vor dem Lauf: ${sich#"$W"}/dateien$a)"; fi)"
+          continue
+        fi
         if [ "$b" = vorhanden ]; then
           if ! { cp -a "$sich/dateien$a" "$W$a.ju-zurueck" && mv -f "$W$a.ju-zurueck" "$W$a"; }; then fehler=1; fi
         else
@@ -206,13 +247,17 @@ zurueck_ab() {
         aus "    Zurück:   Rechte von $a ($b)" ;;
       sysctl)
         x sysctl -q -w "$a=$b" 2>/dev/null || aus "    Hinweis:  $a lässt sich erst mit einem Neustart zurückstellen" ;;
-      ufw) ufw="$a" ;;
+      ufw)   # nur der Gegenbefehl zur eigenen Änderung – Regeln, die seither jemand ergänzt hat, bleiben
+        # shellcheck disable=SC2086  # der Gegenbefehl besteht aus festen Wörtern und Portnummern
+        x ufw $a >/dev/null || fehler=1
+        aus "    Zurück:   ufw $a" ;;
+      ufwsysctl)
+        if [ -f "$W/etc/ufw/sysctl.conf" ]; then sed -i "s|^$a=.*|$a=$b|" "$W/etc/ufw/sysctl.conf" || fehler=1; fi
+        aus "    Zurück:   /etc/ufw/sysctl.conf: $a=$b" ;;
       paket) aus "    Hinweis:  Paket $a bleibt installiert (entfernen: sudo apt remove $a)" ;;
     esac
   done < "$teil"
   if [ "$units" -eq 1 ]; then x systemctl daemon-reload || fehler=1; fi
-  if [ "$ufw" = aktiv ]; then x ufw reload >/dev/null || fehler=1; fi
-  if [ "$ufw" = inaktiv ]; then x ufw --force disable >/dev/null || fehler=1; fi
   if [ "$nft" -eq 1 ]; then
     if [ -f "$W$NFT_DATEI" ] && [ "$(sys_wert is-active ju-serverschutz.service)" = active ]; then
       x systemctl restart ju-serverschutz.service || fehler=1
@@ -221,7 +266,7 @@ zurueck_ab() {
     fi
   fi
   if [ "$ssh" -eq 1 ]; then
-    if x sshd -t; then ssh_neu_laden; else fehler=1; aus "    FEHLER:   sshd -t meldet Fehler – SSH nicht neu geladen"; fi
+    if sshd_x -t; then ssh_neu_laden; else fehler=1; aus "    FEHLER:   sshd -t meldet Fehler – SSH nicht neu geladen"; fi
   fi
   if [ "$journald" -eq 1 ]; then x systemctl try-restart systemd-journald.service || fehler=1; fi
   if [ "$f2b" -eq 1 ] && [ "$(sys_wert is-active fail2ban.service)" = active ]; then x systemctl restart fail2ban.service || fehler=1; fi
@@ -229,36 +274,116 @@ zurueck_ab() {
   return "$fehler"
 }
 
-# massnahme NUMMER TITEL FUNKTION – eigene Shell mit „set -e“: jeder Fehler beendet die Maßnahme, sie wird zurückgenommen
+# massnahme NUMMER TITEL FUNKTION – eigene Shell mit „set -e“: jeder Fehler beendet nur diese Maßnahme. Sie wird
+# zurückgenommen, der Lauf geht mit den übrigen weiter; am Ende steht die Liste „nicht angewendet“ (Rückgabe 1).
 massnahme() {
-  local marke=0 vorher rc
+  local vorher rc grund
   say "$1. $2"
   vorher="$(wc -l < "$ZAEHLER")"
-  if [ "$PRUEFEN" -eq 0 ]; then marke="$(wc -l < "$MANIFEST")"; fi
+  if [ "$PRUEFEN" -eq 0 ]; then MARKE="$(wc -l < "$MANIFEST")"; fi
+  : > "$TMP/grund"
+  LAUFEND="$2"
   set +e
-  ( set -e; GEAENDERT=0; GETAN=0; "$3" )
+  ( set -e; GEAENDERT=0; GETAN=0; RISKANT=0; "$3" )
   rc=$?
   set -e
   if [ "$rc" -ne 0 ]; then
-    if [ "$PRUEFEN" -eq 1 ]; then die "Maßnahme „$2“ ließ sich nicht prüfen (Meldung oben)."; fi
-    aus "    Fehler in dieser Maßnahme – sie wird zurückgenommen."
-    zurueck_ab "$SICHERUNG" "$marke" || aus "    Zurücknehmen unvollständig – bitte die Meldungen oben prüfen."
-    head -n "$marke" "$MANIFEST" > "$MANIFEST.neu" && mv -f "$MANIFEST.neu" "$MANIFEST"
-    die "Maßnahme „$2“ ist gescheitert und wurde zurückgenommen. Frühere Maßnahmen dieses Laufs bleiben; alles zurück: sudo ju-finanzen haerten --zurueck"
-  fi
-  if [ "$(wc -l < "$ZAEHLER")" = "$vorher" ]; then
+    if [ "$PRUEFEN" -eq 0 ]; then
+      aus "    Fehler in dieser Maßnahme – sie wird zurückgenommen; der Lauf geht mit den übrigen Maßnahmen weiter."
+      massnahme_zurueck || aus "    Zurücknehmen unvollständig – bitte die Meldungen oben prüfen."
+    fi
+    head -n "$vorher" "$ZAEHLER" > "$ZAEHLER.neu" && mv -f "$ZAEHLER.neu" "$ZAEHLER"
+    grund="$(cat "$TMP/grund")"
+    printf '%s (%s)\n' "$2" "${grund:-unerwarteter Fehler – Meldung oben}" >> "$TMP/nicht"
+  elif [ "$(wc -l < "$ZAEHLER")" = "$vorher" ]; then
     if [ "$PRUEFEN" -eq 1 ]; then aus "    Änderung: keine"; else info "bereits umgesetzt – nichts geändert"; fi
   fi
+  LAUFEND=""
+}
+massnahme_zurueck() {
+  local rc=0
+  zurueck_ab "$SICHERUNG" "$MARKE" || rc=1
+  head -n "$MARKE" "$MANIFEST" > "$MANIFEST.neu" && mv -f "$MANIFEST.neu" "$MANIFEST"
+  return "$rc"
+}
+nicht_melden() {   # $1 = Überschrift; Rückgabe 1, wenn eine Maßnahme ausfiel
+  if [ ! -s "$TMP/nicht" ]; then return 0; fi
+  say "$1"
+  while IFS= read -r zeile; do aus "    - $zeile"; done < "$TMP/nicht"
+  return 1
+}
+
+# INT/TERM/HUP (Strg-C, Fenster geschlossen, Verbindung abgerissen): die begonnene Maßnahme zurücknehmen. Eine schon
+# geplante Rücknahme bleibt bestehen – sie hängt nicht an dieser Sitzung und nimmt den Rest des Laufs zurück.
+abbruch() {
+  trap '' INT TERM HUP
+  set +e
+  if [ "$1" = HUP ]; then exec >/dev/null 2>&1; fi   # das Terminal ist weg; die Meldungen stehen im Protokoll
+  aus ""; aus "ABGEBROCHEN (Signal $1)."
+  if [ -n "$LAUFEND" ] && [ -n "$MANIFEST" ]; then
+    aus "    Die begonnene Maßnahme „$LAUFEND“ wird zurückgenommen."
+    massnahme_zurueck || aus "    Zurücknehmen unvollständig – bitte prüfen: sudo ju-finanzen haerten --zurueck"
+  fi
+  if [ -n "$SICHERUNG" ] && [ -e "$SICHERUNG/RUECKNAHME" ]; then
+    aus "    Die geplante Rücknahme bleibt bestehen: Ohne „sudo ju-finanzen haerten --bestaetigen“ aus einem zweiten Fenster wird der Lauf von selbst zurückgenommen."
+  elif [ -n "$MANIFEST" ] && [ -s "$MANIFEST" ]; then
+    aus "    Frühere Maßnahmen dieses Laufs bleiben. Alles zurück: sudo ju-finanzen haerten --zurueck"
+  fi
+  exit 130
+}
+
+# ---------------------------------------------------------------- Rücknahme, die nicht an der Sitzung hängt
+
+# Kennung der Anmeldesitzung: Audit-Sitzung (vergibt die Anmeldung, alle Kinder erben sie), ersatzweise SSH-Verbindung bzw. Terminal
+sitzung() {
+  local s
+  s="$(cat "$W/proc/self/sessionid" 2>/dev/null || true)"
+  case "$s" in ""|4294967295) s="${SSH_CONNECTION:-$(if tty -s; then tty; fi)}" ;; esac
+  printf '%s' "${s:-unbekannt}"
+}
+# Ordner des Laufs, dessen Rücknahme noch aussteht (leer: keiner). Datei RUECKNAHME: Zeile 1 Ende der Frist, Zeile 2 Sitzung.
+ausstehend() { local f; for f in "$SICHERUNGEN"/*/RUECKNAHME; do if [ -f "$f" ]; then dirname "$f"; fi; done | tail -n 1; }
+dauer() { if [ "$1" -ge 120 ]; then echo "$((($1 + 59) / 60)) Minuten"; else echo "$1 Sekunden"; fi; }
+frist_text() {   # $1 = Ordner des Laufs
+  local ende rest
+  ende="$(sed -n 1p "$1/RUECKNAHME")"; rest=$((ende - $(date +%s)))
+  if [ "$rest" -gt 0 ]; then echo "In $(dauer "$rest") (um $(date -d "@$ende" +%H:%M:%S) Uhr) werden die Änderungen von selbst zurückgenommen."
+  else echo "Die Frist ist abgelaufen: Die Rücknahme läuft gerade – oder sie fand nicht statt (z. B. nach einem Neustart des Servers)."; fi
+}
+ausstehend_zeigen() {   # --pruefen und schutz-status
+  local a
+  a="$(ausstehend)"
+  if [ -z "$a" ]; then return 0; fi
+  say "ACHTUNG: Der Lauf $(basename "$a") ist noch nicht bestätigt."
+  info "$(frist_text "$a")"
+  info "Behalten: ein ZWEITES Fenster öffnen, dort neu anmelden und ausführen:  sudo ju-finanzen haerten --bestaetigen"
+  info "Sofort zurücknehmen:  sudo ju-finanzen haerten --zurueck"
+}
+# Vor der ersten Änderung an Firewall oder SSH-Zugang (aus tu): Rücknahme als eigene Timer-Unit planen. Sie überlebt das
+# Ende der Sitzung. Lässt sie sich nicht planen, scheitert die Maßnahme hier – bevor sie etwas geändert hat.
+ruecknahme_planen() {
+  if [ "$RUECKFRAGE" -eq 0 ] || [ -e "$SICHERUNG/RUECKNAHME" ]; then return 0; fi
+  hat systemd-run || die "nicht angewendet, weil sich die automatische Rücknahme nicht planen lässt (systemd-run fehlt)"
+  x systemd-run --quiet --collect --unit="$RUECK_UNIT" --on-active="$FRIST" --timer-property=AccuracySec=1s \
+      --description="JU Hamburg Finanzen – Härtung zurücknehmen, falls sie nicht bestätigt wird" \
+      "$HIER/haerten.sh" --zurueck --ohne-rueckfrage \
+    || die "nicht angewendet, weil sich die automatische Rücknahme nicht planen ließ (systemd-run meldet einen Fehler)"
+  printf '%s\n%s\n' "$(($(date +%s) + FRIST))" "$SITZUNG" > "$SICHERUNG/RUECKNAHME"
+  aus "    Geplant:  automatische Rücknahme in $(dauer "$FRIST"), falls dieser Lauf nicht aus einem zweiten Fenster bestätigt wird"
+}
+ruecknahme_absagen() {
+  x systemctl stop "$RUECK_UNIT.timer" 2>/dev/null || true   # schon abgelaufen oder nach einem Neustart: nichts zu stoppen
+  [ "$(sys_wert is-active "$RUECK_UNIT.timer")" != active ] || die "Die geplante Rücknahme ließ sich nicht absagen (sudo systemctl stop $RUECK_UNIT.timer)."
 }
 
 # ---------------------------------------------------------------- Lage: SSH und ufw
 
 SSH_PORTS=22; UFW_AKTIV=0; UFW_EINGANG=offen; UFW_REGELN=""; SSH_LAGE=offen; SSH_QUELLEN=0; SSH_FREI=0
-eff() { if hat sshd; then x sshd -T 2>/dev/null | awk -v k="$1" '$1 == k { print $2; exit }'; fi; }
+eff() { if hat sshd; then sshd_x -T 2>/dev/null | awk -v k="$1" '$1 == k { print $2; exit }'; fi; }
 
 lage_ermitteln() {
   local p o b ports=""
-  if hat sshd; then ports="$(x sshd -T 2>/dev/null | awk '$1 == "port" && $2 ~ /^[0-9]+$/ { print $2 }' | sort -un | tr '\n' ' ')"; fi
+  if hat sshd; then ports="$({ sshd_x -T 2>/dev/null || true; } | awk '$1 == "port" && $2 ~ /^[0-9]+$/ { print $2 }' | sort -un | tr '\n' ' ')"; fi
   SSH_PORTS="${ports:-22}"
   if hat ufw; then
     if x ufw status 2>/dev/null | enthaelt '^Status: active'; then UFW_AKTIV=1; fi
@@ -366,26 +491,18 @@ nachpruefung() {   # $1 = Erreichbarkeit vorher; alles, was vorher ging, muss we
     case "$nachher" in *" $punkt "*) ;; *) die "Nach der Firewall-Änderung nicht mehr erreichbar: $punkt" ;; esac
   done
   aus "    Geprüft:  weiter erreichbar: ${1:-(vorher war nichts davon erreichbar)}"
-  if [ "$RUECKFRAGE" -eq 1 ] && [ -t 0 ]; then
-    printf '\n    Die Firewall wurde geändert. Wenn du diese Zeile liest, steht deine Verbindung noch.\n'
-    printf '    Zum Behalten innerhalb von %s Sekunden die Eingabetaste drücken – sonst wird die Änderung zurückgenommen: ' "$FRIST"
-    if ! read -r -t "$FRIST" _; then echo; die "Keine Bestätigung innerhalb von $FRIST Sekunden."; fi
-  fi
 }
 
-ufw_tun() {   # Zustand und Dateien von ufw vor der ersten Änderung sichern, dann ufw aufrufen
-  local d
-  if ! gemerkt ufw aktiv && ! gemerkt ufw inaktiv; then
-    printf 'ufw\t%s\n' "$(if [ "$UFW_AKTIV" -eq 1 ]; then echo aktiv; else echo inaktiv; fi)" >> "$MANIFEST"
-    for d in /etc/ufw/user.rules /etc/ufw/user6.rules /etc/ufw/ufw.conf /etc/default/ufw; do merke_datei "$d"; done
-  fi
+ufw_tun() {   # GEGENBEFEHL BEFEHL… – ufw ändern und merken, womit --zurueck genau diese eine Änderung zurücknimmt
+  local gegen="$1"; shift
+  printf 'ufw\t%s\n' "$gegen" >> "$MANIFEST"
   x ufw "$@" >/dev/null
 }
 tabelle_laden() {
   dienst_merken ju-serverschutz.service
   x systemctl daemon-reload
   x systemctl enable -q ju-serverschutz.service
-  x systemctl restart ju-serverschutz.service   # ExecStart: nft -f – ersetzt nur die eigene Tabelle
+  x systemctl restart ju-serverschutz.service   # ExecStart: nft -f – ersetzt nur die eigene Tabelle, dann die Sperrliste
   x nft list table inet ju_schutz >/dev/null || die "Die Tabelle inet ju_schutz ist nach dem Laden nicht vorhanden."
 }
 tabelle_entfernen() {
@@ -395,7 +512,8 @@ tabelle_entfernen() {
 }
 
 m_firewall() {
-  local vorher="" p tmp
+  local vorher="" p tmp ufw_vorher
+  RISKANT=1   # jede Änderung hier plant vorher die Rücknahme und gilt erst nach „haerten --bestaetigen“ als behalten
   if ! an FIREWALL ja; then
     stand "abgeschaltet (FIREWALL=nein) – ufw bleibt, wie es ist"
     if [ -e "$W$UNITS/ju-serverschutz.service" ] || [ -e "$W$NFT_DATEI" ]; then
@@ -405,25 +523,28 @@ m_firewall() {
     return 0
   fi
   if [ "$PRUEFEN" -eq 0 ]; then vorher="$(erreichbar | tr '\n' ' ')"; fi
+  ufw_vorher="$(wc -l < "$ZAEHLER")"
 
-  # --- ufw: Grundlage. Vorhandene Regeln bleiben; ergänzt wird nur, was fehlt.
+  # --- ufw: Grundlage. Vorhandene Regeln bleiben; ergänzt wird nur, was wirklich fehlt – jede Ergänzung mit ihrem Gegenbefehl.
   paket ufw
   stand "ufw $(if [ "$UFW_AKTIV" -eq 1 ]; then echo aktiv; else echo AUS; fi), eingehend $UFW_EINGANG; SSH (Port ${SSH_PORTS% }) ist $(ssh_lage_text)"
   if [ "$SSH_LAGE" = offen ]; then hinweis "SSH ist öffentlich offen – bleibt wie vorgefunden (fail2ban und SSH-Takt schützen; enger: --ssh-nur-tailscale)"; fi
   if ! grep -qs '^IPV6=yes' "$W/etc/default/ufw"; then hinweis "ufw filtert IPv6 nicht (IPV6=yes fehlt in /etc/default/ufw) – bitte prüfen"; fi
   if { [ "$UFW_AKTIV" -eq 0 ] || [ "$UFW_EINGANG" != gesperrt ]; } && [ "$SSH_FREI" -eq 0 ]; then
     for p in $SSH_PORTS; do   # SSH war bisher ohne wirksame Firewall von überall erreichbar: vor dem Sperren ausdrücklich offen lassen
-      tu "ufw: SSH-Port $p offen lassen wie vorgefunden (damit niemand ausgesperrt wird)" ufw_tun allow "$p/tcp"
+      tu "ufw: SSH-Port $p offen lassen wie vorgefunden (damit niemand ausgesperrt wird)" ufw_tun "delete allow $p/tcp" allow "$p/tcp"
     done
   fi
-  if ! printf '%s\n' "$UFW_REGELN" | enthaelt '^ufw allow in on tailscale0$'; then
-    tu "ufw: alles auf tailscale0 erlauben (Zugriff aus dem Tailnet)" ufw_tun allow in on tailscale0
+  if ! printf '%s\n' "$UFW_REGELN" | enthaelt '^ufw allow in on tailscale0( comment .*)?$'; then
+    tu "ufw: alles auf tailscale0 erlauben (Zugriff aus dem Tailnet)" ufw_tun "delete allow in on tailscale0" allow in on tailscale0
   fi
-  if ! printf '%s\n' "$UFW_REGELN" | enthaelt '^ufw allow 41641/udp( |$)'; then
-    tu "ufw: Tailscale-UDP 41641 erlauben (direkte Verbindungen statt Umweg über ein Relais)" ufw_tun allow 41641/udp
+  # tailscaled öffnet seinen Port 41641/udp selbst (Kette ts-input) – in ufw nur nötig bei „tailscale up --netfilter-mode=off|nodivert“
+  if an TAILSCALE_PORT nein && ! printf '%s\n' "$UFW_REGELN" | enthaelt '^ufw allow 41641/udp( |$)'; then
+    tu "ufw: Tailscale-UDP 41641 erlauben (TAILSCALE_PORT=ja)" ufw_tun "delete allow 41641/udp" allow 41641/udp
   fi
-  if [ "$UFW_EINGANG" != gesperrt ]; then tu "ufw: eingehend grundsätzlich sperren (default deny incoming)" ufw_tun default deny incoming; fi
-  if [ "$UFW_AKTIV" -eq 0 ]; then tu "ufw einschalten" ufw_tun --force enable; fi
+  if [ "$UFW_EINGANG" != gesperrt ]; then tu "ufw: eingehend grundsätzlich sperren (default deny incoming)" ufw_tun "default allow incoming" default deny incoming; fi
+  if [ "$UFW_AKTIV" -eq 0 ]; then tu "ufw einschalten" ufw_tun "--force disable" --force enable; fi
+  if [ "$(wc -l < "$ZAEHLER")" = "$ufw_vorher" ]; then info "ufw: nichts zu ergänzen – an ufw wird nichts geändert"; fi
 
   # --- eigene Tabelle neben ufw
   paket nftables
@@ -431,11 +552,11 @@ m_firewall() {
     hinweis "nftables.service ist eingeschaltet: /etc/nftables.conf beginnt üblicherweise mit „flush ruleset“ und löscht beim Start die Regeln von ufw – bitte prüfen (nur Meldung)"
   fi
   if [ "$NUR_TAILSCALE" -eq 1 ]; then
-    if [ "$(wert SSH_NUR_TAILSCALE nein)" != ja ]; then conf_setzen SSH_NUR_TAILSCALE ja; fi
     hinweis "SSH nur aus dem Tailnet: neue SSH-Verbindungen von außen verwirft die Schutztabelle (Tailscale und die Konsole des Anbieters bleiben)"
   fi
   tmp="$(mktemp "$TMP/regelwerk.XXXXXX")"
-  py regelwerk > "$tmp" || die "Das Regelwerk ließ sich nicht erzeugen."
+  # der SSH-Zustand der Tabelle kommt aus diesem Lauf (Schalter mit Nachweis), nicht aus einer von Hand geänderten Datei
+  py regelwerk "--ssh-nur-tailscale=$(if [ "$NUR_TAILSCALE" -eq 1 ]; then echo ja; else echo nein; fi)" > "$tmp" || die "Das Regelwerk ließ sich nicht erzeugen."
   if hat nft; then
     x nft -c -f "$tmp" || die "nft lehnt das Regelwerk ab (nft -c) – nichts geladen."
   fi
@@ -446,6 +567,8 @@ m_firewall() {
     tu "Schutztabelle inet ju_schutz laden (Sperrliste, ungültige Pakete, SSH-Takt $(wert SSH_NEU_JE_MINUTE 12)/Minute je Quelle) und beim Start laden lassen" tabelle_laden
   fi
   if [ "$PRUEFEN" -eq 0 ] && [ "$GETAN" -eq 1 ]; then nachpruefung "$vorher"; fi
+  # erst nach bestandener Nachprüfung festhalten: scheitert die Maßnahme, bleibt der Schalter, wie er war
+  if [ "$NUR_TAILSCALE" -eq 1 ] && [ "$(wert SSH_NUR_TAILSCALE nein)" != ja ]; then conf_setzen SSH_NUR_TAILSCALE ja; fi
   risiko "gering. Die Tabelle kann nur zusätzlich verwerfen (Sperrliste, kaputte Pakete, zu viele neue SSH-Verbindungen); lo, tailscale0, bestehende Verbindungen, 169.254.0.0/16 und 100.64.0.0/10 sind ausgenommen. Notaus: sudo systemctl stop ju-serverschutz"
 }
 
@@ -456,33 +579,33 @@ sperrliste_holen() {
   tmp="$(mktemp -d "$TMP/liste.XXXXXX")"
   if ! hat curl; then fehler_merken "curl fehlt"; return 1; fi
   for f in drop dropv6; do
-    if ! x curl -fsS --proto '=https' --proto-redir '=https' --max-redirs 2 --max-time 60 --max-filesize 2000000 \
+    if ! x curl -fsS --proto '=https' --proto-redir '=https' --max-time 60 --max-filesize 2000000 \
         -o "$tmp/$f.txt" "https://www.spamhaus.org/drop/$f.txt"; then
       fehler_merken "Abruf von $f.txt gescheitert"; return 1
     fi
   done
   py liste "$tmp/drop.txt" "$tmp/dropv6.txt" || return 1
-  tabelle_auffrischen
+  mengen_laden
 }
-# Regelwerk mit der aktuellen Liste neu erzeugen und laden – nur wenn die Tabelle in Betrieb ist (Notaus bleibt Notaus)
-tabelle_auffrischen() {
+# Nur die Mengen drop4/drop6 austauschen (flush + add in einem nft-Schritt, vorher nft -c) – nie die Regeln: Der Zeitgeber
+# kann so den SSH-Zustand der Tabelle nicht ändern; das tut allein ein haerten-Lauf mit Nachweis.
+# Ist die Tabelle nicht geladen (Notaus), bleibt sie aus; die Datei gilt dann ab dem nächsten Start des Dienstes.
+mengen_laden() {
   local tmp
-  if ! an FIREWALL ja || [ ! -f "$W$NFT_DATEI" ] || [ "$(sys_wert is-active ju-serverschutz.service)" != active ]; then return 0; fi
-  tmp="$(mktemp "$TMP/regelwerk.XXXXXX")"
-  if ! py regelwerk > "$tmp" || ! x nft -c -f "$tmp"; then aus "    Sperrliste: neues Regelwerk abgelehnt – das bisherige bleibt geladen."; return 1; fi
-  if cmp -s "$tmp" "$W$NFT_DATEI"; then return 0; fi
-  cp -p "$W$NFT_DATEI" "$W$NFT_DATEI.alt"
-  install -m 600 "$tmp" "$W$NFT_DATEI.neu" && mv -f "$W$NFT_DATEI.neu" "$W$NFT_DATEI"
-  if ! x systemctl reload ju-serverschutz.service; then   # nft -f ist ein Schritt: scheitert er, gilt die alte Tabelle weiter
-    mv -f "$W$NFT_DATEI.alt" "$W$NFT_DATEI"; aus "    Sperrliste: Laden gescheitert – das bisherige Regelwerk bleibt."; return 1
+  tmp="$(mktemp "$TMP/mengen.XXXXXX")"
+  if ! py mengen > "$tmp"; then aus "    Sperrliste: Die Mengen ließen sich nicht erzeugen – die bisherigen bleiben."; return 1; fi
+  if hat nft && x nft list table inet ju_schutz >/dev/null 2>&1; then
+    if ! x nft -c -f "$tmp" || ! x nft -f "$tmp"; then aus "    Sperrliste: nft lehnt die neuen Mengen ab – die bisherigen bleiben geladen."; return 1; fi
   fi
-  rm -f "$W$NFT_DATEI.alt"
+  mkdir -p "$W$LIB"
+  install -m 600 "$tmp" "$W$MENGEN_DATEI.neu" && mv -f "$W$MENGEN_DATEI.neu" "$W$MENGEN_DATEI"
 }
 
 m_sperrliste() {
   local n=0 alt=1
   if ! an SPERRLISTE ja; then
-    stand "abgeschaltet (SPERRLISTE=nein) – die Schutztabelle wird ohne Sperrliste erzeugt"
+    stand "abgeschaltet (SPERRLISTE=nein)"
+    if grep -qs '^add element' "$W$MENGEN_DATEI"; then tu "Sperrliste aus der Schutztabelle nehmen" mengen_laden; fi
     dienst_aus ju-serverschutz-liste.timer
     datei_entfernen "$UNITS/ju-serverschutz-liste.timer"; datei_entfernen "$UNITS/ju-serverschutz-liste.service"; units_neu
     return 0
@@ -599,23 +722,30 @@ fs.suid_dumpable|0|keine Speicherabzüge von Programmen mit erhöhten Rechten
 dev.tty.ldisc_autoload|0|keine Terminal-Module auf Zuruf laden'
 
 kern_ist() { cat "$W/proc/sys/${1//.//}" 2>/dev/null | tr '\t' ' ' || true; }
+# Erste fremde Datei, die die Weiterleitung ausdrücklich einschaltet (z. B. 99-tailscale.conf für Subnetz-Routen) – leer: keine
+forward_fremd() {
+  { grep -Els '^[[:space:]]*net[./]ipv4[./]ip_forward[[:space:]]*=[[:space:]]*1' "$W/etc/sysctl.conf" "$W"/etc/sysctl.d/*.conf \
+      "$W"/usr/lib/sysctl.d/*.conf "$W/etc/ufw/sysctl.conf" 2>/dev/null || true; } | grep -vxF "$W$KERN_DATEI" | head -n 1 || true
+}
 m_kern() {
-  local name soll grund mind ist datei abweichend ufwneu n=0 fehlt=0 weiter=0
+  local name soll grund mind ist alt datei abweichend ufwneu ufwalt fremd n=0 fehlt=0 weiter=0
   if ! an KERN ja; then
     stand "abgeschaltet (KERN=nein)"
     if [ -e "$W$KERN_DATEI" ]; then datei_entfernen "$KERN_DATEI"; hinweis "die laufenden Werte gelten bis zum nächsten Neustart weiter"; fi
     return 0
   fi
-  datei="$(mktemp "$TMP/kern.XXXXXX")"; abweichend="$(mktemp "$TMP/kern.XXXXXX")"; ufwneu="$(mktemp "$TMP/kern.XXXXXX")"
+  datei="$(mktemp "$TMP/kern.XXXXXX")"; abweichend="$(mktemp "$TMP/kern.XXXXXX")"; ufwneu="$(mktemp "$TMP/kern.XXXXXX")"; ufwalt="$(mktemp "$TMP/kern.XXXXXX")"
+  fremd="$(forward_fremd)"; fremd="${fremd#"$W"}"
   if [ -f "$W/etc/ufw/sysctl.conf" ]; then cat "$W/etc/ufw/sysctl.conf" > "$ufwneu"; fi
   {
     echo "# JU Hamburg Finanzen – Kern-Einstellungen, geschrieben von server/haerten.sh (wird bei jedem Lauf überschrieben)."
     echo "# Bewusst nicht gesetzt: net.ipv6.conf.*.accept_ra und net.ipv6.conf.*.forwarding (Netz des Anbieters, Tailscale),"
     echo "# kernel.unprivileged_userns_clone, kernel.kexec_load_disabled, kernel.sysrq."
-    # Weiterleitung: nur aus, wenn weder Docker-Container noch von Tailscale angebotene Routen sie brauchen.
-    # Steht als Erstes, weil der Kern beim Umschalten andere Netz-Einstellungen auf ihre Vorgaben zurücksetzt.
+    # Weiterleitung: nur aus, wenn weder Docker-Container noch von Tailscale angebotene Routen sie brauchen und keine
+    # andere Datei sie einschaltet. Steht als Erstes: der Kern setzt beim Umschalten accept_redirects auf seine Vorgabe
+    # zurück – die Redirect-Werte müssen deshalb danach gesetzt werden (kern_anwenden wendet die Datei der Reihe nach an).
     if [ "$(kern_ist net.ipv4.ip_forward)" = 1 ] || grep -qs '^net.ipv4.ip_forward = 0' "$W$KERN_DATEI"; then
-      if [ "$(docker_container)" -eq 0 ] && [ "$(sys_wert is-active docker.service)" != active ] && hat tailscale \
+      if [ -z "$fremd" ] && [ "$(docker_container)" -eq 0 ] && [ "$(sys_wert is-active docker.service)" != active ] && hat tailscale \
           && x tailscale debug prefs 2>/dev/null | enthaelt '"AdvertiseRoutes": *(null|\[ *\])'; then
         echo "# keine Weiterleitung zwischen Netzen (weder Docker noch Tailscale-Routen brauchen sie)"
         echo "net.ipv4.ip_forward = 0"
@@ -633,24 +763,34 @@ m_kern() {
       echo "$name = $soll"
       if [ "$ist" != "$soll" ]; then printf '%s|%s|%s\n' "$name" "$soll" "$ist" >> "$abweichend"; fi
       # ufw setzt beim Start eigene Werte aus /etc/ufw/sysctl.conf – dort denselben Wert eintragen, sonst gewinnt ufw
-      sed -i "s|^${name//.//}=.*|${name//.//}=$soll|" "$ufwneu"
+      alt="$(sed -n "s|^${name//.//}=||p" "$ufwneu" | tail -n 1)"
+      if [ -n "$alt" ] && [ "$alt" != "$soll" ]; then
+        printf '%s\t%s\n' "${name//.//}" "$alt" >> "$ufwalt"
+        sed -i "s|^${name//.//}=.*|${name//.//}=$soll|" "$ufwneu"
+      fi
     done <<< "$KERN"
   } > "$datei"
   n="$(wc -l < "$abweichend")"
-  stand "$n Einstellungen weichen ab$(if [ "$n" -gt 0 ]; then printf ': '; awk -F'|' '{ printf "%s%s (ist %s, soll %s)", (NR > 1 ? ", " : ""), $1, $3, $2 }' "$abweichend"; fi)"
-  if [ "$weiter" -eq 1 ]; then hinweis "net.ipv4.ip_forward=1 bleibt: Docker-Container oder Tailscale-Routen könnten die Weiterleitung brauchen bzw. es ließ sich nicht prüfen (nur Meldung; ufw sperrt weitergeleitete Pakete ohnehin)"; fi
+  stand "$n Einstellungen weichen ab$(if [ "$n" -gt 0 ]; then echo ":"; fi)"
+  while IFS='|' read -r name soll ist; do aus "              $name (ist $ist, soll $soll)"; done < "$abweichend"
+  if [ "$weiter" -eq 1 ] && [ -n "$fremd" ]; then hinweis "net.ipv4.ip_forward=1 bleibt: $fremd schaltet die Weiterleitung ausdrücklich ein (nur Meldung; ufw sperrt weitergeleitete Pakete ohnehin)"
+  elif [ "$weiter" -eq 1 ]; then hinweis "net.ipv4.ip_forward=1 bleibt: Docker-Container oder Tailscale-Routen könnten die Weiterleitung brauchen bzw. es ließ sich nicht prüfen (nur Meldung; ufw sperrt weitergeleitete Pakete ohnehin)"; fi
   if [ "$(kern_ist net.ipv6.conf.all.forwarding)" = 1 ]; then hinweis "net.ipv6.conf.all.forwarding=1 (nur Meldung, wird nicht geändert)"; fi
   datei_setzen "$KERN_DATEI" 644 < "$datei"
-  if [ -f "$W/etc/ufw/sysctl.conf" ]; then datei_setzen /etc/ufw/sysctl.conf "$(stat -c %a "$W/etc/ufw/sysctl.conf")" < "$ufwneu"; fi
+  if [ -s "$ufwalt" ]; then tu "/etc/ufw/sysctl.conf: $(wc -l < "$ufwalt") Zeilen auf dieselben Werte stellen (sonst setzt ufw sie beim Start zurück)" ufw_sysctl_setzen "$ufwneu" "$ufwalt"; fi
   if [ "$n" -gt 0 ]; then tu "$n Kern-Einstellungen sofort anwenden (ohne Neustart)" kern_anwenden "$abweichend"; fi
   risiko "gering. Alle Werte sind mit Tailscale, PostgreSQL und Java verträglich; rp_filter bleibt locker (2). Zurück: --zurueck stellt die vorherigen Werte wieder ein."
 }
-kern_anwenden() {
-  local name soll ist
-  while IFS='|' read -r name soll ist; do
-    printf 'sysctl\t%s\t%s\n' "$name" "$ist" >> "$MANIFEST"
-    x sysctl -q -w "$name=$soll"
-  done < "$1"
+kern_anwenden() {   # $1 = Abweichungen: Name|Soll|Ist
+  # rückwärts gemerkt: --zurueck liest das MANIFEST rückwärts und stellt so ip_forward vor den Redirect-Werten zurück
+  tac "$1" | awk -F'|' '{ printf "sysctl\t%s\t%s\n", $1, $3 }' >> "$MANIFEST"
+  # die ganze eigene Datei der Reihe nach – einzelne Werte reichten nicht: ip_forward=0 schaltet accept_redirects wieder ein
+  x sysctl -q -p "$W$KERN_DATEI"
+}
+ufw_sysctl_setzen() {   # $1 = neuer Inhalt, $2 = geänderte Zeilen: Name<Tab>alter Wert – --zurueck stellt nur diese Zeilen zurück
+  awk -F'\t' '{ printf "ufwsysctl\t%s\t%s\n", $1, $2 }' "$2" >> "$MANIFEST"
+  install -m "$(stat -c %a "$W/etc/ufw/sysctl.conf")" "$1" "$W/etc/ufw/sysctl.conf.ju-neu"
+  mv -f "$W/etc/ufw/sysctl.conf.ju-neu" "$W/etc/ufw/sysctl.conf"
 }
 
 m_updates() {
@@ -707,7 +847,7 @@ ssh_neu_laden() {   # laufende Sitzungen bleiben; bei Socket-Aktivierung (ssh.so
   if [ "$(sys_wert is-active ssh.service)" = active ]; then x systemctl reload ssh.service; fi
 }
 ssh_anwenden() {
-  x sshd -t || die "sshd -t meldet einen Fehler in den SSH-Einstellungen – nichts neu geladen."
+  sshd_x -t || die "sshd -t meldet einen Fehler in den SSH-Einstellungen – nichts neu geladen."
   if [ "$NUR_SCHLUESSEL" -eq 1 ] && [ "$(eff passwordauthentication)" != no ]; then
     die "Die Passwort-Anmeldung bliebe trotz der neuen Datei an (eine andere Einstellung hat Vorrang) – abgebrochen."
   fi
@@ -716,6 +856,7 @@ ssh_anwenden() {
 m_ssh() {
   local konten
   if ! hat sshd; then stand "kein SSH-Dienst gefunden – nichts zu tun"; return 0; fi
+  if [ ! -d "$W/run/sshd" ]; then hinweis "/run/sshd fehlt (der SSH-Dienst lief seit dem Start des Servers noch nicht): Der Prüflauf kann die geltenden SSH-Werte deshalb nicht lesen und legt nichts an; „haerten“ legt den Ordner an."; fi
   # Konten mit Anmelde-Shell und gesetztem Passwort (gesperrte Konten wie postgres zählen nicht)
   konten="$(awk -F: 'NR == FNR { if ($2 ~ /^\$/) pw[$1] = 1; next }
     ($1 in pw) && $7 !~ /(nologin|false|sync|shutdown|halt)$/ { printf "%s%s", (n++ ? ", " : ""), $1 }' "$W/etc/shadow" "$W/etc/passwd" 2>/dev/null || true)"
@@ -730,6 +871,8 @@ m_ssh() {
     if [ -e "$W$SSH_DATEI" ]; then datei_entfernen "$SSH_DATEI"; tu "SSH-Einstellungen prüfen (sshd -t) und neu laden" ssh_anwenden; fi
     return 0
   fi
+  # die Passwort-Anmeldung abzuschalten kann aussperren: vorher die Rücknahme planen, behalten erst nach „haerten --bestaetigen“
+  if [ "$NUR_SCHLUESSEL" -eq 1 ] && ! grep -qs '^PasswordAuthentication no' "$W$SSH_DATEI"; then RISKANT=1; fi
   if ! grep -Eiqs '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' "$W/etc/ssh/sshd_config"; then
     hinweis "/etc/ssh/sshd_config bindet /etc/ssh/sshd_config.d/*.conf nicht ein – SSH bleibt unverändert (nur Meldung)"
     return 0
@@ -751,12 +894,13 @@ ClientAliveCountMax 2
 $(if [ "$NUR_SCHLUESSEL" -eq 1 ]; then printf '# Anmeldung nur mit Schlüssel (haerten --ssh-nur-schluessel)\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n'; fi)
 EOF
   if [ "$NUR_SCHLUESSEL" -eq 1 ]; then
-    if [ "$(wert SSH_NUR_SCHLUESSEL nein)" != ja ]; then conf_setzen SSH_NUR_SCHLUESSEL ja; fi
     hinweis "WARNUNG: Ohne Passwort-Anmeldung funktioniert das Browser-Terminal des Anbieters möglicherweise nicht mehr. Rückwege: Tailscale-SSH, der Schlüssel, der Rettungsmodus des Anbieters. Diese Sitzung offen lassen und in einem zweiten Fenster die Anmeldung mit Schlüssel testen."
   fi
   if [ "$GEAENDERT" -eq 1 ]; then tu "SSH-Einstellungen prüfen (sshd -t) und neu laden – laufende Sitzungen bleiben" ssh_anwenden; fi
+  # erst nach dem geprüften Neuladen festhalten: scheitert die Maßnahme, bleibt der Schalter, wie er war
+  if [ "$NUR_SCHLUESSEL" -eq 1 ] && [ "$(wert SSH_NUR_SCHLUESSEL nein)" != ja ]; then conf_setzen SSH_NUR_SCHLUESSEL ja; fi
   if [ "$PRUEFEN" -eq 0 ] && [ "$(eff maxauthtries)" != 3 ]; then hinweis "MaxAuthTries wirkt nicht – eine andere Einstellung hat Vorrang (sshd -T zeigt die geltenden Werte)"; fi
-  risiko "gering. Wer anmelden darf, bleibt unverändert. MaxAuthTries 3: Wer viele Schlüssel im SSH-Agenten hat, meldet sich mit „ssh -o IdentitiesOnly=yes -i <Schlüssel>“ an. Rückweg bei jedem SSH-Problem: Konsole des Anbieters, dann sudo ju-finanzen haerten --zurueck"
+  risiko "gering. Wer anmelden darf, bleibt unverändert. MaxAuthTries 3: Wer sich von außen mit dem Passwort anmeldet und Schlüssel im SSH-Agenten hat, nimmt „ssh -o PubkeyAuthentication=no …“ – sonst verbrauchen die Schlüssel die drei Versuche, und solche Fehlverbindungen zählen bei fail2ban mit. Rückweg bei jedem SSH-Problem: Konsole des Anbieters, dann sudo ju-finanzen haerten --zurueck"
 }
 
 core_setzen() {
@@ -837,11 +981,12 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --pruefen) PRUEFEN=1 ;;
     --zurueck) ZURUECK=1 ;;
+    --bestaetigen) BESTAETIGEN=1 ;;
     --ssh-nur-schluessel) OPT_SCHLUESSEL=1 ;;
     --ssh-nur-tailscale) OPT_TAILSCALE=1 ;;
     --ohne-rueckfrage) RUECKFRAGE=0 ;;
     sperrliste|status|status-schreiben) BEFEHL="$1" ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) die "Unbekannte Option: $1 (Hilfe: sudo ju-finanzen haerten --help)" ;;
   esac
   shift
@@ -851,18 +996,23 @@ done
 [ -x "$PY" ] || die "python3 fehlt ($PY)."
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+trap 'abbruch INT' INT; trap 'abbruch TERM' TERM; trap 'abbruch HUP' HUP
 ZAEHLER="$TMP/aenderungen"; : > "$ZAEHLER"
+SITZUNG="$(sitzung)"   # jetzt bestimmen: später ist die Eingabe mancher Schritte eine Datei und kein Terminal mehr
 
 case "$BEFEHL" in
-  status) py status --zeigen; exit 0 ;;
-  status-schreiben) if an STATUS ja; then py status; fi; exit 0 ;;
+  status) sshd_bereit; py status --zeigen; ausstehend_zeigen; exit 0 ;;
+  status-schreiben) if an STATUS ja; then sshd_bereit; py status; fi; exit 0 ;;
 esac
 
-# nie zwei ändernde Läufe zugleich (auch nicht Zeitgeber und Handaufruf); --pruefen ändert nichts und braucht das nicht
+# Nie zwei ändernde Läufe zugleich (auch nicht Zeitgeber und Handaufruf); --pruefen ändert nichts und braucht das nicht.
+# Die Sperrdatei liegt in /run (nur root): in /run/lock dürfte jedes Konto sie vorab anlegen oder selbst halten.
 if [ "$PRUEFEN" -eq 0 ]; then
-  mkdir -p "$W/run/lock"
-  exec 9> "$W/run/lock/ju-haertung.lock"
-  if ! flock -n 9; then
+  exec 9> "$W/run/ju-haertung.lock"
+  if [ "$ZURUECK" -eq 1 ] && [ "$RUECKFRAGE" -eq 0 ]; then
+    # Die geplante Rücknahme wartet auf einen noch laufenden Lauf – und findet danach in jedem Fall statt, auch wenn er hängt.
+    flock -w "$FRIST" 9 || aus "Die Sperre wurde nicht frei – die geplante Rücknahme läuft trotzdem."
+  elif ! flock -n 9; then
     if [ "$BEFEHL" = sperrliste ]; then exit 0; fi
     die "Die Härtung läuft gerade schon (oder der Zeitgeber der Sperrliste) – bitte in einer Minute erneut."
   fi
@@ -873,31 +1023,60 @@ if [ "$BEFEHL" = sperrliste ]; then
   sperrliste_holen; exit $?
 fi
 
+AUSSTEHEND="$(ausstehend)"
+
+if [ "$BESTAETIGEN" -eq 1 ]; then
+  [ "$PRUEFEN$ZURUECK" = 00 ] || die "--bestaetigen steht für sich allein: sudo ju-finanzen haerten --bestaetigen"
+  if [ -z "$AUSSTEHEND" ]; then say "Es steht keine Rücknahme aus – nichts zu bestätigen."; exit 0; fi
+  LOG="$AUSSTEHEND/protokoll.log"
+  if [ "$SITZUNG" = unbekannt ] || [ "$(sed -n 2p "$AUSSTEHEND/RUECKNAHME")" = "$SITZUNG" ]; then
+    die "Nicht bestätigt: Dieser Aufruf kommt aus derselben Anmeldung, die den Lauf gestartet hat (oder die Anmeldung lässt sich nicht erkennen) – das beweist nicht, dass eine NEUE Anmeldung noch gelingt. Bitte ein zweites Fenster öffnen (Browser-Terminal des Anbieters oder SSH), dort neu anmelden und den Befehl dort ausführen. $(frist_text "$AUSSTEHEND")"
+  fi
+  ruecknahme_absagen
+  rm -f "$AUSSTEHEND/RUECKNAHME"
+  aus "--- $(date -Is) bestätigt aus einer zweiten Anmeldung – die geplante Rücknahme ist abgesagt"
+  say "Bestätigt: Die Änderungen des Laufs $(basename "$AUSSTEHEND") bleiben. Die geplante Rücknahme ist abgesagt."
+  info "Später doch zurück: sudo ju-finanzen haerten --zurueck        Bericht: sudo ju-finanzen schutz-status"
+  exit 0
+fi
+
 if [ "$ZURUECK" -eq 1 ]; then
-  LETZTE=""
-  while IFS= read -r d; do
-    if [ -s "$d/MANIFEST" ] && [ ! -e "$d/ZURUECKGESPIELT" ]; then LETZTE="$d"; fi
-  done < <(find "$SICHERUNGEN" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  LETZTE="$AUSSTEHEND"   # ein unbestätigter Lauf ist immer der letzte: solange er aussteht, beginnt kein neuer
+  if [ -z "$LETZTE" ] && [ "$RUECKFRAGE" -eq 0 ]; then say "Keine Rücknahme ausstehend – nichts zu tun."; exit 0; fi
+  if [ -z "$LETZTE" ]; then
+    while IFS= read -r d; do
+      if [ -s "$d/MANIFEST" ] && [ ! -e "$d/ZURUECKGESPIELT" ]; then LETZTE="$d"; fi
+    done < <(find "$SICHERUNGEN" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+  fi
   [ -n "$LETZTE" ] || die "Es gibt keinen Lauf, der sich zurücknehmen lässt ($SICHERUNGEN)."
   say "Stand vor dem Lauf $(basename "$LETZTE") wiederherstellen"
   if [ "$PRUEFEN" -eq 1 ]; then
-    awk -F'\t' '{ printf "    würde zurücknehmen: %s %s\n", $1, $2 }' "$LETZTE/MANIFEST"
+    awk -F'\t' '$1 != "summe" { printf "    würde zurücknehmen: %s %s\n", $1, $2 }' "$LETZTE/MANIFEST"
     info "Nur Prüfung (--pruefen): nichts geändert."
     exit 0
   fi
+  trap '' INT TERM HUP   # eine begonnene Rücknahme läuft zu Ende – auch wenn das Fenster zugeht
   LOG="$LETZTE/protokoll.log"
-  aus "--- $(date -Is) Zurücknehmen"
+  aus "--- $(date -Is) Zurücknehmen$(if [ "$RUECKFRAGE" -eq 0 ]; then echo " (geplante Rücknahme: der Lauf wurde nicht bestätigt)"; fi)"
   if zurueck_ab "$LETZTE" 0; then
     date -Is > "$LETZTE/ZURUECKGESPIELT"
+    rm -f "$LETZTE/RUECKNAHME"
+    if hat systemctl; then x systemctl stop "$RUECK_UNIT.timer" 2>/dev/null || true; fi
     say "Fertig: Der Stand vor dem Lauf $(basename "$LETZTE") gilt wieder."
     info "Ein weiteres --zurueck nimmt den Lauf davor zurück. Neu härten: sudo ju-finanzen haerten"
   else
     die "Das Zurücknehmen war unvollständig – bitte die Meldungen oben prüfen. Sicherung: $LETZTE"
   fi
-  if [ -f "$W$UNITS/ju-serverschutz-status.timer" ]; then py status >/dev/null || true; fi
+  # Arbeitsdaten des Serverschutzes stehen in keiner Sicherung: ohne Zeitgeber bzw. Tabelle wären sie nur ein veralteter
+  # Stand, den das Programm weiter als „ok“ zeigte. Installierte Pakete bleiben.
+  if [ -f "$W$UNITS/ju-serverschutz-status.timer" ]; then py status >/dev/null || true; else rm -f "$W$LIB/status.json"; fi
+  if [ ! -f "$W$NFT_DATEI" ]; then rm -f "$W$LIB/drop4.txt" "$W$LIB/drop6.txt" "$W$MENGEN_DATEI" "$W$LIB/zaehler.json" "$W$LIB/sperrliste.fehler"; fi
   exit 0
 fi
 
+if [ "$PRUEFEN" -eq 0 ] && [ -n "$AUSSTEHEND" ]; then
+  die "Der Lauf $(basename "$AUSSTEHEND") ist noch nicht bestätigt. Erst entscheiden: behalten mit „sudo ju-finanzen haerten --bestaetigen“ (aus einem zweiten Fenster, dort neu angemeldet) oder zurücknehmen mit „sudo ju-finanzen haerten --zurueck“."
+fi
 lage_ermitteln
 if [ "$PRUEFEN" -eq 0 ]; then
   schalter_pruefen   # vor jeder Änderung: ohne Nachweis endet der Lauf hier
@@ -915,6 +1094,9 @@ if [ "$PRUEFEN" -eq 0 ]; then
   info "Sicherung und Protokoll dieses Laufs: ${SICHERUNG#"$W"}"
 else
   say "Härtung des Betriebssystems prüfen (--pruefen: es wird nichts geändert)"
+  info "So liest sich der Bericht – je Maßnahme:  Stand = wie es jetzt ist · Änderung = was „haerten“ tun würde ·"
+  info "Risiko = was dabei schiefgehen könnte · Hinweis = nur eine Meldung, daran wird nichts geändert."
+  ausstehend_zeigen
   schalter_pruefen
 fi
 
@@ -930,19 +1112,36 @@ massnahme 8 "Rechte, Speicherabzüge, Protokoll" m_dateien
 massnahme 9 "Statusbericht für das Programm" m_status
 
 N="$(wc -l < "$ZAEHLER")"
+RC=0
 if [ "$PRUEFEN" -eq 1 ]; then
   say "Prüfung beendet: $N Änderungen stünden an – nichts wurde geändert."
+  nicht_melden "Nicht prüfbar (bitte erst klären):" || RC=1
+  if [ "$NUR_SCHLUESSEL$NUR_TAILSCALE" = 00 ]; then info "Wer sich wie anmelden darf (Passwort, root) und der SSH-Port bleiben, wie sie sind."; fi
   info "Anwenden: sudo ju-finanzen haerten        Zurück danach: sudo ju-finanzen haerten --zurueck"
-  exit 0
+  if [ -e "$TMP/riskant" ] && [ "$RUECKFRAGE" -eq 1 ]; then
+    info "Die Änderungen an Firewall bzw. SSH-Zugang gelten zuerst nur auf Probe: Ohne „sudo ju-finanzen haerten --bestaetigen“"
+    info "aus einem zweiten Fenster nimmt der Server den ganzen Lauf nach $(dauer "$FRIST") von selbst zurück."
+  fi
+  exit "$RC"
 fi
 if an STATUS ja; then py status >/dev/null || info "Hinweis: Der Statusbericht ließ sich nicht schreiben."; fi
 if [ ! -s "$MANIFEST" ]; then
+  if [ -e "$SICHERUNG/RUECKNAHME" ]; then x systemctl stop "$RUECK_UNIT.timer" 2>/dev/null || true; fi   # nichts geblieben, was sie zurücknähme
   rm -rf -- "$SICHERUNG"; LOG=""
-  say "Fertig: Alles war bereits umgesetzt – nichts geändert."
+  if [ -s "$TMP/nicht" ]; then say "Fertig: nichts geändert."; else say "Fertig: Alles war bereits umgesetzt – nichts geändert."; fi
 else
   say "Fertig: $N Änderungen."
   info "Zurück auf den Stand vor diesem Lauf:  sudo ju-finanzen haerten --zurueck"
-  info "Jetzt prüfen: diese Sitzung offen lassen, in einem zweiten Fenster neu anmelden und das Programm im Browser öffnen."
-  info "Kommt niemand mehr hinein: Konsole des Anbieters (Browser-Terminal) öffnen und dort --zurueck aufrufen."
 fi
+nicht_melden "NICHT ANGEWENDET (zurückgenommen; die übrigen Maßnahmen gelten) – nach dem Beheben erneut: sudo ju-finanzen haerten" || RC=1
 info "Bericht: sudo ju-finanzen schutz-status"
+if [ -n "$SICHERUNG" ] && [ -e "$SICHERUNG/RUECKNAHME" ]; then
+  say "WICHTIG – noch ein Schritt: Die Änderungen gelten erst auf Probe."
+  info "$(frist_text "$SICHERUNG")"
+  info "Öffne jetzt ein ZWEITES Fenster, melde dich dort neu an und führe aus:"
+  info ""
+  info "    sudo ju-finanzen haerten --bestaetigen"
+  info ""
+  info "Dieses Fenster so lange offen lassen. Gelingt die neue Anmeldung nicht: nichts tun – der alte Stand kommt von selbst zurück."
+fi
+exit "$RC"

@@ -15,7 +15,8 @@ ConditionPathExists=/var/lib/ju-serverschutz/ju_schutz.nft
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/sbin/nft -f /var/lib/ju-serverschutz/ju_schutz.nft
-ExecReload=/usr/sbin/nft -f /var/lib/ju-serverschutz/ju_schutz.nft
+# die Sperrliste (nur der Inhalt der Mengen); fehlt oder scheitert sie, gelten die Regeln trotzdem
+ExecStart=-/usr/sbin/nft -f /var/lib/ju-serverschutz/ju_mengen.nft
 ExecStop=-/usr/sbin/nft delete table inet ju_schutz
 
 [Install]
