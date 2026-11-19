@@ -398,7 +398,7 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   check(await fp.locator('.sec-cols li').count() === 24, 'Lagebild: Verlauf mit 24 Stunden');
   check((await fp.locator('.sec-peak').textContent()).trim() === '42', 'Lagebild: Höchstwert am Balken beschriftet');
   check((await fp.locator('.sec-stats').textContent()).includes('Fallen'), 'Lagebild: Abwehr der letzten 24 Stunden mit Zahlen');
-  check(await fp.locator('.sec-checks li').count() === 11, 'Lagebild: Konfigurationsprüfung mit 11 Punkten');
+  check(await fp.locator('.sec-checks li').count() === 12, 'Lagebild: Konfigurationsprüfung mit 12 Punkten');
   check(await fp.locator('.sec-page .card').count() === 8, 'Lagebild: Kennzahlen bleiben');
   await fp.screenshot({ path: join(shots, 's55-lagebild-abwehr-1280.png'), fullPage: true });
   await fp.locator('.sec-checks [data-ziel=firewall]').first().click();   // Sprung aus der Konfigurationsprüfung

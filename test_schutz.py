@@ -97,13 +97,18 @@ class AufruferTests(unittest.TestCase):
 
     def test_handler_nutzt_nur_diese_funktion(self):
         class H(app.Handler):
-            def __init__(self, verbindung, **kopf):
-                self.client_address, self.headers = (verbindung, 1), kopf
+            def __init__(self, verbindung, *zeilen, **kopf):
+                self.client_address, self.headers = (verbindung, 1), schutz.http.client.HTTPMessage()
+                for name, wert in [*zeilen, *kopf.items()]:
+                    self.headers[name] = wert   # wie http.server: jede Kopfzeile einzeln, auch doppelte
         gefaelscht = H('198.51.100.7', **{'X-Forwarded-For': '203.0.113.9', 'Tailscale-User-Login': 'chef@example.org'})
         self.assertEqual((str(gefaelscht.adresse()), gefaelscht.device()), ('198.51.100.7', '198.51.100.7'))
         proxy = H('127.0.0.1', **{'X-Forwarded-For': '203.0.113.9'})
         self.assertEqual((str(proxy.adresse()), proxy.device()), ('203.0.113.9', '203.0.113.9'))
         self.assertEqual(H('127.0.0.1', **{'X-Forwarded-For': '203.0.113.9', 'Tailscale-User-Login': 'chef@example.org'}).device(), 'chef@example.org')
+        # zwei Kopfzeilen: die erste schreibt der Aufrufer, die zweite hängt der Proxy an – es zählt die letzte
+        zwei = H('127.0.0.1', ('X-Forwarded-For', '127.0.0.1'), ('X-Forwarded-For', '198.51.100.66'))
+        self.assertEqual(str(zwei.adresse()), '198.51.100.66')
         quelle = (Path(app.__file__).read_text(encoding='utf-8'))
         self.assertEqual(quelle.count("'X-Forwarded-For'"), 1)                                             # nur in Handler.adresse
 
@@ -111,6 +116,22 @@ class AufruferTests(unittest.TestCase):
         self.assertEqual(schutz._schluessel(IP('203.0.113.9')), '203.0.113.9/32')
         self.assertEqual(schutz._schluessel(IP('2001:db8:1:2:3:4:5:6')), '2001:db8:1:2::/64')            # IPv6 je Anschluss
         self.assertEqual(schutz._schluessel(IP('::2')), '::/64')
+        # private IPv6 (fc00::/7): Tailscale gibt allen Geräten Adressen aus EINEM Präfix (fd7a:115c:a1e0::/48) – je Gerät zählen
+        self.assertEqual(schutz._schluessel(IP('fd7a:115c:a1e0:ab12:4843:cd96:6263:1111')), 'fd7a:115c:a1e0:ab12:4843:cd96:6263:1111/128')
+        self.assertEqual(schutz._schluessel(IP('fc00::1')), 'fc00::1/128')
+        self.assertEqual(schutz._schluessel(IP('2001:db8:1::1')), '2001:db8:1::/64')                     # Dokumentationsnetz bleibt öffentlich
+
+    def test_port_und_unlesbarer_eintrag(self):
+        with unittest.mock.patch.object(schutz, 'UHR', lambda: 1_000_000.0):
+            schutz.vergessen(alles=True)
+            self.addCleanup(schutz.vergessen, True)
+            self.assertEqual(schutz.aufrufer('127.0.0.1', '198.51.100.70:51234'), IP('198.51.100.70'))   # Proxy hängt den Port an
+            self.assertEqual(schutz.aufrufer('127.0.0.1', '203.0.113.1, [2001:db8::1]:443'), IP('2001:db8::1'))
+            self.assertEqual(schutz.aufrufer('127.0.0.1', '2001:db8::1'), IP('2001:db8::1'))              # ohne Klammern: kein Port
+            self.assertEqual(schutz._MERKER['unlesbar'], 0.0)
+            for kopf in ('unknown', '198.51.100.70:x:y', '[kaputt]:443'):
+                self.assertEqual(schutz.aufrufer('127.0.0.1', kopf), IP('127.0.0.1'))                    # wie lokal – kein Aussperren
+            self.assertEqual(schutz._MERKER['unlesbar'], 1_000_000.0)                                    # aber vermerkt (Konfigurationsprüfung)
 
 
 class MusterTests(unittest.TestCase):
@@ -143,10 +164,15 @@ class MusterTests(unittest.TestCase):
                 self.assertIsNone(schutz.muster(text))
 
     def test_muster_bleiben_schnell(self):
-        start = time.perf_counter()
-        for text in ('<' * schutz.PRUEFLAENGE, "' or " * 4000, '../' * 7000 + 'x', 'union ' * 3000):
-            schutz.muster(text)
-        self.assertLess(time.perf_counter() - start, 2)                                    # keine Muster mit ausufernder Laufzeit
+        # keine Muster mit ausufernder Laufzeit: lange Läufe genau der Zeichen, die die Quantoren fressen – je Eingabe gemessen
+        laeufe = (' ', '\t', '\n', '\r', '\r\n', '.', '/', '\\', '../', '..\\', '%0a', '%0d', '%20', '%2e', '%2f', '%25', '%250a', '<', "'", '"', '(', '*', '/*', '=', ':', '${', 'a')
+        texte = ['/?x=' + '%0a' * 6666, '\n' * 20000, "' or " * 4000, 'union ' * 3000, '/?x=%0a' + '%09' * 6600]
+        texte += [anfang + lauf * (schutz.PRUEFLAENGE // len(lauf)) for lauf in laeufe for anfang in ('', '/?x=', 'union', "'", '<a', '\n', 'sleep', '${', '/x.')]
+        for text in texte:
+            for name, pruefen in (('muster', schutz.muster), ('FALLEN', schutz.FALLEN.search), ('WERKZEUGE', schutz.WERKZEUGE.search)):
+                start = time.perf_counter()
+                pruefen(text)
+                self.assertLess(time.perf_counter() - start, 0.2, f'{name}: {text[:12]!r}… ({len(text)} Zeichen)')
 
     def test_fallen(self):
         for weg in ('/wp-login.php', '/.env', '/.git/config', '/phpmyadmin/index', '/cgi-bin/luci', '/api/.env', '/backup.zip', '/index.php',
@@ -227,6 +253,32 @@ class FirewallTests(Basis):
         self.assertEqual(self.anfrage(ip=IP('2001:db8:1::beef'))[0], 403)                   # gleiches /64
         self.assertEqual(self.anfrage(ip=IP('2001:db8:2::1'))[0], None)
 
+    def test_tailnet_geraete_zaehlen_einzeln(self):
+        geraet_a, geraet_b = IP('fd7a:115c:a1e0:ab12:4843:cd96:6263:1111'), IP('fd7a:115c:a1e0:ab12:4843:cd96:6255:2222')   # gleiches /64
+        for _ in range(5):
+            self.anfrage(ip=geraet_a, ziel='/.git/config')
+        self.assertEqual(self.anfrage(ip=geraet_a)[0], 403)
+        self.assertEqual(self.anfrage(ip=geraet_b), (None, ''))                             # ein Gerät sperrt nicht das ganze Tailnet
+        schutz.notfall(self.db, True)                                                       # Notfall: Sperre ab dem ersten Treffer
+        self.anfrage(ip=IP('fd7a:115c:a1e0::3'), ziel='/.env')
+        self.assertEqual(self.anfrage(ip=IP('fd7a:115c:a1e0::3'))[0], 403)
+        self.assertEqual(self.anfrage(ip=IP('fd7a:115c:a1e0::4')), (None, ''))
+        self.assertEqual(self.anfrage(ip=geraet_b), (None, ''))
+
+    def test_hoechstzahl_automatischer_sperren_verdraengt_die_aelteste(self):
+        self.setze(schwelle=1)
+        with unittest.mock.patch.object(schutz, 'MAX_AUTO', 3):
+            for i in range(1, 5):
+                self.anfrage(ip=IP(f'198.51.100.{i}'), ziel='/.env')
+                self.weiter(1)
+            self.assertEqual(self.anfrage(ip=IP('198.51.100.4'))[0], 403)                   # die neueste Sperre gilt
+            self.assertEqual(self.anfrage(ip=IP('198.51.100.1')), (None, ''))               # die mit dem frühesten Ablauf ist verdrängt
+            self.assertEqual(self.anfrage(ip=IP('198.51.100.2'))[0], 403)
+            netze = sorted(r[0] for r in self.db.execute("SELECT netz FROM schutz_sperren WHERE art='auto'"))
+            self.assertEqual(netze, ['198.51.100.2/32', '198.51.100.3/32', '198.51.100.4/32'])
+            self.weiter(schutz.NACHLADEN + 1)                                               # auch nach dem Nachladen aus der Datenbank
+            self.assertEqual(self.anfrage(ip=IP('198.51.100.1')), (None, ''))
+
     def test_ereignisse_gebuendelt(self):
         self.setze(schwelle=1)
         for i in range(1, 6):
@@ -237,12 +289,29 @@ class FirewallTests(Basis):
         self.anfrage(ip=IP('198.51.100.9'), ziel='/.env')
         self.assertEqual(sicherheit.ereignisse(self.db, art='schutz_sperre')[0]['detail']['weitere'], 4)
 
-    def test_angemeldet_und_fremde_seite_zaehlen_nicht(self):
+    def test_angemeldet_zaehlt_nicht_fremde_seite_erst_ab_zehnfacher_schwelle(self):
         for _ in range(20):
             self.assertEqual(self.anfrage(ziel='/wp-login.php', angemeldet=True)[0], 404)   # abgewiesen, aber kein Treffer
+        for _ in range(49):
             self.assertEqual(self.anfrage(ziel='/wp-login.php', fremd=True)[0], 404)        # <img src=…/wp-login.php> auf fremder Seite
-        self.assertEqual(self.anfrage(), (None, ''))
+        self.assertEqual(self.anfrage(), (None, ''))                                        # 49 < 10 × 5: noch frei
         self.assertEqual(self.db.execute('SELECT count(*) FROM schutz_sperren').fetchone()[0], 0)
+        self.anfrage(ziel='/wp-login.php', fremd=True)                                      # 50.: wer Sec-Fetch-Site fälscht, kommt nicht unbegrenzt durch
+        self.assertEqual(self.anfrage(), (403, 'gesperrt (automatisch)'))
+        self.assertEqual(self.anfrage(ip=IP('203.0.113.51'), ziel='/', fremd=True), (None, ''))
+        self.weiter(schutz.FENSTER + 1)
+        schutz.freigeben(self.db, 'auto', 'Erste')
+        for _ in range(49):
+            self.anfrage(ziel='/.env', fremd=True)
+        self.anfrage(ziel='/.env')                                                          # eigene Zähler: ein normaler Treffer macht keine 50
+        self.assertEqual(self.anfrage(), (None, ''))
+
+    def test_angemeldete_suchen_frei_der_pfad_wird_weiter_geprueft(self):
+        for _ in range(10):
+            self.assertEqual(self.anfrage(ziel='/api/sicherheit-ereignisse?suche=%3Cscript', angemeldet=True), (None, ''))
+            self.assertEqual(self.anfrage(ziel="/api/data?suche=x' OR '1'='1", angemeldet=True), (None, ''))
+        self.assertEqual(self.anfrage(ziel='/api/datei/etc/passwd', angemeldet=True), (403, 'Angriffsmuster: Pfadmanipulation'))
+        self.assertEqual(self.anfrage(ziel='/api/sicherheit-ereignisse?suche=%3Cscript'), (403, 'Angriffsmuster: Skript-Einschleusung'))   # ohne Anmeldung weiter
 
     def test_fehlerbremse(self):
         for status in (401, 428, 429, 503, 200, 302):                                       # zählen nie
@@ -334,6 +403,13 @@ class FirewallTests(Basis):
         self.assertEqual(self.anfrage(ip=IP('198.51.100.9')), (None, ''))
         self.assertEqual(schutz.abwehr(self.db)['treffer']['falle'], 5)
         self.setze(modus='abweisen')
+        self.assertEqual(self.anfrage(), (None, ''))                                        # vorgemerkte automatische Sperren gelten nie nachträglich
+        self.assertEqual(self.anfrage(ip=IP('198.51.100.9'))[0], 403)                       # Sperren von Hand bleiben
+        e = sicherheit.ereignisse(self.db, art='schutz_frei')[0]
+        self.assertEqual((e['person'], e['detail']), ('Erste', {'anzahl': 1, 'art': 'automatisch', 'grund': 'Firewall auf „abweisen“ gestellt'}))
+        for _ in range(5):
+            self.anfrage(ziel='/.env')
+        self.setze(modus='abweisen', schwelle=6)                                            # bleibt „abweisen“: Sperren bleiben
         self.assertEqual(self.anfrage()[0], 403)
 
     def test_inhalt_nur_ohne_anmeldung_und_nie_passwoerter(self):
@@ -436,7 +512,8 @@ class BedrohungslisteTests(Basis):
         for kaputt in ('kein-netz ; SBL1', '192.0.2.1/30 ; SBL1', '192.0.2.0/33', '<html>Fehler</html>', '192.0.2.0/24 SBL1'):   # Hostbits, Unsinn, HTML-Fehlerseite
             with self.subTest(kaputt=kaputt), self.assertRaisesRegex(ValueError, 'unlesbare Zeile'):
                 schutz.liste_lesen('192.0.2.0/30 ; SBL1\n' + kaputt)
-        for unplausibel in ('0.0.0.0/0', '10.0.0.0/8', '127.0.0.0/8', '100.64.0.0/10', '192.168.1.0/24', '96.0.0.0/3', '::/0', 'fd7a:115c:a1e0::/48', '::1/128', '2000::/3'):
+        for unplausibel in ('0.0.0.0/0', '10.0.0.0/8', '127.0.0.0/8', '100.64.0.0/10', '192.168.1.0/24', '96.0.0.0/3', '::/0', 'fd7a:115c:a1e0::/48', '::1/128', '2000::/3',
+                            '192.0.0.0/9', '2001::/23'):                                                  # größer als /10 bzw. /24
             with self.subTest(netz=unplausibel), self.assertRaisesRegex(ValueError, 'unplausibles Netz'):
                 schutz.liste_lesen(unplausibel + ' ; SBL1')
 
@@ -473,19 +550,87 @@ class BedrohungslisteTests(Basis):
                 self.lade(quellen)
         with unittest.mock.patch.object(schutz, 'LISTE_NETZE', (1, 60)), self.assertRaisesRegex(ValueError, 'unplausibel'):
             self.lade()                                                                     # zu viele Netze
+        flaeche = 256 + 16 + 64                                                             # IPv4-Adressen der erfundenen Liste
+        with unittest.mock.patch.object(schutz, 'LISTE_IPV4_ADRESSEN', flaeche - 1), self.assertRaisesRegex(ValueError, 'unplausibel'):
+            self.lade()                                                                     # deckt zu viele Adressen ab
+        with unittest.mock.patch.object(schutz, 'LISTE_IPV4_ADRESSEN', flaeche):
+            self.assertEqual(self.lade()['anzahl'], 68)
+        stand = schutz.liste_info(self.db)
         for fehler in (OSError('keine Verbindung'), TimeoutError(), schutz.urllib.error.URLError('dns'), schutz.http.client.IncompleteRead(b'')):
             with unittest.mock.patch.object(schutz, 'holen', side_effect=fehler), self.assertRaisesRegex(ValueError, 'konnte nicht geladen werden'):
                 schutz.liste_laden(self.db)
         self.assertEqual(schutz.liste_info(self.db), stand)
         self.assertEqual(self.anfrage(ip=IP('192.0.2.7'))[0], 403)                          # die alte Liste gilt weiter
-        self.assertEqual(len(sicherheit.ereignisse(self.db, art='schutz_liste')), 1)
+        self.assertEqual(len(sicherheit.ereignisse(self.db, art='schutz_liste')), 2)
 
     def test_abruf_nur_https_ohne_weiterleitung(self):
         with self.assertRaisesRegex(ValueError, 'nur über https'):
             ECHTES_HOLEN('http://www.example.org/drop.txt')                                 # bricht vor jedem Abruf ab
         self.assertTrue(all(q.startswith('https://www.spamhaus.org/drop/') for q in schutz.QUELLEN))
-        with self.assertRaises(schutz.urllib.error.HTTPError):
-            schutz._KeineWeiterleitung().redirect_request(None, None, 302, 'Found', {}, 'https://anders.example/')
+        # den Opener, den holen() baut, gegen einen Server auf 127.0.0.1 mit Weiterleitung schicken (statt ins Netz)
+        import http.server
+        import threading
+        aufgerufen = []
+
+        class Weiterleitung(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                aufgerufen.append(self.path)
+                self.send_response(302)
+                self.send_header('Location', '/ziel')
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Weiterleitung)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        echt, gebaut = schutz.urllib.request.build_opener, []
+
+        def bauen(*handler):
+            gebaut.append(echt(*handler))
+            return unittest.mock.Mock(open=unittest.mock.Mock(side_effect=OSError('kein Netz im Test')))
+        with unittest.mock.patch.object(schutz.urllib.request, 'build_opener', bauen), self.assertRaises(OSError):
+            ECHTES_HOLEN('https://www.example.org/drop.txt')
+        with self.assertRaises(schutz.urllib.error.HTTPError) as fehler:
+            gebaut[0].open(f'http://127.0.0.1:{server.server_port}/drop.txt', timeout=5)
+        self.assertEqual((fehler.exception.code, aufgerufen), (302, ['/drop.txt']))           # der Weiterleitung wird nie gefolgt
+
+    def test_abruf_mit_gesamtfrist_und_groessengrenze(self):
+        class Antwort:
+            """Antwort, die tröpfelt: jedes Stück kostet Zeit auf der Uhr der Abwehr."""
+            def __init__(antwort, stueck, sekunden, gesamt):
+                antwort.stueck, antwort.sekunden, antwort.rest, antwort.lesen = stueck, sekunden, gesamt, 0
+
+            def __enter__(antwort):
+                return antwort
+
+            def __exit__(antwort, *a):
+                return False
+
+            def read1(antwort, n=-1):
+                antwort.lesen += 1
+                self.weiter(antwort.sekunden)
+                teil = antwort.stueck[:max(0, min(n if n > 0 else len(antwort.stueck), antwort.rest))]
+                antwort.rest -= len(teil)
+                return teil
+            read = read1
+
+        def holen(antwort):
+            opener = unittest.mock.Mock(open=unittest.mock.Mock(return_value=antwort))
+            with unittest.mock.patch.object(schutz.urllib.request, 'build_opener', return_value=opener):
+                return ECHTES_HOLEN(schutz.QUELLEN[0])
+        self.assertEqual(holen(Antwort(b'192.0.2.0/30 ; SBL1\n', 0.01, 20 * 3)), b'192.0.2.0/30 ; SBL1\n' * 3)
+        langsam = Antwort(b'1', 1, 10 ** 9)                                                 # ein Byte je Sekunde, ohne Ende
+        with self.assertRaises(TimeoutError):
+            holen(langsam)
+        self.assertLessEqual(langsam.lesen, schutz.HOLEN_FRIST + 1)                         # nach der Gesamtfrist abgebrochen
+        riesig = Antwort(b'x' * 65536, 0, 10 ** 12)
+        self.assertEqual(len(holen(riesig)), schutz.LISTE_BYTES + 1)                       # nie mehr als die Grenze gelesen
+        self.assertLessEqual(riesig.lesen, schutz.LISTE_BYTES // 65536 + 2)
+        with unittest.mock.patch.object(schutz, 'holen', lambda url: holen(Antwort(b'1', 1, 10 ** 9))), self.assertRaisesRegex(ValueError, 'konnte nicht geladen werden'):
+            schutz.liste_laden(self.db)                                                     # der Stundenlauf hängt nicht
 
     def test_stuendlich_laedt_taeglich(self):
         with unittest.mock.patch.object(schutz, 'holen', lambda url: drop_fixture()[url]):
@@ -647,18 +792,26 @@ class PruefungTests(Basis):
 
     def test_liste(self):
         p = self.pruefung()
-        self.assertEqual(list(p), ['keycloak', 'authenticator', 'notzugang', 'firewall', 'bedrohungsliste', 'dateipruefung', 'sicherung', 'https',
+        self.assertEqual(list(p), ['keycloak', 'authenticator', 'notzugang', 'firewall', 'aufrufer', 'bedrohungsliste', 'dateipruefung', 'sicherung', 'https',
                                    'ungenutzt', 'verwaltung', 'serverschutz'])
         for eintrag in p.values():
             self.assertEqual(set(eintrag), {'id', 'titel', 'stand', 'detail', 'ziel'})
             self.assertIn(eintrag['stand'], schutz.STAENDE)
             self.assertTrue(eintrag['titel'] and eintrag['detail'])
         staende = {k: v['stand'] for k, v in p.items()}
-        self.assertEqual(staende, {'keycloak': 'hinweis', 'authenticator': 'hinweis', 'notzugang': 'ok', 'firewall': 'ok', 'bedrohungsliste': 'hinweis',
+        self.assertEqual(staende, {'keycloak': 'hinweis', 'authenticator': 'hinweis', 'notzugang': 'ok', 'firewall': 'ok', 'aufrufer': 'ok', 'bedrohungsliste': 'hinweis',
                                    'dateipruefung': 'hinweis', 'sicherung': 'ok', 'https': 'kritisch', 'ungenutzt': 'hinweis', 'verwaltung': 'hinweis',
                                    'serverschutz': 'hinweis'})
         self.assertEqual((p['firewall']['ziel'], p['serverschutz']['ziel'], p['verwaltung']['ziel']), ('firewall', 'system', 'seite:users'))
         self.assertIn('Kein aktueller Bericht', p['serverschutz']['detail'])
+
+    def test_unlesbare_aufruferadresse_ist_kritisch(self):
+        self.assertEqual(schutz.aufrufer('127.0.0.1', 'unknown'), IP('127.0.0.1'))
+        a = self.pruefung()['aufrufer']
+        self.assertEqual((a['stand'], a['ziel']), ('kritisch', 'firewall'))
+        self.assertIn('Aufruferadresse nicht lesbar – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen)', a['detail'])
+        self.weiter(86401)
+        self.assertEqual(self.pruefung()['aufrufer']['stand'], 'ok')                       # nur, wenn es in den letzten 24 Stunden vorkam
 
     def test_alles_in_ordnung(self):
         rollen.save_user(self.db, test_rollen.P('Zweite', password=PASSWORT, roles=[r[0] for r in self.db.execute("SELECT id FROM roles WHERE name='Administrator'")]), 'Erste')
@@ -717,11 +870,67 @@ class SchutzHttpTests(unittest.TestCase):
         except test_server.urllib.error.HTTPError as e:
             return e.code, e.read()
 
+    def zeilen(self, methode, path, *kopf):
+        """Echte HTTP-Anfrage mit frei wählbaren (auch doppelten) Kopfzeilen; liefert Status und Körper."""
+        verbindung = schutz.http.client.HTTPConnection('127.0.0.1', self.port, timeout=10)
+        try:
+            verbindung.putrequest(methode, path, skip_host=True, skip_accept_encoding=True)
+            for name, wert in (('Host', 'ju-finanzen.beispiel.ts.net'), *kopf):
+                verbindung.putheader(name, wert)
+            verbindung.endheaders()
+            antwort = verbindung.getresponse()
+            return antwort.status, antwort.read()
+        finally:
+            verbindung.close()
+
+    def test_mehrere_weitergereichte_kopfzeilen_zaehlt_die_des_proxys(self):
+        angreifer, opfer = '198.51.100.66', '203.0.113.77'
+        for _ in range(5):   # erste Zeile schreibt der Aufrufer selbst, die zweite hängt der Proxy an
+            self.assertEqual(self.zeilen('GET', '/.env', ('X-Forwarded-For', '127.0.0.1'), ('X-Forwarded-For', angreifer))[0], 404)
+        self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', angreifer))[0], 403)       # gesperrt wird die echte Adresse
+        for _ in range(5):
+            self.zeilen('GET', '/.env', ('X-Forwarded-For', opfer), ('X-Forwarded-For', '198.51.100.67'))
+        self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', opfer))[0], 200)           # niemand lässt eine fremde Adresse sperren
+        self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', '198.51.100.67'))[0], 403)
+        self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', '203.0.113.5:51234'))[0], 200)   # Port des Proxys stört nicht
+
+    def test_andere_methoden_laufen_durch_die_abwehr(self):
+        for methode in ('HEAD', 'OPTIONS', 'PUT', 'DELETE', 'PATCH'):
+            status, body = self.zeilen(methode, '/', ('X-Forwarded-For', '203.0.113.60'))
+            self.assertEqual((status, body if methode == 'HEAD' else b''), (405, b''), methode)   # HEAD ohne Körper
+        for _ in range(5):
+            self.assertEqual(self.zeilen('OPTIONS', '/.env', ('X-Forwarded-For', '203.0.113.61'))[0], 404)   # Fallen gelten auch hier
+        self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', '203.0.113.61'))[0], 403)
+        self.assertEqual(self.zeilen('HEAD', '/', ('X-Forwarded-For', '203.0.113.61')), (403, b''))   # gesperrt auch für HEAD
+        self.assertEqual(self.zeilen('DELETE', '/api/status', ('X-Forwarded-For', '203.0.113.61'))[0], 403)
+
+    def test_protokollieren_dann_abweisen_sperrt_niemanden_nachtraeglich(self):
+        store = Store(app.DB)
+        try:
+            schutz.aus(store.db)                                                             # Notausgang: nur protokollieren
+        finally:
+            store.db.close()
+        for _ in range(6):
+            self.assertEqual(self.seite('/.env', **self.VON)[0], 404)                        # vermerkt, was gesperrt würde
+        self.assertEqual(self.seite('/', **self.VON)[0], 200)
+        self.assertEqual(self.aussen('/api/schutz-einstellungen', {'modus': 'abweisen'}, self.chefin)[0], 200)
+        self.assertEqual(self.seite('/', **self.VON)[0], 200)                                # auch nach dem Ende der Sitzung nicht ausgesperrt
+        self.assertEqual(self.get(self.chefin, '/api/schutz')[1]['sperren'], [])
+
+    def test_sicherungsdatei_ohne_datum_stoert_das_lagebild_nicht(self):
+        ordner = app.backups_dir() / 'Automatisch'
+        ordner.mkdir(parents=True, exist_ok=True)
+        for name in ('finanzen-kopie-1234.sqlite3', 'finanzen-2026-11-18.sqlite3', 'finanzen-9999-99-99.sqlite3'):
+            (ordner / name).write_bytes(b'')
+            self.addCleanup((ordner / name).unlink)
+        status, body = self.get(self.chefin, '/api/sicherheit')
+        self.assertEqual((status, body['lagebild']['letzte_sicherung']), (200, '2026-11-18'))
+
     def test_rechte_und_bestaetigung(self):
         self.assertEqual(rollen.required('GET', '/api/schutz'), (('sicherheit', 'lesen'),))
         for path in ('/api/schutz-einstellungen', '/api/schutz-sperren', '/api/schutz-freigeben', '/api/schutz-liste-laden', '/api/schutz-mitschnitt'):
             self.assertEqual(rollen.required('POST', path), (('sicherheit', 'schreiben'),), path)
-            self.assertEqual(('POST', path) in app.CONFIRM, path != '/api/schutz-mitschnitt', path)
+            self.assertIn(('POST', path), app.CONFIRM, path)                                 # auch der Mitschnitt: zeigt Adresse und Pfad aller
         vorsitz = self.person('Vorsitz', 'Landesvorsitzender')                               # „Sicherheit lesen“
         mitglieder = self.person('Mitglieder', 'Landesmitgliederbeauftragter')
         self.assertEqual(self.get(mitglieder, '/api/schutz')[0], 403)
@@ -730,10 +939,10 @@ class SchutzHttpTests(unittest.TestCase):
         for path in ('/api/schutz-einstellungen', '/api/schutz-sperren', '/api/schutz-freigeben', '/api/schutz-liste-laden', '/api/schutz-mitschnitt'):
             self.assertEqual(self.post(vorsitz, path, {})[0], 403, path)                     # ändern nur mit „Sicherheit ändern“
         frisch = self.login('Chefin', confirm=False)
-        for path in ('/api/schutz-einstellungen', '/api/schutz-sperren', '/api/schutz-freigeben', '/api/schutz-liste-laden'):
+        for path in ('/api/schutz-einstellungen', '/api/schutz-sperren', '/api/schutz-freigeben', '/api/schutz-liste-laden', '/api/schutz-mitschnitt'):
             self.assertEqual(self.post(frisch, path, {})[0], 428, path)                      # erst nach Passwortbestätigung
         self.assertEqual(self.get(self.chefin, '/api/schutz')[1]['einstellungen'], schutz.VORGABEN)
-        status, body = self.post(frisch, '/api/schutz-mitschnitt', {'an': True})
+        status, body = self.post(self.chefin, '/api/schutz-mitschnitt', {'an': True})
         self.assertEqual((status, bool(body['bis'])), (200, True))
         self.assertEqual(self.post(self.chefin, '/api/schutz-einstellungen', {'schwelle': 3})[1]['einstellungen']['schwelle'], 3)
         self.assertEqual(self.post(self.chefin, '/api/schutz-einstellungen', {'schwelle': 0})[0], 400)
@@ -775,7 +984,7 @@ class SchutzHttpTests(unittest.TestCase):
         self.assertEqual(self.aussen('/api/status')[0], 200)
         lage = self.get(self.chefin, '/api/sicherheit')[1]
         self.assertEqual((lage['abwehr']['treffer_gesamt'], lage['abwehr']['sperren'], lage['abwehr']['abgewiesen']), (5, 1, 6))
-        self.assertEqual(len(lage['pruefung']), 11)
+        self.assertEqual(len(lage['pruefung']), 12)
         self.assertEqual((lage['serverschutz']['vorhanden'], lage['lagebild']['sitzungen']), (False, 1))
 
     def test_angemeldete_duerfen_jeden_text_speichern(self):
@@ -783,6 +992,8 @@ class SchutzHttpTests(unittest.TestCase):
         for _ in range(8):
             self.assertEqual(self.aussen('/api/wartung', {'an': True, 'text': text[:300]}, self.chefin)[0], 200)
             self.assertEqual(self.aussen('/api/wartung', {'an': False}, self.chefin)[0], 200)
+        for _ in range(8):                                                                   # Suchtexte Angemeldeter in der Adresse auch
+            self.assertEqual(self.aussen('/api/sicherheit-ereignisse?suche=%3Cscript%3E', who=self.chefin)[0], 200)
         self.assertEqual(self.aussen('/api/status')[0], 200)
         # Passwörter prüft die Firewall nie: falsches Passwort mit Angriffszeichen ist nur eine Fehlanmeldung
         self.assertEqual(self.aussen('/api/login', {'name': 'Chefin', 'password': "x' OR '1'='1 <script>"})[0], 401)

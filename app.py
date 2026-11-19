@@ -66,7 +66,8 @@ CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-lis
          ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
-         ('POST','/api/schutz-einstellungen'),('POST','/api/schutz-sperren'),('POST','/api/schutz-freigeben'),('POST','/api/schutz-liste-laden')}
+         ('POST','/api/schutz-einstellungen'),('POST','/api/schutz-sperren'),('POST','/api/schutz-freigeben'),('POST','/api/schutz-liste-laden'),
+         ('POST','/api/schutz-mitschnitt')}   # der Mitschnitt zeigt 15 Minuten Adresse und Pfad aller Personen
 CONFIRM_SECONDS=300
 # im Notfall/Wartung auch ohne „Sicherheit ändern“ – bewusst ohne /api/password: ein übernommenes Konto soll die echte Person nicht aussperren
 SPERRE_FREI_POST=('/api/logout','/api/bestaetigen','/api/notfall-an')
@@ -275,7 +276,8 @@ class Handler(BaseHTTPRequestHandler):
         encoding=None
         if len(data)>1400 and not attachment and ctype.split(';')[0] in COMPRESSIBLE and 'gzip' in self.headers.get('Accept-Encoding',''):
             data=gzip.compress(data,5);encoding='gzip'
-        self.head(status,ctype,len(data),cookie,attachment,inline,frame,encoding);self.wfile.write(data)
+        self.head(status,ctype,len(data),cookie,attachment,inline,frame,encoding)
+        if self.command!='HEAD': self.wfile.write(data)
     def send_file(self,fileobj,size,ctype,attachment):
         """Große Antwort (z. B. Kassenprüfer-Paket) stückweise aus einer Datei senden."""
         self.head(200,ctype,size,attachment=attachment);shutil.copyfileobj(fileobj,self.wfile,1024*1024)
@@ -458,8 +460,9 @@ class Handler(BaseHTTPRequestHandler):
         return rollen.rights_of(store.db,s['actor']) if server_mode() else dict(rollen.ALL)
     def from_proxy(self): return self.client_address[0] in ('127.0.0.1','::1')
     def adresse(self):
-        """Adresse des Aufrufers – nur über schutz.aufrufer (X-Forwarded-For zählt allein von 127.0.0.1); None = unlesbar."""
-        return schutz.aufrufer(self.client_address[0],self.headers.get('X-Forwarded-For','') if getattr(self,'headers',None) else '')
+        """Adresse des Aufrufers – nur über schutz.aufrufer (X-Forwarded-For zählt allein von 127.0.0.1); None = unlesbar.
+        Alle Kopfzeilen zusammen: eine erste kann der Aufrufer selbst schicken, gilt nur der letzte Eintrag (vom Proxy)."""
+        return schutz.aufrufer(self.client_address[0],', '.join(self.headers.get_all('X-Forwarded-For') or []) if getattr(self,'headers',None) else '')
     def device(self):
         """Gerät für Sperre und Protokoll: hinter Tailscale Serve (Anfrage von 127.0.0.1) der Tailscale-Login, sonst die
         Adresse des Aufrufers."""
@@ -499,6 +502,11 @@ class Handler(BaseHTTPRequestHandler):
         """Browser melden mit Sec-Fetch-Site, woher eine Anfrage kommt: nur eigene Seite oder direkte Eingabe zulassen
         (Schutz vor Seiten auf anderen Rechnern im Tailnet, die als „same-site“ gelten)."""
         return self.headers.get('Sec-Fetch-Site','') in ('','same-origin','none')
+    def andere_methode(self):
+        """HEAD, OPTIONS, PUT, DELETE, PATCH: auch hier zuerst die Abwehr (Sperren, Fallen, Zählung), sonst 405."""
+        if self.abwehr(): return
+        self.send(405,{'error':'Methode nicht erlaubt.'})
+    do_HEAD=do_OPTIONS=do_PUT=do_DELETE=do_PATCH=andere_methode
     def do_GET(self):
         if self.abwehr(): return
         if not self.valid_host(): return self.send(403,{'error':'Ungültiger Host.'})

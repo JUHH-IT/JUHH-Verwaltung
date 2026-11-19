@@ -91,14 +91,17 @@ Verwaltung stehen in `SERVER.md`.
     - **Was als Treffer zählt:** Aufrufe typischer Scanner-Adressen, die es hier nie gibt (z. B. `/wp-login.php`,
       `/.env`, `/phpmyadmin`) – sie bekommen dieselbe Antwort wie jede unbekannte Adresse; bekannte Angriffswerkzeuge;
       Angriffsmuster in der Adresse (und im Anmeldeformular); zu viele Fehlerantworten einer Adresse ohne Anmeldung
-      (Fehlerbremse, Vorgabe 30 in 5 Minuten). Was angemeldete Personen eintippen – Verwendungszwecke, Notizen –, wird
-      nie geprüft; Passwörter auch nicht.
+      (Fehlerbremse, Vorgabe 30 in 5 Minuten). Was angemeldete Personen eintippen – Verwendungszwecke, Notizen,
+      Suchtexte –, wird nie geprüft; Passwörter auch nicht.
     - **Sperre:** Nach 5 Treffern in 10 Minuten ist die Adresse 60 Minuten gesperrt (einstellbar: 10 Minuten bis
       7 Tage). Eine gesperrte Adresse bekommt nur „Zugriff verweigert“. Wer gültig angemeldet ist, kommt trotz
       automatischer Sperre und Bedrohungsliste durch und kann die Sperre freigeben; eine Sperre **von Hand** gilt
-      für alle.
+      für alle. Treffer, die eine fremde Webseite auslöst, zählen erst ab der zehnfachen Schwelle (Vorgabe 50): eine
+      fremde Seite soll niemanden mit ein paar Bildern aussperren, ein Scanner aber auch nicht unbegrenzt durchkommen.
+      Im Tailnet zählt jedes Gerät für sich.
     - **Einstellungen** (Dialog, mit Passwortbestätigung): Firewall „abweisen“, „nur protokollieren“ (weist nie ab –
-      zum Ausprobieren) oder „aus“; automatisch sperren, Treffer bis zur Sperre, Sperrdauer, Fehlerbremse,
+      zum Ausprobieren) oder „aus“ – beim Zurückschalten auf „abweisen“ werden die automatischen Sperren aus der Zeit
+      davor aufgehoben, Sperren von Hand bleiben; automatisch sperren, Treffer bis zur Sperre, Sperrdauer, Fehlerbremse,
       Bedrohungsliste, **nie sperren** (Adressen oder Netze, z. B. die eigene feste Adresse).
     - **Sperrliste:** Adresse oder Netz von Hand sperren (Grund, Dauer oder unbefristet), einzeln freigeben oder alle
       automatischen auf einmal.
@@ -106,14 +109,14 @@ Verwaltung stehen in `SERVER.md`.
       „Jetzt laden“ holt sie sofort. Angezeigt werden Stand und Anzahl. Scheitert der Abruf oder ist die Datei
       unplausibel, bleibt die alte Liste.
     - **Live-Verkehr:** die letzten auffälligen Anfragen (Zeit, Adresse, Methode, Pfad, Status, Art). „Mitschnitt
-      starten“ zeigt 15 Minuten lang alle Anfragen. Nie Inhalte, nie Personen; die Liste liegt nur im Arbeitsspeicher
+      starten“ zeigt 15 Minuten lang alle Anfragen (mit Passwortbestätigung). Nie Inhalte, nie Personen; die Liste liegt nur im Arbeitsspeicher
       und ist nach einem Neustart leer.
     - **Nicht aussperrbar:** der Server selbst (127.0.0.1), „nie sperren“ und – beim Sperren von Hand – die eigene
       aktuelle Adresse (Meldung statt Sperre). **Notausgang auf dem Server:** `sudo ju-finanzen schutz-aus` löscht alle
       Sperren und stellt die Firewall auf „nur protokollieren“ (wirkt nach spätestens 10 Sekunden).
   - **Passwortbestätigung:** Sicherung herunterladen, Personen und Rollen ändern, Mitglieder löschen, E-Mail-Passwort
     speichern, Notfall beenden, Sitzungen beenden und Sperren aufheben verlangen das eigene Passwort noch einmal (gilt
-    dann 5 Minuten). Ab 0.39 auch: Firewall-Einstellungen ändern, Adresse sperren oder freigeben, Bedrohungsliste laden.
+    dann 5 Minuten). Ab 0.39 auch: Firewall-Einstellungen ändern, Adresse sperren oder freigeben, Bedrohungsliste laden, Mitschnitt.
   - **Sitzungen & Konten, System** (nur „Sicherheit ändern“): Sitzungen anderer beenden, Sperren nach Fehlversuchen
     aufheben, Konten im Überblick, Version, Speicher, Sicherungen, Dateiprüfung der Programmdateien („Jetzt prüfen“;
     sonst einmal am Tag beim Öffnen). Ab 0.39 unter System auch der **Serverschutz**: der Bericht, den der Server über

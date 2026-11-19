@@ -33,7 +33,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Sicherheit lesen:** `GET /api/schutz`, `GET /api/sicherheit-ereignisse.csv`, `GET /api/sicherheit-ereignisse`, `GET /api/sicherheit`, `POST /api/notfall-an`
 
-**Sicherheit ändern:** `GET /api/sicherheit-verwaltung`, `POST /api/dateipruefung`, `POST /api/notfall-aus` ⚠, `POST /api/schutz-einstellungen` ⚠, `POST /api/schutz-freigeben` ⚠, `POST /api/schutz-liste-laden` ⚠, `POST /api/schutz-mitschnitt`, `POST /api/schutz-sperren` ⚠, `POST /api/sitzung-beenden` ⚠, `POST /api/sperre-aufheben` ⚠, `POST /api/wartung` ⚠
+**Sicherheit ändern:** `GET /api/sicherheit-verwaltung`, `POST /api/dateipruefung`, `POST /api/notfall-aus` ⚠, `POST /api/schutz-einstellungen` ⚠, `POST /api/schutz-freigeben` ⚠, `POST /api/schutz-liste-laden` ⚠, `POST /api/schutz-mitschnitt` ⚠, `POST /api/schutz-sperren` ⚠, `POST /api/sitzung-beenden` ⚠, `POST /api/sperre-aufheben` ⚠, `POST /api/wartung` ⚠
 
 **Sicherung ändern:** `GET /api/backup` ⚠
 
@@ -153,6 +153,7 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
   - `Handler.send_response(code, message=…)` – Jede Antwort – auch Fehler der Basisklasse – läuft hier durch: Fehlerbremse und Live-Verkehr (schutz.nachher).
   - `Handler.who()` – Herkunft für das Protokoll (keine Inhalte).
   - `Handler.same_site()` – Browser melden mit Sec-Fetch-Site, woher eine Anfrage kommt: nur eigene Seite oder direkte Eingabe zulassen
+  - `Handler.andere_methode()` – HEAD, OPTIONS, PUT, DELETE, PATCH: auch hier zuerst die Abwehr (Sperren, Fallen, Zählung), sonst 405.
   - `Handler.do_GET()`
   - `Handler.do_POST()`
 - `new_login_code()` – Einmaliger Anmeldecode (60 Sekunden gültig) – nur nach Prüfung durch macOS bzw. beim Start im Terminal.
@@ -1023,7 +1024,7 @@ Tests: test_schutz.py
 - `abwehr(db)` – Abwehr der letzten 24 Stunden für das Lagebild: Treffer nach Art, Abweisungen, Sperren – gesamt und je Stunde.
 - Klasse `_KeineWeiterleitung`
   - `_KeineWeiterleitung.redirect_request(req, fp, code, msg, headers, newurl)`
-- `holen(url)` – Eine Quelle der Bedrohungsliste abrufen: nur https, ohne Weiterleitung, mit Zeit- und Größengrenze. In Tests ersetzt.
+- `holen(url)` – Eine Quelle der Bedrohungsliste abrufen: nur https, ohne Weiterleitung, höchstens LISTE_BYTES + 1 Bytes und HOLEN_FRIST
 - `liste_lesen(text)` – Netze aus einer DROP-Datei („Netz ; SBL-Nummer“, Kommentare mit ;). Jede Zeile muss ein plausibles öffentliches Netz
 - `liste_laden(db, actor=…, geraet=…)` – Bedrohungsliste neu laden und prüfen; bei jedem Fehler bleibt die bisherige Liste. Liefert Stand und Anzahl.
 - `liste_info(db)` – Stand der Bedrohungsliste: {'stand', 'anzahl', 'veraltet'} – ohne Liste stand = ''.

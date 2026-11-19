@@ -259,7 +259,7 @@ function settingsDialog(s, reload) {
   const e = s.einstellungen;
   const el = dialog('Firewall-Einstellungen', html`<form id="sec-fw-form" style="display:flex;flex-direction:column;gap:14px">
     <label class="field">Firewall<select name="modus">${Object.entries(s.modi).map(([key, label]) => html`<option value="${key}" ${e.modus === key ? 'selected' : ''}>${label}</option>`)}</select></label>
-    <p class="small muted">„Nur protokollieren“ weist nie ab – auch gesperrte Adressen kommen durch. Zum Ausprobieren neuer Einstellungen.</p>
+    <p class="small muted">„Nur protokollieren“ weist nie ab – auch gesperrte Adressen kommen durch. Zum Ausprobieren neuer Einstellungen. Beim Umschalten auf „abweisen“ werden die automatischen Sperren aus der Zeit davor aufgehoben; Sperren von Hand bleiben.</p>
     <label class="check"><input type="checkbox" name="auto" ${e.auto ? 'checked' : ''}> Auffällige Adressen automatisch sperren</label>
     <label class="field">Treffer bis zur Sperre (in 10 Minuten)<input name="schwelle" type="number" min="1" max="50" required value="${e.schwelle}"></label>
     <label class="field">Sperrdauer<select name="sperrminuten">${s.sperrminuten.map((m) => html`<option value="${m}" ${e.sperrminuten === m ? 'selected' : ''}>${dauer(m)}</option>`)}</select></label>

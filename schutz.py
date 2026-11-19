@@ -44,10 +44,14 @@ NACHLADEN = 10           # Sekunden: so schnell wirkt eine Änderung von außen 
 STATISTIK_ALLE = 30      # Sekunden: Stundenstatistik höchstens so oft schreiben
 VERKEHR_MAX = 500
 MITSCHNITT_MINUTEN = 15
-MAX_AUTO = 5000          # automatische Sperren gleichzeitig
+MAX_AUTO = 5000          # automatische Sperren gleichzeitig; darüber verdrängt eine neue die mit dem frühesten Ablauf
+FREMD_FAKTOR = 10        # Treffer von fremden Seiten (Sec-Fetch-Site cross-/same-site) sperren erst ab der zehnfachen Schwelle
 QUELLEN = ('https://www.spamhaus.org/drop/drop.txt', 'https://www.spamhaus.org/drop/dropv6.txt')
 LISTE_BYTES = 2_000_000
 LISTE_NETZE = (50, 20000)   # plausibel (Stand 11/2026: rund 1.800 Netze)
+LISTE_PRAEFIX = {4: 10, 6: 24}   # größere Netze stehen nie auf der Bedrohungsliste (Spamhaus führt keine /8)
+LISTE_IPV4_ADRESSEN = 60_000_000   # abgedeckte IPv4-Adressen höchstens (gemessen 19.11.2026: 15.025.664 in 1.747 Netzen – rund das Vierfache)
+HOLEN_FRIST = 60         # Sekunden für den ganzen Abruf einer Quelle (eine tröpfelnde Quelle hält den Stundenlauf nicht auf)
 LISTE_ALT_TAGE = 3
 SERVERSCHUTZ = '/var/lib/ju-serverschutz/status.json'
 SERVERSCHUTZ_BYTES = 65536
@@ -58,6 +62,7 @@ STAENDE = ('ok', 'hinweis', 'kritisch')
 INTERN = [ipaddress.ip_network(n) for n in ('0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12',
                                             '192.168.0.0/16', '224.0.0.0/3', '::/127', 'fc00::/7', 'fe80::/10', 'ff00::/8')]
 LOKAL = (ipaddress.ip_network('127.0.0.0/8'), ipaddress.ip_network('::1/128'))
+ULA = ipaddress.ip_network('fc00::/7')   # private IPv6, z. B. Tailscale fd7a:115c:a1e0::/48 – alle Geräte in einem Präfix
 KLEINSTES_PRAEFIX = {4: 8, 6: 19}   # größere Netze nimmt weder die Sperrliste noch die Bedrohungsliste an
 
 # Fallen: Pfade, die es hier nie gibt – wer sie aufruft, sucht nach Schwachstellen (statische Dateien: nur .html/.js/.css/.svg)
@@ -82,7 +87,7 @@ MUSTER = [(gruppe, re.compile(ausdruck, re.I)) for gruppe, ausdruck in (
     ('Code-Ausführung', r'\b(?:php|phar|expect|zip|glob)://'),
     ('Code-Ausführung', r'<\?php|\b(?:system|exec|passthru|shell_exec|popen|proc_open)\s*\(\s*[\'"$]'),
     ('Code-Ausführung', r'\b(?:base64_decode|gzinflate|str_rot13)\s*\(|\b__import__\s*\(|\bos\.system\s*\('),
-    ('Kopfzeilen-Einschleusung', r'[\r\n]\s*(?:set-cookie|location|content-type)\s*:'),
+    ('Kopfzeilen-Einschleusung', r'[\r\n][ \t]*(?:set-cookie|location|content-type)[ \t]*:'),   # nie \s* nach [\r\n]: quadratisch bei vielen Zeilenumbrüchen
 )]
 GEHEIM = ('password', 'current', 'new', 'repeat', 'code', 'token')   # Passwörter und Codes nie prüfen (beliebige Zeichen erlaubt)
 PRUEFLAENGE = 20000   # shortcut: längere Texte nur bis hierher geprüft; erhöhen, wenn Adressen länger werden dürfen
@@ -93,7 +98,7 @@ _Z = None                # geladener Stand (Einstellungen, Sperren, Index der Be
 _ZAEHLER = {}            # Adresse → {'h': [Zeiten der Treffer], 'e': [Zeiten der Fehlerantworten]}
 _VERKEHR = deque(maxlen=VERKEHR_MAX)
 _STATISTIK = {}          # (Stunde, Art) → Anzahl, noch nicht geschrieben
-_MERKER = {'statistik': 0.0, 'meldung': 0.0, 'weitere': 0, 'mitschnitt': 0.0}
+_MERKER = {'statistik': 0.0, 'meldung': 0.0, 'weitere': 0, 'mitschnitt': 0.0, 'unlesbar': 0.0}   # unlesbar = zuletzt X-Forwarded-For unlesbar
 
 
 def init(db):
@@ -108,16 +113,23 @@ def init(db):
 # ---- Adresse des Aufrufers ----
 def aufrufer(verbindung, weitergereicht=''):
     """Adresse des Aufrufers (einzige Stelle): X-Forwarded-For zählt nur, wenn die Verbindung von 127.0.0.1/::1 kommt
-    (lokaler Proxy) – dann der letzte Eintrag, den der Proxy selbst angehängt hat; sonst die Adresse der Verbindung."""
+    (lokaler Proxy) – dann der letzte Eintrag, den der Proxy selbst angehängt hat (`weitergereicht` = alle Kopfzeilen mit
+    Komma verbunden; ein Port wie 198.51.100.7:51234 oder [2001:db8::1]:443 wird abgestreift); sonst die Adresse der Verbindung."""
     try:
         ip = _adresse(verbindung)
     except ValueError:
         return None   # ohne lesbare Adresse wird nie gesperrt
     if ip.is_loopback and weitergereicht:
+        letzter = weitergereicht.split(',')[-1].strip()
+        if letzter.startswith('['):              # [2001:db8::1]:443
+            letzter = letzter[1:].partition(']')[0]
+        elif letzter.count(':') == 1:            # 198.51.100.7:51234 (IPv6 ohne Klammern hat mehrere Doppelpunkte)
+            letzter = letzter.partition(':')[0]
         try:
-            return _adresse(weitergereicht.split(',')[-1])
+            return _adresse(letzter)
         except ValueError:
-            pass   # unlesbarer Kopf vom eigenen Proxy: wie ohne Kopf (nie sperrbar) statt alle auszusperren
+            # unlesbarer Kopf vom eigenen Proxy: wie ohne Kopf (nie sperrbar) statt alle auszusperren – die Konfigurationsprüfung meldet es
+            _MERKER['unlesbar'] = UHR()
     return ip
 
 
@@ -138,8 +150,9 @@ def _netz(text):
 
 
 def _schluessel(ip):
-    """Zähl- und Sperreinheit: IPv4 einzeln, IPv6 je /64 (ein Anschluss hat dort beliebig viele Adressen)."""
-    return f'{ip}/32' if ip.version == 4 else str(ipaddress.IPv6Network((int(ip) >> 64 << 64, 64)))
+    """Zähl- und Sperreinheit: IPv4 einzeln, öffentliche IPv6 je /64 (ein Anschluss hat dort beliebig viele Adressen), private
+    IPv6 (fc00::/7) einzeln – im Tailnet teilen sich alle Geräte ein Präfix, ein /64 sperrte sie alle."""
+    return f'{ip}/{ip.max_prefixlen}' if ip.version == 4 or ip in ULA else str(ipaddress.IPv6Network((int(ip) >> 64 << 64, 64)))
 
 
 # ---- geladener Stand ----
@@ -212,7 +225,7 @@ def vergessen(alles=False):
             _ZAEHLER.clear()
             _VERKEHR.clear()
             _STATISTIK.clear()
-            _MERKER.update(statistik=0.0, meldung=0.0, weitere=0, mitschnitt=0.0)
+            _MERKER.update(statistik=0.0, meldung=0.0, weitere=0, mitschnitt=0.0, unlesbar=0.0)
 
 
 # ---- Prüfung jeder Anfrage ----
@@ -265,7 +278,7 @@ def _zaehlen(ip, art, fenster, jetzt):
     if len(_ZAEHLER) > 5000:   # älteste Hälfte verwerfen
         for key in sorted(_ZAEHLER, key=lambda k: _ZAEHLER[k]['t'])[:2500]:
             del _ZAEHLER[key]
-    e = _ZAEHLER.setdefault(_schluessel(ip), {'h': [], 'e': [], 't': jetzt})
+    e = _ZAEHLER.setdefault(_schluessel(ip), {'h': [], 'f': [], 'e': [], 't': jetzt})
     e[art] = [t for t in e[art] if t > jetzt - fenster][-600:] + [jetzt]
     e['t'] = jetzt
     return len(e[art])
@@ -300,13 +313,18 @@ def _schreiben(pfad, aufgabe):
         pass
 
 
-def _treffer(z, pfad, ip, art, grund, jetzt, zaehlt=True):
-    """Treffer festhalten; ab der Schwelle automatisch sperren. `zaehlt` = False: nur Statistik (angemeldet, fremde Seite)."""
+def _treffer(z, pfad, ip, art, grund, jetzt, zaehler='h'):
+    """Treffer festhalten; ab der Schwelle automatisch sperren. `zaehler`: 'h' = normal, 'f' = von einer fremden Seite
+    (eigener Zähler, FREMD_FAKTOR-fache Schwelle), None = nur Statistik (angemeldet)."""
+    verdraengt = None
     with _SCHLOSS:
         _zaehle_statistik(art, jetzt)
-        n = _zaehlen(ip, 'h', FENSTER, jetzt) if zaehlt else 0
+        n = _zaehlen(ip, zaehler, FENSTER, jetzt) if zaehler else 0
         key = _schluessel(ip)
-        sperren = (zaehlt and z.e['auto'] and n >= z.e['schwelle'] and z.auto.get(key, 0) <= jetzt and len(z.auto) < MAX_AUTO)
+        sperren = bool(zaehler and z.e['auto'] and n >= z.e['schwelle'] * (FREMD_FAKTOR if zaehler == 'f' else 1) and z.auto.get(key, 0) <= jetzt)
+        if sperren and key not in z.auto and len(z.auto) >= MAX_AUTO:   # voll: lieber die bald ablaufende Sperre opfern als niemanden sperren
+            verdraengt = min(z.auto, key=z.auto.get)
+            del z.auto[verdraengt]
         if sperren:
             bis = z.auto[key] = int(jetzt + 60 * z.e['sperrminuten'])
             _zaehle_statistik('sperre', jetzt)
@@ -319,7 +337,7 @@ def _treffer(z, pfad, ip, art, grund, jetzt, zaehlt=True):
     def aufgabe(db):
         if sperren:
             with db:
-                db.execute("DELETE FROM schutz_sperren WHERE art='auto' AND (netz=? OR (bis>0 AND bis<?))", (key, int(jetzt) - 86400))
+                db.execute("DELETE FROM schutz_sperren WHERE art='auto' AND (netz IN (?,?) OR (bis>0 AND bis<?))", (key, verdraengt, int(jetzt) - 86400))
                 db.execute("INSERT INTO schutz_sperren(netz,art,grund,bis,zeit,von) VALUES(?,'auto',?,?,?,'Firewall')", (key, grund[:120], bis, int(jetzt)))
             if melden:
                 sicherheit.ereignis(db, 'schutz_sperre', 'Firewall', key, {'art': 'automatisch', 'grund': grund[:120], 'minuten': z.e['sperrminuten'],
@@ -331,8 +349,9 @@ def _treffer(z, pfad, ip, art, grund, jetzt, zaehlt=True):
 def eingang(pfad, ip, ziel, agent='', angemeldet=False, fremd=False):
     """Prüfung VOR der Verarbeitung einer Anfrage. Liefert (Status, Art): Status 403/404 = so abweisen, None = durchlassen;
     Art = Text für den Live-Verkehr ('' = unauffällig). `ziel` = Pfad mit Abfrage, `fremd` = von einer fremden Seite ausgelöst
-    (zählt nie als Treffer – sonst könnte jede Webseite ihre Besucher sperren lassen; wer den Kopf Sec-Fetch-Site fälscht,
-    entgeht nur der Sperre: abgewiesen wird er trotzdem, und alles unter /api/ lehnt app.py für fremde Herkunft ohnehin ab)."""
+    (zählt getrennt mit FREMD_FAKTOR-facher Schwelle: eine Webseite soll nicht mit fünf Bildern ihre Besucher sperren lassen,
+    ein Scanner, der Sec-Fetch-Site fälscht, aber auch nicht unbegrenzt durchkommen). Angemeldet: die Abfrage (Suchtexte)
+    wird nicht auf Muster geprüft, der Pfad schon."""
     z = _zustand(pfad)
     if z.e['modus'] == 'aus' or _nie(z, ip):
         return None, ''
@@ -349,11 +368,11 @@ def eingang(pfad, ip, ziel, agent='', angemeldet=False, fremd=False):
     elif agent and WERKZEUGE.search(agent[:300]):
         art, status, kurz = 'Angriffswerkzeug', 403, 'werkzeug'
     else:
-        gruppe = muster(ziel)
+        gruppe = muster(weg if angemeldet else ziel)
         if not gruppe:
             return None, ''
         art, status, kurz = 'Angriffsmuster: ' + gruppe, 403, 'muster'
-    _treffer(z, pfad, ip, kurz, art, jetzt, zaehlt=not (angemeldet or fremd))
+    _treffer(z, pfad, ip, kurz, art, jetzt, None if angemeldet else 'f' if fremd else 'h')
     return (status if weisen else None), art + ('' if weisen else ' – nur protokolliert')
 
 
@@ -424,9 +443,23 @@ def einstellungen_speichern(db, daten, actor, eigene=None, geraet=''):
     if geaendert:
         with db:
             sicherheit._schreiben(db, 'schutz', neu)
+            frei = _scharf(db, alt['modus'], neu['modus'])
         sicherheit.ereignis(db, 'schutz_einstellung', actor, geraet, {'geaendert': geaendert, 'modus': MODI[neu['modus']]})
+        if frei:
+            sicherheit.ereignis(db, 'schutz_frei', actor, geraet, {'anzahl': frei, 'art': 'automatisch', 'grund': 'Firewall auf „abweisen“ gestellt'})
         vergessen()
     return neu
+
+
+def _scharf(db, alt, neu):
+    """Beim Umschalten auf „abweisen“ (in einer Transaktion): automatische Sperren aus der Zeit davor aufheben und neu zählen –
+    sie entstanden ungeprüft und sperrten sonst nachträglich, auch die eigene Person nach dem Ende ihrer Sitzung. Sperren von
+    Hand bleiben. Liefert die Anzahl."""
+    if alt == neu or neu != 'abweisen':
+        return 0
+    with _SCHLOSS:
+        _ZAEHLER.clear()
+    return db.execute("DELETE FROM schutz_sperren WHERE art='auto'").rowcount
 
 
 def sperren(db, netz, grund, minuten, actor, eigene=None, geraet=''):
@@ -484,15 +517,18 @@ def aus(db, actor='Serververwaltung'):
 def notfall(db, an):
     """Notfallmodus: Vorlage NOTFALL anwenden und den vorherigen Stand merken bzw. beim Beenden zurückbringen – je Feld und
     nur, solange es noch den Wert der Vorlage hat (was während des Notfalls von Hand geändert wurde, bleibt)."""
-    e = einstellungen(db)
+    e, frei = einstellungen(db), 0
     with db:
         if an:
             sicherheit._schreiben(db, 'schutz_vorher', {k: e[k] for k in NOTFALL})
             sicherheit._schreiben(db, 'schutz', {**e, **NOTFALL})
+            frei = _scharf(db, e['modus'], NOTFALL['modus'])
         else:
             vorher = sicherheit._lesen(db, 'schutz_vorher') or {}
             sicherheit._schreiben(db, 'schutz', {**e, **{k: v for k, v in vorher.items() if k in NOTFALL and e[k] == NOTFALL[k]}})
             sicherheit._schreiben(db, 'schutz_vorher', None)
+    if frei:
+        sicherheit.ereignis(db, 'schutz_frei', 'Notfallmodus', '', {'anzahl': frei, 'art': 'automatisch', 'grund': 'Firewall auf „abweisen“ gestellt'})
     vergessen()
 
 
@@ -542,13 +578,23 @@ class _KeineWeiterleitung(urllib.request.HTTPRedirectHandler):
 
 
 def holen(url):
-    """Eine Quelle der Bedrohungsliste abrufen: nur https, ohne Weiterleitung, mit Zeit- und Größengrenze. In Tests ersetzt."""
+    """Eine Quelle der Bedrohungsliste abrufen: nur https, ohne Weiterleitung, höchstens LISTE_BYTES + 1 Bytes und HOLEN_FRIST
+    Sekunden insgesamt (timeout gilt nur je Lesevorgang – eine tröpfelnde Quelle hielte sonst den Stundenlauf auf). In Tests ersetzt."""
     if not url.startswith('https://'):
         raise ValueError('Die Bedrohungsliste wird nur über https geladen.')
     import versand
     opener = urllib.request.build_opener(_KeineWeiterleitung, urllib.request.HTTPSHandler(context=versand.tls_context()))
+    ende, teile, groesse = UHR() + HOLEN_FRIST, [], 0
     with opener.open(urllib.request.Request(url, headers={'User-Agent': 'JU-Finanzen'}), timeout=20) as antwort:
-        return antwort.read(LISTE_BYTES + 1)
+        while groesse <= LISTE_BYTES:
+            if UHR() > ende:
+                raise TimeoutError('Die Bedrohungsliste kam nicht rechtzeitig.')
+            teil = antwort.read1(65536)   # liefert, was da ist, statt auf volle 64 KB zu warten
+            if not teil:
+                break
+            teile.append(teil)
+            groesse += len(teil)
+    return b''.join(teile)[:LISTE_BYTES + 1]
 
 
 def liste_lesen(text):
@@ -563,7 +609,7 @@ def liste_lesen(text):
             netz = ipaddress.ip_network(eintrag)
         except ValueError:
             raise ValueError('Die Bedrohungsliste enthält eine unlesbare Zeile.')
-        if netz.prefixlen < KLEINSTES_PRAEFIX[netz.version] or any(netz.overlaps(n) for n in INTERN if n.version == netz.version):
+        if netz.prefixlen < LISTE_PRAEFIX[netz.version] or any(netz.overlaps(n) for n in INTERN if n.version == netz.version):
             raise ValueError('Die Bedrohungsliste enthält ein unplausibles Netz.')
         netze.append(netz)
     return netze
@@ -580,8 +626,9 @@ def liste_laden(db, actor='automatisch', geraet=''):
             netze += liste_lesen(roh.decode('ascii'))
     except (OSError, http.client.HTTPException, UnicodeDecodeError) as e:   # urllib.error.URLError ist ein OSError
         raise ValueError('Die Bedrohungsliste konnte nicht geladen werden' + (' (kein gültiger Text).' if isinstance(e, UnicodeDecodeError) else '. Bitte später erneut versuchen.'))
-    if not LISTE_NETZE[0] <= len(netze) <= LISTE_NETZE[1]:
-        raise ValueError(f'Die Bedrohungsliste ist unvollständig oder unplausibel ({len(netze)} Netze).')
+    flaeche = sum(n.num_addresses for n in ipaddress.collapse_addresses(n for n in netze if n.version == 4))
+    if not LISTE_NETZE[0] <= len(netze) <= LISTE_NETZE[1] or flaeche > LISTE_IPV4_ADRESSEN:
+        raise ValueError(f'Die Bedrohungsliste ist unvollständig oder unplausibel ({len(netze)} Netze, {flaeche} IPv4-Adressen).')
     info = {'stand': sicherheit._jetzt(), 'anzahl': len(netze)}
     with db:
         sicherheit._schreiben(db, 'bedrohungsliste', sorted({str(n) for n in netze}))
@@ -660,6 +707,7 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
     """Konfigurationsprüfung für das Lagebild: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
     `lage` = sicherheit.lagebild, `bericht` = serverschutz(); `ziel` = Reiter der Seite Sicherheit bzw. 'seite:<Seite>'."""
     e, liste, d = einstellungen(db), liste_info(db), lage.get('dateipruefung') or {}
+    unlesbar = _MERKER['unlesbar'] if UHR() - _MERKER['unlesbar'] < 86400 else 0   # in den letzten 24 Stunden
     ohne_app = db.execute(f'SELECT count(*) FROM users WHERE {rollen.GILT} AND NOT totp_pflicht').fetchone()[0]
     verwalter = sum(1 for k in sicherheit.konten(db) if k['aktiv'] and rollen.can(k['rechte'], 'verwaltung', 'schreiben'))
     tage = lambda iso: (datetime.now() - datetime.fromisoformat(iso[:19])).days if iso else 9999
@@ -677,6 +725,9 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
         p('firewall', 'Firewall aktiv', {'abweisen': 'ok', 'protokollieren': 'hinweis', 'aus': 'kritisch'}[e['modus']],
           {'abweisen': 'Angriffe werden abgewiesen' + ('.' if e['auto'] else ' – automatisches Sperren ist aus.'),
            'protokollieren': 'Die Firewall protokolliert nur und weist nichts ab.', 'aus': 'Die Firewall ist ausgeschaltet.'}[e['modus']], 'firewall'),
+        p('aufrufer', 'Adresse jedes Aufrufers lesbar', 'kritisch' if unlesbar else 'ok',
+          f'Aufruferadresse nicht lesbar – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen). Zuletzt {_iso(unlesbar)}.' if unlesbar
+          else 'Der Proxy reicht für jede Anfrage eine lesbare Adresse weiter.', 'firewall'),
         p('bedrohungsliste', 'Bedrohungsliste aktuell', 'ok' if e['liste'] and not liste['veraltet'] else 'hinweis',
           'Die Bedrohungsliste ist ausgeschaltet.' if not e['liste'] else 'Noch nicht geladen – „Jetzt laden“.' if not liste['stand'] else
           f'Älter als {LISTE_ALT_TAGE} Tage – der tägliche Abruf scheitert.' if liste['veraltet'] else f'{liste["anzahl"]} Netze (Spamhaus DROP).', 'firewall'),
