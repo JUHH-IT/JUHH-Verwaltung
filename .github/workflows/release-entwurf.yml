@@ -1,0 +1,54 @@
+# Nach jedem Merge auf main mit grünen Tests: Release-Entwurf „v<Programmversion>“ vorbereiten.
+# Veröffentlicht wird nie automatisch – Lennert prüft den Entwurf und klickt „Publish release“; erst dann entsteht
+# der Tag, den `ju-finanzen aktualisieren` auf dem Server installiert.
+name: Release-Entwurf
+
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-entwurf
+  cancel-in-progress: false
+
+jobs:
+  entwurf:
+    name: Release-Entwurf vorbereiten
+    # nur nach erfolgreichen Tests eines Pushs auf main (Merge), nie für Pull Requests oder Tags
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Entwurf anlegen oder auf den neuesten Stand von main setzen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          version="$(sed -n "s/^VERSION='\(.*\)'.*/\1/p" app.py | head -n 1)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "::error::Programmversion in app.py nicht lesbar"; exit 1; }
+          tag="v$version"
+          # main muss noch auf diesem Stand sein (sonst kümmert sich der Lauf des neueren Merges darum)
+          head="$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)"
+          if [ "$head" != "$SHA" ]; then echo "main ist inzwischen weiter – nichts zu tun."; exit 0; fi
+          if gh api "repos/$REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::Version $version ist schon freigegeben (Tag $tag). Für einen neuen Release die Version in app.py erhöhen."
+            exit 0
+          fi
+          draft="$(gh api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name==\"$tag\" and .draft) | .id" | head -n 1)"
+          if [ -n "$draft" ]; then
+            gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" >/dev/null
+            echo "::notice::Release-Entwurf $tag zeigt jetzt auf ${SHA:0:7}."
+          else
+            gh release create "$tag" --repo "$REPO" --draft --target "$SHA" --title "$version" --generate-notes
+            echo "::notice::Release-Entwurf $tag angelegt – unter Releases prüfen und „Publish release“ klicken."
+          fi
