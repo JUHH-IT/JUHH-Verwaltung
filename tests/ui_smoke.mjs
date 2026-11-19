@@ -366,7 +366,8 @@ try {
   const lastMail = readdirSync(mailDir).filter((f) => f.endsWith('.eml')).sort((a, b) => parseInt(a) - parseInt(b)).at(-1);
   const subject = execFileSync('python3', ['-c', 'import email, sys; from email import policy; print(email.message_from_bytes(open(sys.argv[1], "rb").read(), policy=policy.default)["Subject"])', join(mailDir, lastMail)]).toString();
   check(mails().length === 4 && subject.startsWith('Zahlungserinnerung zur Rechnung ' + dueNumber) && mails()[3].includes(dueNumber + '.pdf'), 'Zahlungserinnerung mit Rechnung beim Empfänger');
-  check((await page.locator('main tbody').textContent()).includes('1× erinnert'), 'Erinnerung in den offenen Posten');
+  // die Liste lädt nach dem Schließen des Dialogs neu – auf den erwarteten Stand warten statt sofort zu lesen
+  check(await page.locator('main tbody', { hasText: '1× erinnert' }).first().waitFor({ timeout: 8000 }).then(() => true, () => false), 'Erinnerung in den offenen Posten');
   await page.click('[data-page=invoices]');
 
   // SEPA-Lastschrift: Mandat erfassen, Beitrag 2027 mit Vorabankündigung, Lastschriftdatei pain.008.001.08

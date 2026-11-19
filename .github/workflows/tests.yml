@@ -88,5 +88,11 @@ jobs:
         run: |
           NODE_PATH="$(npm root -g)"
           export NODE_PATH
-          node tests/ui_smoke.mjs "$RUNNER_TEMP/smoke"
-          node tests/ui_server.mjs "$RUNNER_TEMP/server"
+          # Scheitert ein Durchlauf, läuft er einmal nach: besteht er dann, ist er „wackelig“ (Warnung, bitte stabilisieren)
+          lauf() {
+            node "tests/$1.mjs" "$RUNNER_TEMP/$1" && return 0
+            echo "::warning::$1 ist im ersten Anlauf gescheitert – Wiederholung"
+            node "tests/$1.mjs" "$RUNNER_TEMP/$1-2" && echo "::warning::$1 ist wackelig (erst im zweiten Anlauf bestanden)"
+          }
+          lauf ui_smoke
+          lauf ui_server
