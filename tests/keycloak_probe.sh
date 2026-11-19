@@ -105,11 +105,10 @@ pruefen() {
   find "$KC_HOME/themes/$KC_THEME" \( ! -user root -o -perm /022 \) -print > "$WORK/theme-rechte"
   # seit dem Start nichts außerhalb von data/ geschrieben
   find -L "$KC_HOME" -path "$KC_HOME/data" -prune -o -newer "$P/.start" -print > "$WORK/geschrieben"
-  grep -c 'full-scope-allowed' "$LOG" > "$WORK/full-scope" || true
-  python3 -I - "$ADRESSE" "$P/client-secret" "$WORK" <<'PY'
+  python3 -I - "$ADRESSE" "$P/client-secret" "$WORK" "$LOG" <<'PY'
 import base64, json, pathlib, re, secrets, sys, urllib.error, urllib.parse, urllib.request
 
-adresse, secret_file, work = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
+adresse, secret_file, work, log = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
 intern = 'http://127.0.0.1:8180/auth'
 realm = f'{intern}/realms/ju-hamburg'
 issuer = f'{adresse}/auth/realms/ju-hamburg'
@@ -239,7 +238,7 @@ if css:
     s, h2, body = call('GET', f'{basis}/{css.group(2)}')
     check('Theme: CSS unter /auth/resources abrufbar', s == 200 and h2.get('Content-Type', '').startswith('text/css') and b'--ju-teal' in body, f'Status {s}')
     logo = re.search(rb"--keycloak-logo-url: url\('\.\./(img/logo\.svg\?v=[0-9a-f]{8})'\)", body)
-    check('Theme: eigenes Logo statt Keycloak-Logo', bool(logo) and 'keycloak-logo' not in html)
+    check('Theme: eigenes Logo und Favicon', bool(logo) and bool(re.search(r'<link rel="icon"[^>]*img/favicon\.svg', html)))
     for datei in ((logo.group(1).decode() if logo else 'img/logo.svg'), 'img/favicon.svg'):
         s, h2, body = call('GET', f'{basis}/{datei}')
         check(f'Theme: {datei.split("?")[0]} unter /auth/resources abrufbar', s == 200 and h2.get('Content-Type', '').startswith('image/svg')
@@ -289,8 +288,9 @@ offen = sorted({p for p in lauschend() if p.rsplit(':', 1)[1] in ('8180', '9000'
 check('8180 und 9000 nur auf 127.0.0.1, kein Cluster-Port', offen == ['127.0.0.1:8180', '127.0.0.1:9000'], ', '.join(offen))
 geschrieben = (work / 'geschrieben').read_text().split()
 check('nichts außerhalb von data/ geschrieben', geschrieben == [], ', '.join(geschrieben[:5]))
-warnung = (work / 'full-scope').read_text().strip()
-check('Protokoll ohne Warnung „Full scope allowed“', warnung == '0', f'{warnung} Zeilen')
+# erst hier auswerten: Keycloak schreibt die Warnung bei einer Token-Anfrage des Clients (oben, Schritt 2)
+protokoll = log.read_text(errors='replace')
+check('Protokoll ohne Warnung „Full scope allowed“', bool(token) and bool(protokoll) and 'full-scope-allowed' not in protokoll)
 rechte = (work / 'theme-rechte').read_text().split()
 check('Theme gehört root, für andere nur lesbar', rechte == [], ', '.join(rechte[:5]))
 

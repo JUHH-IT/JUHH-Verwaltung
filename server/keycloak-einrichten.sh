@@ -124,6 +124,7 @@ theme_installieren() {
   sed -i "s|css/$KC_THEME\.css|&?v=$h|" "$ziel/login/theme.properties"
   sed -i "s|img/logo\.svg|&?v=$h|" "$ziel/login/resources/css/$KC_THEME.css"
   chown -R root:root "$ziel"; chmod -R u=rwX,go=rX "$ziel"
+  [ ! -L "$KC_DATA/tmp" ] || die "$KC_DATA/tmp ist ein Verweis – bitte prüfen."
   rm -rf -- "$KC_DATA/tmp/kc-gzip-cache"   # gepackte Theme-Dateien hebt Keycloak über Neustarts auf – sonst käme das alte CSS
 }
 
@@ -185,17 +186,18 @@ realm_einrichten() {
   [ -n "$id" ] || id="$(kc create clients -r "$r" -s clientId="$KC_CLIENT" -i)"
   kc update "clients/$id" -r "$r" -s enabled=true -s protocol=openid-connect -s publicClient=false -s bearerOnly=false \
     -s standardFlowEnabled=true -s directAccessGrantsEnabled=false -s implicitFlowEnabled=false -s serviceAccountsEnabled=true \
-    -s fullScopeAllowed=false \
     -s "redirectUris=[\"$adresse/api/keycloak/rueckkehr\"]" -s 'webOrigins=[]' -s "baseUrl=$adresse/" \
     -s 'attributes."pkce.code.challenge.method"=S256' -s "attributes.\"post.logout.redirect.uris\"=$adresse/"
   kc add-roles -r "$r" --uusername "service-account-$KC_CLIENT" --cclientid realm-management \
     --rolename "${rollen[0]}" --rolename "${rollen[1]}" --rolename "${rollen[2]}"
-  # „Full scope allowed“ ist aus (veraltet, Keycloak warnt bei jeder Anmeldung): Tokens tragen nur noch die Rollen, die
-  # hier dem Client zugeordnet sind – genau die drei der Nutzerverwaltung, Anmelde-Tokens von Personen gar keine
+  # „Full scope allowed“ aus (veraltet, Keycloak warnt bei jeder Anmeldung): Tokens tragen nur noch die Rollen, die hier
+  # dem Client zugeordnet sind – die der Nutzerverwaltung, Anmelde-Tokens von Personen gar keine. Erst zuordnen, dann
+  # abschalten: sonst bekäme die Nutzerverwaltung dazwischen 403, und Anmeldungen mit App-Pflicht scheiterten
   rm="$(kc get clients -r "$r" -q clientId=realm-management --fields id --format csv --noquotes)"
   [ -n "$rm" ] || die "Client realm-management fehlt im Realm $r."
   for x in "${rollen[@]}"; do koerper+="${koerper:+,}$(kc get "clients/$rm/roles/$x" -r "$r" --fields id,name)"; done
   printf '[%s]' "$koerper" | kc create "clients/$id/scope-mappings/clients/$rm" -r "$r" -f -
+  kc update "clients/$id" -r "$r" -s fullScopeAllowed=false
   # die Admin-API (Keycloak 26.8) nimmt nur Tokens mit dem Scope kc-admin-api (Audience <Adresse>/auth/admin/realms/…)
   scope="$(kc get client-scopes -r "$r" --fields id,name --format csv --noquotes | sed -n 's/,kc-admin-api$//p')"
   [ -n "$scope" ] || die "Client-Scope kc-admin-api fehlt im Realm $r."
@@ -254,6 +256,7 @@ main() {
     info "Neue Keycloak-Version ($before → $KC_VERSION): Datenbank vorher sichern"
     /usr/local/bin/ju-finanzen keycloak-sicherung
   fi
+  [ -f "$src/keycloak-theme/$KC_THEME/login/theme.properties" ] || die "Theme fehlt: $src/keycloak-theme/$KC_THEME"
   systemctl stop "$SERVICE" 2>/dev/null || true
   kc_konfiguration "$home/conf/keycloak.conf" "$adresse" "$db_pw"
   theme_installieren "$home" "$src"

@@ -178,7 +178,8 @@ Der Befehl:
   (z. B. Anmeldedaten löschen, Profil ändern) ließen sich sonst über die Anmelde-Adresse selbst anstoßen. Kein Client des
   Realms (auch nicht `admin-cli`) erlaubt die Anmeldung nur mit Passwort (Direct Access Grants aus). „Full scope allowed“
   ist beim Client aus (ab 0.38; der Schalter ist in Keycloak veraltet): Tokens tragen nur die Rollen der
-  Nutzerverwaltung (`manage-users`, `view-users`, `query-users` aus `realm-management`), Anmelde-Tokens von Personen keine;
+  Nutzerverwaltung (`manage-users`, `view-users`, `query-users` aus `realm-management`; `query-groups` steckt in
+  `view-users`), Anmelde-Tokens von Personen keine;
 - kopiert die Anmeldeseiten im Aussehen der Anwendung (`server/keycloak-theme/ju-hamburg`) nach
   `/opt/keycloak/<Version>/themes/ju-hamburg` (root, für andere nur lesbar) und stellt im Realm `loginTheme=ju-hamburg`
   ein – siehe „Aussehen der Anmeldeseiten“ unten;
