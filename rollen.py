@@ -11,8 +11,11 @@
 - Es bleibt immer mindestens eine aktive Person mit „Verwaltung schreiben“ (`_check_admin_remains`).
 """
 import json
+import re
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
+
+import formate
 
 LEVELS = ('', 'lesen', 'schreiben')
 RANK = {level: rank for rank, level in enumerate(LEVELS)}
@@ -46,6 +49,18 @@ DEFAULT_ROLES = (   # Entscheidung Lennert Gust 12.11.2026; in der Verwaltung ä
 OWNER_ROLES = ('Schatzmeister', 'Landesmitgliederbeauftragter', 'Administrator')   # zusammen: alles schreiben
 
 FREE = 'frei'   # jede angemeldete Person
+
+# Einzige Stelle für „darf hinein“: aktiv und nicht abgelaufen (gueltig_bis = letzter gültiger Tag). Spalten ohne Tabellenpräfix,
+# damit die Bedingung in jede Abfrage auf `users` passt (rights_of, _admins, zugang.check_login, app.user_fingerprint, verwaltung)
+GILT = "(active=1 AND (gueltig_bis IS NULL OR gueltig_bis>=date('now','localtime')))"
+# neue Spalten der Personen (additiv, 0.36); keycloak_id setzt nur die Keycloak-Anbindung, nie die Oberfläche
+USER_COLUMNS = (('active', 'INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))'), ('vorname', 'TEXT'), ('nachname', 'TEXT'), ('email', 'TEXT'),
+                ('telefon', 'TEXT'), ('funktion', 'TEXT'), ('kreisverband', 'TEXT'), ('gueltig_bis', 'TEXT'),
+                ('totp_pflicht', 'INTEGER NOT NULL DEFAULT 1 CHECK(totp_pflicht IN (0,1))'), ('keycloak_id', 'TEXT'),
+                ('sitzung_stand', 'INTEGER NOT NULL DEFAULT 0'))
+USERNAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{1,39}')   # Benutzername neuer Personen (bestehende Namen bleiben gültig)
+PHONE = re.compile(r'[+0-9 /()-]{1,30}')
+FIELDS = ('vorname', 'nachname', 'email', 'telefon', 'funktion', 'kreisverband', 'gueltig_bis')   # Angaben zur Person (Oberfläche, Protokoll)
 
 
 def _w(*areas): return tuple((area, 'schreiben') for area in areas)
@@ -105,12 +120,16 @@ POST = {
         '/api/cancel-invoice', '/api/preview-bank', '/api/preview-master', '/api/import-master', '/api/import-bank', '/api/book',
         '/api/park', '/api/forget', '/api/reverse-bank')},
     **{path: _w('verwaltung') for path in ('/api/benutzer', '/api/rolle', '/api/rolle-loeschen')},
+    # Keycloak-Betrieb (0.36): Person abgleichen, neues Startpasswort, Authenticator-App zurücksetzen
+    **{path: _w('verwaltung') for path in ('/api/benutzer-abgleichen', '/api/benutzer-startpasswort', '/api/benutzer-app-zuruecksetzen')},
     '/api/bestaetigen': FREE,
     '/api/notfall-an': _r('sicherheit'),   # viele dürfen auslösen, nur „ändern“ darf beenden (ein übernommenes Konto hebt ihn nicht auf)
     **{path: _w('sicherheit') for path in ('/api/notfall-aus', '/api/wartung', '/api/sitzung-beenden', '/api/sperre-aufheben', '/api/dateipruefung')},
 }
 # ohne Sitzung bzw. nur in der Mac-App (dort keine Rechteprüfung)
-OUTSIDE = ('/api/status', '/api/login', '/api/stop', '/api/login-code', '/api/login-device', '/api/shutdown')
+# Keycloak (0.36): Anmeldung beginnen und Rückkehr – ohne Sitzung, geschützt über Vorgang (Cookie + state, PKCE)
+OUTSIDE = ('/api/status', '/api/login', '/api/stop', '/api/login-code', '/api/login-device', '/api/shutdown',
+           '/api/keycloak/start', '/api/keycloak/rueckkehr')
 
 # Gesamtdaten: welcher Schlüssel gehört zu welchem Bereich (alles andere sehen alle Angemeldeten)
 SNAPSHOT = {
@@ -184,8 +203,12 @@ def init(db):
     inside = db.in_transaction   # Aufruf mitten in einer Transaktion (on_user_created): nichts vorzeitig festschreiben
     db.execute("CREATE TABLE IF NOT EXISTS roles(id INTEGER PRIMARY KEY,name TEXT UNIQUE NOT NULL,rights TEXT NOT NULL DEFAULT '{}')")
     db.execute('CREATE TABLE IF NOT EXISTS user_roles(user_id INTEGER NOT NULL REFERENCES users(id),role_id INTEGER NOT NULL REFERENCES roles(id),PRIMARY KEY(user_id,role_id))')
-    if 'active' not in {row[1] for row in db.execute('PRAGMA table_info(users)')}:
-        db.execute('ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))')
+    columns = {row[1] for row in db.execute('PRAGMA table_info(users)')}
+    for column, kind in USER_COLUMNS:
+        if column not in columns:
+            db.execute(f'ALTER TABLE users ADD COLUMN {column} {kind}')   # feste Liste, nie eine Eingabe
+    db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(lower(email))')
+    db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_keycloak ON users(keycloak_id)')
     if not db.execute('SELECT 1 FROM roles LIMIT 1').fetchone():
         # Anfangsbestand; wer bisher angemeldet war, durfte alles und behält das
         for name, rights in DEFAULT_ROLES:
@@ -206,7 +229,7 @@ def _grant_owner(db, user_id):
 def _admins(db, with_password=True):
     """Aktive Personen mit „Verwaltung schreiben“ – im Serverbetrieb zählen nur solche mit gesetztem Passwort
     (eine aus der Mac-App übernommene Person ohne Passwort kann sich dort nicht anmelden)."""
-    rows = db.execute('SELECT u.id,r.rights,u.password FROM users u JOIN user_roles ur ON ur.user_id=u.id JOIN roles r ON r.id=ur.role_id WHERE u.active=1').fetchall()
+    rows = db.execute(f'SELECT u.id,r.rights,u.password FROM users u JOIN user_roles ur ON ur.user_id=u.id JOIN roles r ON r.id=ur.role_id WHERE {GILT}').fetchall()
     return {row[0] for row in rows if json.loads(row[1] or '{}').get('verwaltung') == 'schreiben'
             and (not with_password or str(row[2] or '').startswith('scrypt$'))}
 
@@ -221,8 +244,8 @@ def on_user_created(db, user_id):
 
 
 def rights_of(db, name):
-    """Rechte einer Person: je Bereich die höchste Stufe ihrer Rollen; inaktiv oder unbekannt = keine."""
-    rows = db.execute('SELECT r.rights FROM users u JOIN user_roles ur ON ur.user_id=u.id JOIN roles r ON r.id=ur.role_id WHERE u.name=? AND u.active=1', (name,)).fetchall()
+    """Rechte einer Person: je Bereich die höchste Stufe ihrer Rollen; inaktiv, abgelaufen oder unbekannt = keine."""
+    rows = db.execute(f'SELECT r.rights FROM users u JOIN user_roles ur ON ur.user_id=u.id JOIN roles r ON r.id=ur.role_id WHERE u.name=? AND {GILT}', (name,)).fetchall()
     result = {}
     for row in rows:
         for area, level in json.loads(row[0] or '{}').items():
@@ -237,17 +260,24 @@ def overview(db):
               'users': db.execute('SELECT COUNT(*) FROM user_roles WHERE role_id=?', (r[0],)).fetchone()[0]}
              for r in db.execute('SELECT id,name,rights FROM roles ORDER BY id').fetchall()]
     users = []
-    for u in db.execute('SELECT id,name,password,active FROM users ORDER BY name COLLATE NOCASE').fetchall():
-        users.append({'id': u[0], 'name': u[1], 'active': bool(u[3]), 'has_password': str(u[2] or '').startswith('scrypt$'),
-                      'roles': [r[0] for r in db.execute('SELECT role_id FROM user_roles WHERE user_id=? ORDER BY role_id', (u[0],)).fetchall()]})
+    keys = ('id', 'name', 'password', 'active', 'totp_pflicht', 'keycloak_id', *FIELDS)
+    for row in db.execute(f'SELECT {",".join(keys)},{GILT} FROM users ORDER BY name COLLATE NOCASE').fetchall():
+        u = dict(zip(keys, row))
+        u['gilt'] = row[-1]
+        users.append({'id': u['id'], 'name': u['name'], 'active': bool(u['active']), 'abgelaufen': bool(u['active'] and not u['gilt']),
+                      'has_password': str(u['password'] or '').startswith('scrypt$'), **{k: u[k] for k in FIELDS},
+                      'totp_pflicht': bool(u['totp_pflicht']), 'keycloak_verbunden': bool(u['keycloak_id']),
+                      'roles': [r[0] for r in db.execute('SELECT role_id FROM user_roles WHERE user_id=? ORDER BY role_id', (u['id'],)).fetchall()]})
     # Protokoll der Verwaltung: wer hat wem welche Rolle gegeben, welche Rechte geändert (ohne Passwörter)
     audit = [{'time': a[0], 'actor': a[1], 'action': a[2], 'detail': json.loads(a[3] or '{}')} for a in db.execute(
         f"SELECT time,actor,action,detail FROM audit WHERE action IN ({','.join('?' * len(AUDIT_ACTIONS))}) ORDER BY id DESC LIMIT 50", AUDIT_ACTIONS).fetchall()]
-    return {'users': users, 'roles': roles, 'areas': [{'id': a, 'label': label, 'hint': hint} for a, label, hint in AREAS], 'levels': list(LEVELS), 'audit': audit}
+    kvs = [{'code': k[0], 'name': k[1]} for k in db.execute('SELECT code,name FROM kv ORDER BY code').fetchall()]
+    return {'users': users, 'roles': roles, 'kreisverbaende': kvs, 'areas': [{'id': a, 'label': label, 'hint': hint} for a, label, hint in AREAS], 'levels': list(LEVELS), 'audit': audit}
 
 
 AUDIT_ACTIONS = ('Person angelegt', 'Person geändert', 'Rolle angelegt', 'Rolle geändert', 'Rolle gelöscht', 'Rolle vergeben', 'Rolle entzogen',
-                 'Benutzer angelegt (Serverbetrieb)', 'Passwort geändert', 'Benutzer eingerichtet (Anmeldung über macOS)')
+                 'Benutzer angelegt (Serverbetrieb)', 'Passwort geändert', 'Benutzer eingerichtet (Anmeldung über macOS)',
+                 'Mit Keycloak verbunden', 'Startpasswort neu vergeben', 'Authenticator-App zurückgesetzt')   # Keycloak (0.36), nie mit Passwort
 
 
 def _audit(db, actor, action, detail):
@@ -260,10 +290,10 @@ def _check_admin_remains(db):
         raise ValueError('Mindestens eine aktive Person muss „Benutzer und Rollen“ ändern dürfen – so nicht gespeichert.')
 
 
-def _name(value, what, limit):
+def _name(value, what, limit, least=2):
     """Name in einheitlicher Schreibweise (NFKC); ohne Steuer- und unsichtbare Zeichen – sonst gäbe es Doppelgänger im Protokoll."""
     clean = ' '.join(unicodedata.normalize('NFKC', str(value or '')).split())
-    if not 2 <= len(clean) <= limit or any(c in clean for c in '<>"\'\\') or any(unicodedata.category(c).startswith('C') for c in clean):
+    if not least <= len(clean) <= limit or any(c in clean for c in '<>"\'\\') or any(unicodedata.category(c).startswith('C') for c in clean):
         raise ValueError(f'Ungültiger Name für {what}.')
     return clean
 
@@ -323,12 +353,50 @@ def delete_role(db, role_id, actor):
         _audit(db, actor, 'Rolle gelöscht', {'rolle': role[1]})
 
 
-def save_user(db, data, actor):
-    """Person anlegen oder ändern: Name, aktiv, Rollen, optional neues Passwort (neu: Pflicht). Liefert die Kennung.
+def _person(db, data):
+    """Angaben zur Person aus einer Eingabe prüfen (ohne Benutzername, Rollen, Passwort). Liefert ein Wörterbuch mit `FIELDS` und `totp_pflicht`."""
+    text = lambda key: ' '.join(str(data.get(key) or '').split())
+    result = {'vorname': _name(data.get('vorname'), 'den Vornamen', 60, 1), 'nachname': _name(data.get('nachname'), 'den Nachnamen', 60, 1)}
+    try:
+        result['email'] = formate.email_address(data.get('email'), required=True)
+    except ValueError:
+        raise ValueError('Bitte eine gültige E-Mail-Adresse angeben.') from None
+    phone = text('telefon')
+    if phone and not PHONE.fullmatch(phone):
+        raise ValueError('Telefon: nur Ziffern, +, Leerzeichen, /, -, ( ) und höchstens 30 Zeichen.')
+    result['telefon'] = phone or None
+    result['funktion'] = _name(data.get('funktion'), 'die Funktion', 80, 1) if text('funktion') else None
+    kv = text('kreisverband')
+    if kv and not db.execute('SELECT 1 FROM kv WHERE code=?', (kv,)).fetchone():
+        raise ValueError('Unbekannter Kreisverband.')
+    result['kreisverband'] = kv or None
+    until = text('gueltig_bis')
+    try:
+        result['gueltig_bis'] = datetime.strptime(until, '%Y-%m-%d').date().isoformat() if until else None
+    except ValueError:
+        raise ValueError('„Zugang gültig bis“ muss ein Datum JJJJ-MM-TT sein.') from None
+    if not isinstance(data.get('totp_pflicht', True), bool):
+        raise ValueError('Ungültige Angabe zur Authenticator-App.')
+    result['totp_pflicht'] = 1 if data.get('totp_pflicht', True) else 0
+    return result
 
-    Das Passwort wird nur als Hash gespeichert und nie protokolliert. Ein neu gesetztes Passwort beendet die Sitzungen
-    dieser Person (Fingerabdruck in `app.user_fingerprint`), ebenso das Deaktivieren. Das Protokoll nennt die Rollen
-    vorher und nachher – so bleibt nachvollziehbar, wer wem welche Rechte gegeben hat."""
+
+def sitzungen_beenden(db, user_id):
+    """Alle Sitzungen einer Person beenden (auch ohne lokales Passwort): `app.user_fingerprint` enthält `sitzung_stand`."""
+    inside = db.in_transaction
+    db.execute('UPDATE users SET sitzung_stand=sitzung_stand+1 WHERE id=?', (_id(user_id),))
+    if not inside:
+        db.commit()
+
+
+def save_user(db, data, actor, lokal=True):
+    """Person anlegen oder ändern: Benutzername, Angaben zur Person (`_person`), aktiv, Rollen, optional neues Passwort (neu: Pflicht).
+    Liefert die Kennung.
+
+    Der Benutzername ist der Anmeldename und steht im Protokoll – er lässt sich nicht ändern. Das Passwort wird nur als Hash
+    gespeichert und nie protokolliert. Ein neu gesetztes Passwort beendet die Sitzungen dieser Person (Fingerabdruck in
+    `app.user_fingerprint`), ebenso Deaktivieren und Ablauf („gültig bis“). Das Protokoll nennt Rollen und Angaben vorher und nachher.
+    `lokal=False` (Keycloak-Betrieb): kein lokales Passwort – ein mitgeschicktes wird abgelehnt, neue Personen brauchen keins."""
     import zugang
     name = _name(data.get('name'), 'die Person', 80)
     roles = data.get('roles')
@@ -336,39 +404,55 @@ def save_user(db, data, actor):
         raise ValueError('Ungültige Rollen.')
     if not isinstance(data.get('active', True), bool):
         raise ValueError('Ungültige Angabe zu „aktiv“.')
+    person = _person(db, data)
     password = data.get('password') or None
+    if password and not lokal:
+        raise ValueError('Im Keycloak-Betrieb vergibt das Programm keine Passwörter (Notzugang: auf dem Server „sudo ju-finanzen passwort <Name>“).')
     hashed = zugang.hash_password(password) if password else None   # prüft die Anforderungen
     active = 1 if data.get('active', True) else 0
+    columns = ','.join(f'{k}=?' for k in person)
+    edit = _id(data['id']) if data.get('id') is not None else None
     with db:
         db.execute('BEGIN IMMEDIATE')
         known = {r[0] for r in db.execute('SELECT id FROM roles').fetchall()}
         if not set(roles) <= known:
             raise ValueError('Ungültige Rollen.')
+        if db.execute('SELECT 1 FROM users WHERE lower(email)=lower(?) AND id IS NOT ?', (person['email'], edit)).fetchone():
+            raise ValueError('Diese E-Mail-Adresse hat schon eine andere Person.')
         other = _same_name(db, 'users', name)
         before = None
-        if data.get('id') is not None:
-            user = db.execute('SELECT id,name,active FROM users WHERE id=?', (_id(data['id']),)).fetchone()
+        if edit is not None:
+            user = db.execute(f'SELECT id,name,active,{",".join(person)} FROM users WHERE id=?', (edit,)).fetchone()
             if not user:
                 raise ValueError('Person nicht gefunden.')
             if name != user[1]:
-                raise ValueError('Der Name einer Person lässt sich nicht ändern (er steht im Änderungsprotokoll). Bitte eine neue Person anlegen.')
+                raise ValueError('Der Benutzername einer Person lässt sich nicht ändern (er steht im Änderungsprotokoll). Bitte eine neue Person anlegen.')
             uid = user[0]
-            before = {'aktiv': bool(user[2]), 'rollen': _role_names(db, uid)}
-            db.execute('UPDATE users SET active=? WHERE id=?', (active, uid))
+            before = {'aktiv': bool(user[2]), 'rollen': _role_names(db, uid), **dict(zip(person, user[3:]))}
+            before['totp_pflicht'] = bool(before['totp_pflicht'])
+            # deaktivieren erhöht den Sitzungsstand: ein späteres Wiederaktivieren belebt alte Sitzungen nicht wieder
+            db.execute(f'UPDATE users SET active=?,sitzung_stand=sitzung_stand+?,{columns} WHERE id=?', (active, 1 - active, *person.values(), uid))
             if hashed:
                 db.execute('UPDATE users SET password=? WHERE id=?', (hashed, uid))
             what = 'Person geändert'
         else:
+            if not USERNAME.fullmatch(name):
+                raise ValueError('Benutzername: 2–40 Zeichen, nur Buchstaben ohne Umlaute, Ziffern, Punkt, - und _ (z. B. erika.muster).')
             if other is not None:
-                raise ValueError('Diesen Namen gibt es schon.')
-            if not hashed:
+                raise ValueError('Diesen Benutzernamen gibt es schon.')
+            if not hashed and lokal:
                 raise ValueError('Bitte ein Passwort für die neue Person vergeben (sie ändert es danach selbst).')
-            uid = db.execute('INSERT INTO users(name,password,active) VALUES(?,?,?)', (name, hashed, active)).lastrowid
+            uid = db.execute(f'INSERT INTO users(name,password,active,{",".join(person)}) VALUES(?,?,?{",?" * len(person)})',
+                             (name, hashed or '', active, *person.values())).lastrowid
             what = 'Person angelegt'
+        # ein schon gespeichertes, inzwischen vergangenes Datum darf stehen bleiben (abgelaufene Person bearbeiten)
+        if person['gueltig_bis'] and person['gueltig_bis'] != (before or {}).get('gueltig_bis') and person['gueltig_bis'] < date.today().isoformat():
+            raise ValueError('„Zugang gültig bis“ darf nicht in der Vergangenheit liegen.')
         db.execute('DELETE FROM user_roles WHERE user_id=?', (uid,))
         db.executemany('INSERT INTO user_roles(user_id,role_id) VALUES(?,?)', [(uid, r) for r in sorted(set(roles))])
         _check_admin_remains(db)
-        detail = {'benutzer': name, 'aktiv': bool(active), 'rollen': _role_names(db, uid), 'passwort_neu': bool(hashed)}
+        detail = {'benutzer': name, 'aktiv': bool(active), 'rollen': _role_names(db, uid), 'passwort_neu': bool(hashed),
+                  **person, 'totp_pflicht': bool(person['totp_pflicht'])}
         if before:
             detail['vorher'] = before
         _audit(db, actor, what, detail)

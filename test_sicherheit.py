@@ -68,7 +68,7 @@ class SicherheitTests(unittest.TestCase):
             sicherheit.ereignis(self.db, 'unbekannt')
 
     def test_konten(self):
-        rollen.save_user(self.db, {'name': 'Zweite', 'password': PASSWORT, 'roles': []}, 'Erste')
+        rollen.save_user(self.db, test_rollen.P('Zweite', password=PASSWORT, roles=[]), 'Erste')
         sicherheit.ereignis(self.db, 'anmeldung', 'Erste')
         k = {x['name']: x for x in sicherheit.konten(self.db)}
         self.assertTrue(k['Erste']['privilegiert'] and k['Erste']['passwort'] and not k['Erste']['ungenutzt'])

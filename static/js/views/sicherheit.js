@@ -54,6 +54,8 @@ function lagebild(l) {
       ${card('Verwaltungsrechte', n(l.konten_privilegiert), 'Konten mit Rechten zur Verwaltung')}
       ${card('Letzte Sicherung', l.letzte_sicherung ? date(l.letzte_sicherung) : 'keine', old ? 'älter als 2 Tage – bitte prüfen' : 'aktuell', old)}
       ${card('Dateiprüfung', checkValue, checkNote, checkWarn)}
+      ${store.auth === 'keycloak' ? card('Notzugang', l.notzugang ? 'offen' : 'geschlossen',
+        l.notzugang ? `Passwort-Anmeldung bis ${dateTime(l.notzugang.bis)}` : 'öffnen nur auf dem Server: sudo ju-finanzen notzugang', !!l.notzugang) : ''}
     </section>`;
 }
 
@@ -166,7 +168,7 @@ function sitzungen(v) {
         ${can('verwaltung') ? html`<button type="button" class="link-button" data-users>Bearbeiten unter Benutzer & Rollen</button>` : ''}</div>
       ${table(['Name', 'Stand', 'Zuletzt angemeldet', 'Hinweise'], v.konten.map((k) => html`<tr>
         <td><strong>${k.name}</strong>${k.name === store.user ? html` <span class="small muted">(du)</span>` : ''}</td>
-        <td>${!k.aktiv ? badge('deaktiviert', 'warn') : k.passwort ? badge('aktiv', 'ok') : badge('kein Passwort', 'warn')}</td>
+        <td>${!k.aktiv ? badge('inaktiv', 'warn') : k.passwort || store.auth === 'keycloak' ? badge('aktiv', 'ok') : badge('kein Passwort', 'warn')}</td>
         <td class="nowrap">${when(k.zuletzt)}</td>
         <td>${k.ungenutzt ? badge('ungenutzt', 'warn') : ''} ${k.privilegiert ? badge('Verwaltungsrechte', 'navy') : ''}</td></tr>`))}
     </section>`;

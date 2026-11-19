@@ -264,21 +264,27 @@ try {
   await ap.locator('#modal [data-cancel]').click();
   await ap.click('[data-new-user]');
   await ap.waitForSelector('#modal[open] #user-form');
-  await ap.fill('#user-form input[name=name]', 'Test Mitgliederbeauftragte');
+  await ap.fill('#user-form input[name=vorname]', 'Test');
+  await ap.fill('#user-form input[name=nachname]', 'Mitgliederbeauftragte');
+  await ap.fill('#user-form input[name=name]', 'test.mitglieder');
+  await ap.fill('#user-form input[name=email]', 'test.mitglieder@example.org');
+  await ap.fill('#user-form input[name=funktion]', 'Landesmitgliederbeauftragte');
+  check(await ap.locator('#user-form input[name=totp_pflicht]').isChecked(), 'Person anlegen: Authenticator-App standardmäßig Pflicht');
   await ap.locator('#user-form label.check', { hasText: 'Landesmitgliederbeauftragter' }).locator('input').check();
   await ap.fill('#user-form input[name=password]', PASSWORT);
   await ap.screenshot({ path: join(shots, 's42-person-anlegen.png') });
   await ap.click('#user-form button[type=submit]');
   await confirmPassword(ap, NEU);   // Person anlegen ist eine kritische Aktion (ab 0.35)
   await ap.waitForFunction(() => document.getElementById('toast').textContent.includes('angelegt'));
-  check((await ap.locator('#main').textContent()).includes('Test Mitgliederbeauftragte'), 'Benutzer & Rollen: neue Person erscheint in der Liste');
+  const listText = await ap.locator('#main').textContent();
+  check(listText.includes('Test Mitgliederbeauftragte') && listText.includes('test.mitglieder') && listText.includes('Landesmitgliederbeauftragte'), 'Benutzer & Rollen: neue Person mit Name, Benutzername und Funktion in der Liste');
 
   const limited = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   await guard(limited);
   const mb = await limited.newPage();
   watch(mb, 'Mitgliederbeauftragte');
   await mb.goto(url);
-  await mb.fill('input[name=name]', 'Test Mitgliederbeauftragte');
+  await mb.fill('input[name=name]', 'test.mitglieder');
   await mb.fill('input[name=password]', PASSWORT);
   await mb.click('#login-form button[type=submit]');
   await mb.waitForSelector('.sidebar');
@@ -351,7 +357,7 @@ try {
   // eingeschränkte Person: abgemeldet, nach erneuter Anmeldung nur der Sperrbildschirm
   await mb.reload();
   await mb.waitForSelector('#login-form, #lock-retry');
-  if (await mb.locator('#login-form').count()) await login(mb, 'Test Mitgliederbeauftragte', PASSWORT);
+  if (await mb.locator('#login-form').count()) await login(mb, 'test.mitglieder', PASSWORT);
   await mb.waitForSelector('#lock-retry');
   const lockText = await mb.locator('.login-card').textContent();
   check(lockText.includes('Notfallmodus aktiv'), 'Notfall: eingeschränkte Person sieht den Sperrbildschirm');
@@ -383,7 +389,7 @@ try {
   await sp.waitForFunction(() => document.getElementById('toast').textContent.includes('Notfallmodus beendet'));
   await sp.waitForSelector('[data-emergency-on]');
   check(true, 'Notfall beendet nach Passwortbestätigung');
-  await login(mb, 'Test Mitgliederbeauftragte', PASSWORT);
+  await login(mb, 'test.mitglieder', PASSWORT);
   await mb.waitForSelector('.sidebar');
   check(true, 'Nach dem Notfall: eingeschränkte Person kommt nach neuer Anmeldung wieder hinein');
   await secContext.close();

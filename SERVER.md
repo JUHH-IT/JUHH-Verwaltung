@@ -153,6 +153,119 @@ Unter **Stammdaten → E-Mail-Versand** das Passwort des Postfachs eingeben und 
 anhaken. Es liegt dann nur für den Dienst lesbar in `/var/lib/ju-finanzen/geheim`, nie in der Datenbank
 oder in Sicherungen. Ohne Haken gilt es nur bis zum nächsten Neustart des Dienstes.
 
+## 6. Keycloak (Anmeldung mit Zwei-Faktor)
+
+Keycloak läuft auf demselben Server neben dem Programm und übernimmt später die Anmeldung (Passwort + Code aus einer
+Authenticator-App). Einrichten bzw. auffrischen – beliebig oft wiederholbar:
+
+```bash
+sudo ju-finanzen keycloak-einrichten
+sudo ju-finanzen keycloak-status        # Dienst, Health, Version, nächste Sicherung
+```
+
+Der Befehl:
+- installiert die Ubuntu-Pakete `openjdk-21-jre-headless` und `postgresql` (Sicherheitsupdates kommen über apt bzw.
+  `unattended-upgrades`);
+- legt in PostgreSQL die Rolle und Datenbank `keycloak` mit zufälligem Passwort an. Verbindung nur über 127.0.0.1;
+- lädt Keycloak (Version und SHA-256 fest in `server/keycloak-einrichten.sh`, falsche Prüfsumme = Abbruch) nach
+  `/opt/keycloak/<Version>` mit Verweis `/opt/keycloak/current`. Das Programm gehört root; der Dienst `ju-keycloak` läuft
+  als Benutzer `keycloak` und darf nur `/var/lib/keycloak` beschreiben (dorthin zeigt `data/`). Einstellungen:
+  `/opt/keycloak/current/conf/keycloak.conf` (root:keycloak, 640; wird bei jedem Lauf neu geschrieben);
+- richtet den Realm `ju-hamburg` und den Client `ju-verwaltung` ein (deutsch, keine Registrierung, kein „Passwort
+  vergessen“, Passwort ab 12 Zeichen, TOTP mit 6 Ziffern/30 s, Abmeldung nach 30 Minuten Untätigkeit bzw. 10 Stunden).
+  Die Account-Konsole ist gesperrt: Niemand kann seine Zwei-Faktor-Anmeldung selbst entfernen. Von den Pflichtschritten
+  (Required Actions) bleiben nur „Passwort ändern“ und „Authenticator-App einrichten“ eingeschaltet – die übrigen
+  (z. B. Anmeldedaten löschen, Profil ändern) ließen sich sonst über die Anmelde-Adresse selbst anstoßen. Kein Client des
+  Realms (auch nicht `admin-cli`) erlaubt die Anmeldung nur mit Passwort (Direct Access Grants aus);
+- trägt `JU_FINANZEN_KEYCLOAK_*` in `/etc/ju-finanzen/ju-finanzen.env` ein (Rechte bleiben root:jufinanzen, 640).
+  `JU_FINANZEN_ANMELDUNG` bleibt unverändert; das Programm liest die Werte nach `sudo ju-finanzen neustart`;
+- veröffentlicht über Tailscale Serve nur `/auth/realms/ju-hamburg` und `/auth/resources`. Die Admin-Konsole und der
+  Realm `master` sind von außen nicht erreichbar.
+
+Tailscale Serve mit `--set-path`: Tailscale wählt den längsten passenden Pfad (ganze Pfadteile), schneidet ihn ab und
+hängt den Rest an das Ziel an. Deshalb steht der Pfad im Ziel noch einmal:
+
+```bash
+sudo tailscale serve --bg --https=443 --set-path /auth/realms/ju-hamburg http://127.0.0.1:8180/auth/realms/ju-hamburg
+sudo tailscale serve --bg --https=443 --set-path /auth/resources http://127.0.0.1:8180/auth/resources
+```
+
+`https://<server>/auth/realms/ju-hamburg/protocol/…` landet so bei `http://127.0.0.1:8180/auth/realms/ju-hamburg/protocol/…`.
+Alles andere, auch `/auth/admin` und `/auth/realms/master`, geht weiter an das Programm (Regel `/` → 8769), das es
+ablehnt. `tailscale serve status` zeigt alle drei Regeln. Eine Regel entfernen: denselben Befehl mit `off` statt Ziel.
+
+Speicher: Keycloak braucht etwa 0,7–1 GB (Java-Heap höchstens 768 MB, systemd-Grenze 1,5 GB).
+
+Netz: Der Dienst `ju-keycloak` darf nur mit 127.0.0.1/::1 sprechen (`IPAddressAllow=localhost`, `IPAddressDeny=any`);
+PostgreSQL erreicht er über 127.0.0.1, Tailscale Serve und das Programm kommen von dort. Bewusste Abwägung: Keycloak und
+das Programm teilen sich eine Adresse (`https://<server>`, Keycloak unter `/auth`) – sonst lehnt die Herkunftsprüfung
+(`Sec-Fetch-Site`) die Rückkehr ab. Folge: Eine Lücke in den Anmeldeseiten von Keycloak (z. B. eingeschleustes Skript)
+könnte im Namen einer angemeldeten Person Anfragen an das Programm stellen. Eine eigene Adresse für Keycloak würde das
+trennen, verlangt aber eine andere Herkunftsprüfung – bewusst nicht umgesetzt; Keycloak deshalb zeitnah aktualisieren
+(s. u.). Der erste Admin
+(`ju-einrichtung`, Realm `master`) bleibt nur lokal: Tailscale Serve veröffentlicht weder `master` noch die Admin-Konsole.
+
+**Admin-Konsole (Notzugang):** nur über einen SSH-Tunnel, nie über Tailscale Serve.
+
+```bash
+ssh -L 8180:127.0.0.1:8180 <benutzer>@srv1          # auf dem eigenen Rechner; dann http://127.0.0.1:8180/auth/admin/
+sudo sed -n 's/^KC_BOOTSTRAP_ADMIN_//p' /etc/ju-finanzen/keycloak-admin.env   # auf dem Server: Benutzer und Passwort
+```
+
+Der Admin `ju-einrichtung` (Realm `master`) entsteht beim ersten Start. Sein Passwort steht nur in
+`/etc/ju-finanzen/keycloak-admin.env` (root, 600) und dient `keycloak-einrichten`. Ist die Datei verloren:
+`sudo systemctl stop ju-keycloak`, dann mit
+`sudo -u keycloak /opt/keycloak/current/bin/kc.sh bootstrap-admin user --username notfall --optimized` (fragt zweimal nach
+dem Passwort) einen zweiten Admin anlegen und `sudo systemctl start ju-keycloak`. Danach in der Admin-Konsole (Tunnel) das Passwort von
+`ju-einrichtung` neu setzen und in die Datei eintragen, den Benutzer `notfall` wieder löschen.
+
+**Sicherung:** Der Timer `ju-keycloak-sicherung` schreibt täglich `pg_dump` nach
+`/var/backups/ju-keycloak/keycloak-<Datum>.dump` (30 Tage). Sofort: `sudo ju-finanzen keycloak-sicherung`.
+Die Datei enthält Passwort-Hashes und TOTP-Schlüssel. Deshalb gehört der Ordner root (700, Dateien 600) und liegt nicht
+bei den Sicherungen des Programms: Der Programmbenutzer `jufinanzen` kann sie nicht lesen. Wer die Sicherungen des Servers
+zusätzlich wegkopiert, nimmt `/var/backups/ju-keycloak` mit. Zurückholen:
+
+```bash
+sudo systemctl stop ju-keycloak
+sudo cat /var/backups/ju-keycloak/keycloak-2026-11-19.dump | sudo -u postgres pg_restore --clean --if-exists -d keycloak
+sudo systemctl start ju-keycloak
+```
+
+**Updates von Keycloak:** Keycloak liegt außerhalb der Programmversionen; `ju-finanzen aktualisieren` und `install.sh`
+lassen es unverändert. Eine neue Keycloak-Version kommt mit einer neuen Programmversion (Version und SHA-256 in
+`server/keycloak-einrichten.sh`) und wird erst mit `sudo ju-finanzen keycloak-einrichten` installiert. Der Befehl sichert
+die Datenbank vorher und stellt `/opt/keycloak/current` um; die Datenbank passt Keycloak beim Start an. Die vorherige
+Version bleibt in `/opt/keycloak/<Version>`. Ein Zurück gibt es nur mit der Sicherung, weil Keycloak die Datenbank umbaut.
+Sicherheitsupdates von Keycloak deshalb zeitnah als neue Programmversion freigeben.
+
+### Umstieg auf die Anmeldung über Keycloak
+
+1. `sudo ju-finanzen keycloak-einrichten` (s. o.) und `sudo ju-finanzen keycloak-status` – Health muss `UP` zeigen.
+2. Eigene Person verbinden: `sudo ju-finanzen keycloak-verbinden "Benutzername"` – zeigt **einmal** ein Startpasswort
+   (nicht gespeichert). Vorher in „Benutzer & Rollen“ Vorname, Nachname und E-Mail ergänzen (sonst bricht der Befehl ab).
+   Passt der Benutzername nicht für Keycloak (Leerzeichen, Umlaute), eigenen Anmeldenamen angeben:
+   `sudo ju-finanzen keycloak-verbinden "Max Muster" --kc-name max.muster`.
+3. `sudo ju-finanzen anmeldung keycloak` – stellt um und startet den Dienst neu. Startet er nicht, schaltet der Befehl
+   selbst auf `passwort` zurück (Ursache: `sudo ju-finanzen protokoll`).
+4. Im Browser „Mit JU-Konto anmelden“: Startpasswort, neues Passwort, Authenticator-App einrichten.
+5. Weitere Personen legt die Verwaltung in „Benutzer & Rollen“ an; das Startpasswort erscheint dort einmal.
+
+Der bisherige Passwortzugang bleibt nur als **Notzugang** (Anmeldeseite → „Notzugang (Administrator)“): für Personen mit
+„Verwaltung schreiben“ und lokalem Passwort und nur, solange er auf dem Server freigeschaltet ist:
+
+```bash
+sudo ju-finanzen notzugang               # 60 Minuten offen
+sudo ju-finanzen notzugang --minuten 15  # 1 bis 240 Minuten
+sudo ju-finanzen notzugang --aus         # sofort schließen
+```
+
+Sonst lehnt das Programm das Passwort ab wie ein falsches – ein abgegriffenes Passwort allein umgeht so die
+Authenticator-App nicht. Ob der Notzugang offen ist, zeigt Sicherheit → Lagebild; Freischalten und Schließen stehen in
+den Ereignissen. Zurück zur Passwort-Anmeldung für alle: `sudo ju-finanzen anmeldung passwort`.
+
+Die Verwaltungsbefehle lesen `JU_FINANZEN_KEYCLOAK_*` selbst aus `/etc/ju-finanzen/ju-finanzen.env`; das Client-Secret
+steht nie in der Befehlszeile (Prozessliste).
+
 ## Sicherungen
 
 - Automatisch auf dem Server (`/var/lib/ju-finanzen/Sicherungen`):
@@ -204,7 +317,12 @@ Zur vorherigen Version zurück: `sudo /opt/ju-finanzen/current/server/install.sh
 | `sudo ju-finanzen sicherung` | Sicherung jetzt anlegen |
 | `sudo ju-finanzen pruefen` | Datenbank prüfen (Integrität, Anzahlen) |
 | `sudo ju-finanzen aktualisieren [Version] [--pruefen]` | neue freigegebene Version aus dem Git-Repository installieren (Weg B) |
-| `sudo ju-finanzen status` | Programmversion, Dienst und Tailscale Serve anzeigen |
+| `sudo ju-finanzen status` | Programmversion, Dienst, Tailscale Serve und Keycloak anzeigen |
+| `sudo ju-finanzen keycloak-einrichten` | Keycloak einrichten bzw. auffrischen (wiederholbar, Abschnitt 6) |
+| `sudo ju-finanzen keycloak-status` | Keycloak: Dienst, Health, Version |
+| `sudo ju-finanzen keycloak-sicherung` | Keycloak-Datenbank jetzt sichern (nach `/var/backups/ju-keycloak`, nur root) |
+| `sudo ju-finanzen keycloak-verbinden "Name" [--kc-name name]` | bestehende Person mit Keycloak verbinden (Startpasswort einmal) |
+| `sudo ju-finanzen notzugang [--minuten N \| --aus]` | Keycloak-Betrieb: Notzugang (Passwort-Anmeldung der Verwaltung) befristet öffnen bzw. schließen |
 | `sudo ju-finanzen protokoll [Zeilen]` | Protokoll des Dienstes |
 | `sudo ju-finanzen neustart` | Dienst neu starten |
 

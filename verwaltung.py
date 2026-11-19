@@ -4,10 +4,17 @@
   benutzer             Benutzer anzeigen (ohne Passwörter)
   sicherung            Sicherung der Datenbank jetzt anlegen (Sicherungen/Manuell)
   pruefen              Datenbank prüfen (Integrität, Anzahl Buchungen usw. – nur Zahlen)
+  keycloak-verbinden NAME   bestehende Person in Keycloak anlegen (Startpasswort erscheint einmal auf der Konsole) bzw. mit
+                       --ja eine dort schon vorhandene Person gleichen Benutzernamens verknüpfen; --kc-name NAME = eigener
+                       Anmeldename in Keycloak (z. B. bei Leerzeichen im Benutzernamen)
+  notzugang            Keycloak-Betrieb: Passwort-Anmeldung der Verwaltung (Notzugang) für --minuten N freischalten
+                       (Standard 60, höchstens 240); --aus schließt ihn wieder
   uebernehmen DATEI    Daten aus der Mac-App übernehmen: ZIP aus „Sicherung herunterladen“ oder eine .sqlite3-Datei;
                        nur bei gestopptem Dienst; vorhandene Daten nur mit --ersetzen (werden vorher gesichert)
 
 Ordner aus --data/--backups bzw. JU_FINANZEN_DATEN/JU_FINANZEN_SICHERUNGEN (siehe /etc/ju-finanzen/ju-finanzen.env).
+JU_FINANZEN_KEYCLOAK_* und JU_FINANZEN_ANMELDUNG liest der Befehl selbst aus dieser Datei (`einstellungen`), damit das
+Client-Secret nie als Argument in der Prozessliste steht.
 Gibt nie Passwörter oder Inhalte (Namen, Beträge, IBAN) aus – nur Anzahlen.
 """
 import argparse
@@ -29,6 +36,28 @@ import zugang
 MAX_ZIP_MEMBER = 200 * 1024 * 1024
 MAX_ZIP_TOTAL = 2 * 1024 * 1024 * 1024
 NEEDED_TABLES = {'users', 'accounts', 'entries', 'bank', 'members', 'invoices', 'audit', 'settings'}
+ENV_DATEI = '/etc/ju-finanzen/ju-finanzen.env'
+UMLAUTE = str.maketrans({'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss'})
+
+
+def einstellungen():
+    """JU_FINANZEN_KEYCLOAK_* und JU_FINANZEN_ANMELDUNG: aus der Einstellungsdatei des Dienstes (JU_FINANZEN_ENV_DATEI, sonst
+    ENV_DATEI; Zeilen KEY=VALUE, letzte gilt, # = Kommentar), die Umgebung hat Vorrang."""
+    pfad = Path(os.environ.get('JU_FINANZEN_ENV_DATEI') or ENV_DATEI)
+    try:
+        zeilen = pfad.read_text(encoding='utf-8').splitlines()
+    except FileNotFoundError:
+        zeilen = []
+    except OSError:
+        raise SystemExit(f'{pfad} ist nicht lesbar.')
+    gesucht = lambda key: key.startswith('JU_FINANZEN_KEYCLOAK_') or key == 'JU_FINANZEN_ANMELDUNG'
+    werte = {}
+    for zeile in zeilen:
+        key, sep, value = zeile.strip().partition('=')
+        if sep and gesucht(key):
+            werte[key] = value.strip()
+    werte.update({k: v for k, v in os.environ.items() if gesucht(k)})
+    return werte
 
 
 def folders(args):
@@ -92,15 +121,17 @@ def cmd_benutzer(args):
     try:
         import rollen
         rollen.init(con)
-        rows = con.execute('SELECT id,name,password,active FROM users ORDER BY id').fetchall()
+        rows = con.execute(f'SELECT id,name,password,active,vorname,nachname,funktion,{rollen.GILT} AS gilt FROM users ORDER BY id').fetchall()
         roles = {r['id']: [x[0] for x in con.execute('SELECT ro.name FROM user_roles ur JOIN roles ro ON ro.id=ur.role_id WHERE ur.user_id=? ORDER BY ro.id', (r['id'],))] for r in rows}
     finally:
         con.close()
     if not rows:
         print('Noch keine Benutzer. Anlegen mit: sudo ju-finanzen passwort <Name>')
     for r in rows:
-        print(f'{r["name"]}: ' + ('Passwort gesetzt' if zugang.is_set(r['password']) else 'kein Passwort (Anmeldung gesperrt)')
-              + ('' if r['active'] else ', deaktiviert') + '; Rollen: ' + (', '.join(roles[r['id']]) or 'keine'))
+        person = ', '.join(x for x in (' '.join(filter(None, (r['vorname'], r['nachname']))), r['funktion']) if x)
+        print(f'{r["name"]}' + (f' ({person})' if person else '') + ': '
+              + ('Passwort gesetzt' if zugang.is_set(r['password']) else 'kein Passwort (Anmeldung gesperrt)')
+              + ('' if r['gilt'] else ', deaktiviert' if not r['active'] else ', abgelaufen') + '; Rollen: ' + (', '.join(roles[r['id']]) or 'keine'))
 
 
 def cmd_notfall_aus(args):
@@ -146,15 +177,107 @@ def cmd_rolle(args):
                     raise SystemExit('Nicht entfernt: Danach könnte sich niemand mehr für „Benutzer und Rollen“ anmelden.')
             else:
                 con.execute('INSERT OR IGNORE INTO user_roles(user_id,role_id) VALUES(?,?)', (user['id'], role['id']))
-                reactivated = not user['active']
-                con.execute('UPDATE users SET active=1 WHERE id=?', (user['id'],))
+                reactivated = not con.execute(f'SELECT {rollen.GILT} FROM users WHERE id=?', (user['id'],)).fetchone()[0]
+                if reactivated:   # deaktiviert oder abgelaufen: wieder aktiv, ohne Ablaufdatum
+                    con.execute('UPDATE users SET active=1,gueltig_bis=NULL WHERE id=?', (user['id'],))
             con.execute('INSERT INTO audit(time,actor,action,detail) VALUES(?,?,?,?)',
                         (datetime.now().isoformat(timespec='seconds'), 'Serververwaltung', 'Rolle entzogen' if args.entfernen else 'Rolle vergeben',
                          json.dumps({'benutzer': user['name'], 'rolle': role['name']}, ensure_ascii=False)))
     finally:
         con.close()
     print(f'Rolle „{role["name"]}“ für „{user["name"]}“ ' + ('entfernt.' if args.entfernen else 'vergeben.')
-          + (' Die Person war deaktiviert und ist jetzt wieder aktiv.' if reactivated else ''))
+          + (' Die Person war deaktiviert oder abgelaufen und ist jetzt wieder aktiv (ohne Ablaufdatum).' if reactivated else ''))
+
+
+def cmd_keycloak_verbinden(args):
+    """Bestehende Person mit Keycloak verbinden (z. B. nach dem Umstieg). Gibt es den Benutzernamen in Keycloak schon, wird nur
+    nach Rückfrage bzw. mit --ja verknüpft (einziger Weg, auf dem der Name zählt); sonst dort neu anlegen. Das Startpasswort
+    erscheint genau einmal hier und wird nirgends gespeichert."""
+    import keycloak
+    import rollen
+    try:
+        cfg = keycloak.aus_umgebung(einstellungen())
+    except ValueError as e:
+        raise SystemExit(str(e))
+    if not cfg:
+        raise SystemExit('Keycloak ist nicht eingerichtet (JU_FINANZEN_KEYCLOAK_* fehlt; sudo ju-finanzen keycloak-einrichten).')
+    data, _ = folders(args)
+    con = connect(data / 'finanzen.sqlite3')
+    password = None
+    try:
+        rollen.init(con)
+        user = zugang.find_user(con, args.name)
+        if not user:
+            raise SystemExit(f'Benutzer „{args.name}“ gibt es nicht.')
+        name = user['name']
+        if user['keycloak_id']:
+            raise SystemExit(f'„{name}“ ist schon mit Keycloak verbunden. Ein neues Startpasswort gibt es unter Benutzer & Rollen.')
+        if not (user['vorname'] and user['nachname'] and user['email']):
+            raise SystemExit(f'Für „{name}“ fehlen Vorname, Nachname oder E-Mail – bitte zuerst in „Benutzer & Rollen“ ergänzen. Nichts geändert.')
+        kc_name = args.kc_name or name
+        if not rollen.USERNAME.fullmatch(kc_name):
+            vorschlag = '.'.join(kc_name.lower().split()).translate(UMLAUTE)
+            vorschlag = vorschlag if rollen.USERNAME.fullmatch(vorschlag) else 'erika.muster'
+            raise SystemExit(f'„{kc_name}“ geht nicht als Anmeldename in Keycloak (2–40 Zeichen: Buchstaben ohne Umlaute, Ziffern, '
+                             f'Punkt, - und _). Eigenen Anmeldenamen angeben, z. B.: sudo ju-finanzen keycloak-verbinden "{name}" '
+                             f'--kc-name {vorschlag}')
+        kc_name = kc_name.lower()   # Keycloak speichert Anmeldenamen klein
+        gilt = con.execute(f'SELECT {rollen.GILT} FROM users WHERE id=?', (user['id'],)).fetchone()[0]
+        admin = keycloak.Verwaltung(cfg)
+        try:
+            kid = admin.suchen(kc_name)
+            if kid and not args.ja:
+                frage = f'„{kc_name}“ gibt es in Keycloak schon. Genau diese Keycloak-Person verknüpfen? [j/N] '
+                if not sys.stdin.isatty() or input(frage).strip().lower() not in ('j', 'ja'):
+                    raise SystemExit('Nichts geändert. Verknüpfen nur nach Rückfrage oder mit --ja.')
+            if not kid:
+                password = keycloak.startpasswort()
+                kid = admin.anlegen(kc_name, user['vorname'], user['nachname'], user['email'], bool(gilt), password, bool(user['totp_pflicht']))
+        except keycloak.KeycloakFehler as e:
+            raise SystemExit(f'{e} Nichts geändert.')
+        try:
+            with con:
+                con.execute('UPDATE users SET keycloak_id=? WHERE id=?', (kid, user['id']))
+                con.execute('INSERT INTO audit(time,actor,action,detail) VALUES(?,?,?,?)',
+                            (datetime.now().isoformat(timespec='seconds'), 'Serververwaltung', 'Mit Keycloak verbunden',
+                             json.dumps({'benutzer': name, 'anmeldename': kc_name, 'verknuepft': password is None}, ensure_ascii=False)))
+        except sqlite3.IntegrityError:
+            raise SystemExit('Diese Keycloak-Person ist schon mit einer anderen Person des Programms verbunden. Nichts geändert.')
+    finally:
+        con.close()
+    if password:
+        print(f'„{name}“ in Keycloak angelegt (Anmeldename: {kc_name}).')
+        print(f'Startpasswort (nur jetzt sichtbar, wird nicht gespeichert): {password}')
+        print('Beim ersten Anmelden ändert die Person es und richtet ggf. die Authenticator-App ein.')
+    else:
+        print(f'„{name}“ mit der vorhandenen Keycloak-Person verknüpft. Passwort und App bleiben wie in Keycloak.')
+    return 0
+
+
+def cmd_notzugang(args):
+    """Notzugang im Keycloak-Betrieb kurz freischalten bzw. schließen (Ereignis in der Sicherheit)."""
+    data, _ = folders(args)
+    con = connect(data / 'finanzen.sqlite3')
+    try:
+        import rollen, sicherheit
+        rollen.init(con)
+        sicherheit.init(con)
+        try:
+            if not args.aus and args.minuten < 1:   # 0 hieße „schließen“ – dafür gibt es --aus
+                raise ValueError(f'Der Notzugang lässt sich für 1 bis {sicherheit.NOTZUGANG_HOECHSTENS} Minuten freischalten.')
+            bis = sicherheit.notzugang_setzen(con, 0 if args.aus else args.minuten, 'Serververwaltung', 'Server')
+        except ValueError as e:
+            raise SystemExit(f'{e} Nichts geändert.')
+    finally:
+        con.close()
+    if not bis:
+        print('Notzugang geschlossen. Anmeldung nur noch über Keycloak.')
+        return 0
+    print(f'Notzugang freigeschaltet bis {bis[11:16]} Uhr: Anmeldeseite → „Notzugang (Administrator)“, nur Personen mit '
+          '„Verwaltung schreiben“ und eigenem Passwort. Vorher schließen: sudo ju-finanzen notzugang --aus')
+    if einstellungen().get('JU_FINANZEN_ANMELDUNG', 'passwort') != 'keycloak':
+        print('Hinweis: Die Anmeldung läuft derzeit mit Passwort – der Notzugang wirkt erst bei Anmeldung über Keycloak.')
+    return 0
 
 
 def cmd_sicherung(args):
@@ -353,6 +476,13 @@ def main(argv=None):
     p.add_argument('name')
     p.add_argument('rolle')
     p.add_argument('--entfernen', action='store_true', help='Rolle wieder nehmen')
+    p = sub.add_parser('keycloak-verbinden', help='bestehende Person mit Keycloak verbinden (Startpasswort einmal auf der Konsole)')
+    p.add_argument('name')
+    p.add_argument('--ja', action='store_true', help='vorhandene Keycloak-Person gleichen Benutzernamens ohne Rückfrage verknüpfen')
+    p.add_argument('--kc-name', help='eigener Anmeldename in Keycloak (z. B. erika.muster), wenn der Benutzername nicht passt')
+    p = sub.add_parser('notzugang', help='Keycloak-Betrieb: Notzugang (Passwort der Verwaltung) befristet freischalten')
+    p.add_argument('--minuten', type=int, default=60, help='Dauer in Minuten (Standard 60, höchstens 240)')
+    p.add_argument('--aus', action='store_true', help='Notzugang sofort schließen')
     sub.add_parser('sicherung', help='Sicherung jetzt anlegen')
     sub.add_parser('pruefen', help='Datenbank prüfen (nur Anzahlen)')
     p = sub.add_parser('uebernehmen', help='Daten aus der Mac-App übernehmen (ZIP aus „Sicherung herunterladen“)')
@@ -360,7 +490,7 @@ def main(argv=None):
     p.add_argument('--ersetzen', action='store_true', help='vorhandene Daten ersetzen (werden vorher gesichert)')
     args = parser.parse_args(argv)
     os.umask(0o077)
-    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'rolle': cmd_rolle, 'notfall-aus': cmd_notfall_aus, 'sicherung': cmd_sicherung,
+    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'rolle': cmd_rolle, 'notfall-aus': cmd_notfall_aus, 'keycloak-verbinden': cmd_keycloak_verbinden, 'notzugang': cmd_notzugang, 'sicherung': cmd_sicherung,
             'pruefen': cmd_pruefen, 'uebernehmen': cmd_uebernehmen}[args.befehl](args) or 0
 
 

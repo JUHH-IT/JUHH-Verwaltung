@@ -1,0 +1,8 @@
+# Tägliche Sicherung der Keycloak-Datenbank (pg_dump) nach /var/backups/ju-keycloak (nur root), 30 Tage
+[Unit]
+Description=Sicherung der Keycloak-Datenbank
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ju-finanzen keycloak-sicherung

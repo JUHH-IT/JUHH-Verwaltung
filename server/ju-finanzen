@@ -9,6 +9,12 @@
 #   sudo ju-finanzen pruefen                Datenbank prüfen (nur Anzahlen)
 #   sudo ju-finanzen aktualisieren [Version] [--pruefen]   neue freigegebene Version aus dem Git-Repository installieren
 #   sudo ju-finanzen status | protokoll | neustart
+#   sudo ju-finanzen anmeldung keycloak|passwort   Anmeldung umstellen (startet den Dienst neu)
+#   sudo ju-finanzen keycloak-verbinden "Name" [--kc-name name]   Person mit Keycloak verbinden (zeigt einmal ein Startpasswort)
+#   sudo ju-finanzen notzugang [--minuten N | --aus]   Keycloak-Betrieb: Notzugang (Passwort) befristet freischalten (Standard 60)
+#   sudo ju-finanzen keycloak-einrichten    Keycloak (Zwei-Faktor-Anmeldung) einrichten bzw. auffrischen – wiederholbar
+#   sudo ju-finanzen keycloak-status        Keycloak: Dienst, Health, Version
+#   sudo ju-finanzen keycloak-sicherung     Keycloak-Datenbank jetzt sichern (sonst täglich per Timer)
 set -euo pipefail
 SERVICE=ju-finanzen
 SERVICE_USER=jufinanzen
@@ -29,18 +35,55 @@ run() {
     "$APP/venv/bin/python" "$APP/verwaltung.py" "$@"
 }
 running() { systemctl is-active --quiet "$SERVICE" 2>/dev/null; }
+keycloak_kurz() {   # Version, Dienst, Health (Management-Schnittstelle nur auf 127.0.0.1)
+  printf 'Version %s, Dienst %s, Health %s' "$(basename "$(readlink -f /opt/keycloak/current)")" \
+    "$(systemctl is-active ju-keycloak 2>/dev/null || true)" \
+    "$(curl -fsS -m 5 http://127.0.0.1:9000/auth/health/ready 2>/dev/null | grep -o '"status": *"[A-Z]*"' | grep -o '[A-Z]*' || echo 'nicht erreichbar')"
+}
 
 case "${1:-}" in
-  ""|-h|--help|hilfe) sed -n '2,11p' "$0"; exit 0 ;;
+  ""|-h|--help|hilfe) sed -n '2,17p' "$0"; exit 0 ;;
   status)
     echo "Programmversion: $(sed -n "s/^VERSION='\(.*\)'.*/\1/p" "$APP/app.py" | head -n 1)$( [ -f "$APP/server/GIT-STAND" ] && printf ' (Stand %.12s)' "$(cat "$APP/server/GIT-STAND")" )"
-    systemctl status "$SERVICE" --no-pager || true; command -v tailscale >/dev/null && tailscale serve status || true ;;
+    systemctl status "$SERVICE" --no-pager || true; command -v tailscale >/dev/null && tailscale serve status || true
+    [ -e /opt/keycloak/current ] && echo "Keycloak: $(keycloak_kurz)" || true ;;
+  keycloak-einrichten)
+    shift
+    [ -x "$APP/server/keycloak-einrichten.sh" ] || { echo "Diese Programmversion kennt Keycloak noch nicht." >&2; exit 1; }
+    exec "$APP/server/keycloak-einrichten.sh" "$@" ;;
+  keycloak-status)
+    [ -e /opt/keycloak/current ] || { echo "Keycloak ist nicht eingerichtet (sudo ju-finanzen keycloak-einrichten)." >&2; exit 1; }
+    systemctl status ju-keycloak --no-pager || true
+    echo "Keycloak: $(keycloak_kurz)"
+    systemctl list-timers ju-keycloak-sicherung.timer --no-pager || true ;;
+  keycloak-sicherung)
+    # nur root: die Sicherung enthält Passwort-Hashes und TOTP-Schlüssel – der Programmbenutzer liest sie nicht
+    dir=/var/backups/ju-keycloak; file="$dir/keycloak-$(date +%F).dump"
+    install -d -m 700 -o root -g root "$dir"
+    (cd / && runuser -u postgres -- pg_dump -Fc keycloak) | (umask 077; cat > "$file.neu")
+    mv -f "$file.neu" "$file"
+    find "$dir" -name 'keycloak-*.dump' -mtime +30 -delete
+    echo "Keycloak-Datenbank gesichert: $file" ;;
   aktualisieren)
     shift
     [ -x "$APP/server/aktualisieren.sh" ] || { echo "Diese Programmversion kennt das Update aus dem Git-Repository noch nicht (ab 0.33)." >&2; exit 1; }
     exec "$APP/server/aktualisieren.sh" "$@" ;;
   protokoll) journalctl -u "$SERVICE" -n "${2:-100}" --no-pager ;;
   neustart) systemctl restart "$SERVICE" && echo "Dienst neu gestartet." ;;
+  anmeldung)
+    art="${2:-}"
+    case "$art" in keycloak|passwort) ;; *) echo "Aufruf: sudo ju-finanzen anmeldung keycloak|passwort (derzeit: $(value JU_FINANZEN_ANMELDUNG | sed 's/^$/passwort/'))" >&2; exit 1 ;; esac
+    if [ "$art" = keycloak ]; then
+      for key in ISSUER INTERN CLIENT SECRET RUECKKEHR; do
+        [ -n "$(value "JU_FINANZEN_KEYCLOAK_$key")" ] || { echo "JU_FINANZEN_KEYCLOAK_$key fehlt – zuerst: sudo ju-finanzen keycloak-einrichten" >&2; exit 1; }
+      done
+    fi
+    if grep -q '^JU_FINANZEN_ANMELDUNG=' "$ENV_FILE"; then sed -i "s/^JU_FINANZEN_ANMELDUNG=.*/JU_FINANZEN_ANMELDUNG=$art/" "$ENV_FILE"
+    else printf 'JU_FINANZEN_ANMELDUNG=%s\n' "$art" >> "$ENV_FILE"; fi
+    systemctl restart "$SERVICE"; sleep 3
+    if running; then echo "Anmeldung: $art. Dienst läuft."
+    else echo "Dienst startet nicht – zurück auf Passwort-Anmeldung. Protokoll: sudo ju-finanzen protokoll" >&2
+      sed -i "s/^JU_FINANZEN_ANMELDUNG=.*/JU_FINANZEN_ANMELDUNG=passwort/" "$ENV_FILE"; systemctl restart "$SERVICE"; exit 1; fi ;;
   uebernehmen)
     shift
     [ $# -ge 1 ] && [ -f "$1" ] || { echo "Aufruf: sudo ju-finanzen uebernehmen /pfad/JU-Sicherung.zip [--ersetzen]" >&2; exit 1; }

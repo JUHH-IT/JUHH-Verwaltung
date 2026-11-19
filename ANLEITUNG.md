@@ -1,4 +1,4 @@
-# JU Hamburg Finanzen – Anleitung (Version 0.35)
+# JU Hamburg Finanzen – Anleitung (Version 0.36)
 
 ## Auf dem Server (Browser, ab 0.23)
 
@@ -14,6 +14,30 @@ Verwaltung stehen in `SERVER.md`.
     Anmeldung.
   - Passwort ändern unter **Einstellungen → Anmeldung**. Passwort vergessen: auf dem Server
     `sudo ju-finanzen passwort "Name"`.
+- **Anmelden mit dem JU-Konto (Keycloak, ab 0.36):** Ist auf dem Server Keycloak eingerichtet und eingeschaltet
+  (`JU_FINANZEN_ANMELDUNG=keycloak`, siehe `SERVER.md`), heißt der Knopf **Mit JU-Konto anmelden**. Keycloak fragt
+  Benutzername, Passwort und – je nach Person – den Code der Authenticator-App ab und schickt zurück ins Programm.
+  - Erste Anmeldung: mit dem **Startpasswort**, das die Verwaltung persönlich weitergibt. Keycloak verlangt sofort ein
+    eigenes Passwort und – bei App-Pflicht – das Einrichten einer Authenticator-App (z. B. Google oder Microsoft
+    Authenticator, 1Password): QR-Code scannen, Code eingeben.
+  - Passwort ändern: **Einstellungen → Anmeldung → Passwort ändern** (führt zu Keycloak). Danach enden die anderen
+    Sitzungen dieser Person im Programm (z. B. auf einem anderen Gerät). Passwort vergessen oder Handy mit
+    der App verloren: die Verwaltung vergibt ein neues Startpasswort bzw. setzt die App zurück.
+  - Jede Anmeldung und jede Bestätigung verlangt bei Keycloak das Passwort neu – eine noch offene Keycloak-Anmeldung im
+    Browser genügt dafür nicht. **Sicherheit → Sitzungen → Beenden** meldet die Person auch bei Keycloak ab.
+  - **Abmelden** beendet auch die Anmeldung bei Keycloak; danach fragt Keycloak wieder nach dem Passwort.
+  - Kritische Aktionen (z. B. Person anlegen, Sicherung herunterladen) verlangen eine Bestätigung: Das Programm schickt
+    noch einmal zur Anmeldung bei Keycloak und kommt zurück; danach die Aktion innerhalb von 5 Minuten erneut ausführen.
+    Nicht gespeicherte Eingaben gehen dabei verloren.
+  - Wer im Programm deaktiviert oder abgelaufen ist oder dort nicht mit Keycloak verbunden ist, kommt nicht hinein,
+    auch wenn die Anmeldung bei Keycloak geklappt hat. Die Verbindung zählt nur über die Keycloak-Kennung, nie über den Namen.
+  - **Notzugang (Administrator):** Unter „Notzugang“ auf der Anmeldeseite meldet sich die Verwaltung mit ihrem Passwort
+    im Programm an, falls Keycloak nicht erreichbar ist. Das geht nur, **solange der Notzugang auf dem Server
+    freigeschaltet ist** (`sudo ju-finanzen notzugang` – 60 Minuten, `--minuten N` bis 240, `--aus` schließt ihn
+    vorher), und nur für Personen mit „Benutzer ändern“ und eigenem Passwort (gesetzt auf dem Server mit
+    `sudo ju-finanzen passwort "Name"`). Sonst kommt dieselbe Meldung wie bei einem falschen Passwort. Ob der Notzugang
+    gerade offen ist, zeigt **Sicherheit → Lagebild**; Freischalten, Schließen und jede Anmeldung darüber stehen unter
+    **Sicherheit → Ereignisse**.
 - **Benutzer & Rollen (ab 0.34):** Unter **Verwaltung → Benutzer & Rollen** legt die Verwaltung Personen an, vergibt Rollen
   und stellt ein, was jede Rolle darf.
   - Bereiche: Mitgliederverwaltung, Buchhaltung, Verband (Haushalt, Budgets, RPJ), Auswertung, Einstellungen, Sicherung,
@@ -25,8 +49,23 @@ Verwaltung stehen in `SERVER.md`.
     Stammdaten der Mitglieder einschließlich Beitragshöhe und Zahlweg (sie kommen aus der Mitgliederliste) und bei einem
     Klärfall den Betrag der Zahlung. In der Auswertung stehen Beitragsbeträge nur mit Buchhaltung. Der Administrator sieht keine Mitglieder- und
     Finanzdaten; die Sicherung herunterladen darf nur, wer „Sicherung ändern“ hat (sie enthält alle Daten).
-  - Neue Person: Name, Rollen und ein erstes Passwort (mindestens 12 Zeichen); sie ändert es danach selbst. „Aktiv“
-    abwählen sperrt die Anmeldung sofort. Mindestens eine aktive Person muss „Benutzer ändern“ behalten.
+  - Angaben zur Person (ab 0.36): Vorname, Nachname, **Benutzername** (Anmeldename, nur Buchstaben ohne Umlaute, Ziffern,
+    Punkt, - und _; später nicht änderbar), E-Mail (Pflicht, je Person nur einmal), Telefon, Funktion/Amt, Kreisverband
+    (oder Landesebene), **Zugang gültig bis** (leer = unbefristet; nach diesem Tag gilt die Person als inaktiv und wird
+    abgemeldet), **Authenticator-App Pflicht** (je Person, Standard: an), **Aktiv** (abwählen sperrt die Anmeldung
+    sofort), Rollen.
+  - Ohne Keycloak: dazu ein erstes Passwort (mindestens 12 Zeichen); die Person ändert es danach selbst.
+  - Mit Keycloak: kein Passwortfeld. Beim Speichern legt das Programm die Person auch in Keycloak an und zeigt **einmal**
+    ein Startpasswort (groß, mit „Kopieren“). Es wird nirgends gespeichert – sofort persönlich weitergeben. Beim Bearbeiten
+    gehen Name, E-Mail, aktiv/abgelaufen und App-Pflicht nach Keycloak; Deaktivieren meldet die Person überall ab.
+    Im Dialog einer Person: **Mit Keycloak abgleichen**, **Neues Startpasswort** und **App zurücksetzen** (beide melden
+    die Person überall ab). Ist Keycloak beim Speichern nicht erreichbar, bleibt die Person gespeichert und steht in der
+    Liste als „nicht mit Keycloak verbunden“ mit dem Knopf **Mit Keycloak abgleichen**. Personen aus der Zeit vor Keycloak
+    verbindet derselbe Knopf oder auf dem Server `sudo ju-finanzen keycloak-verbinden "Benutzername"` – beides nur, wenn
+    Vorname, Nachname und E-Mail eingetragen sind. Ältere Benutzernamen mit Leerzeichen oder Umlauten nimmt Keycloak nicht
+    an; dann meldet der Knopf das, und die Verbindung geht nur auf dem Server mit eigenem Anmeldenamen:
+    `sudo ju-finanzen keycloak-verbinden "Max Muster" --kc-name max.muster`.
+  - Mindestens eine aktive Person muss „Benutzer ändern“ und ein eigenes Passwort behalten (der Notzugang).
   - Unten auf der Seite steht, wer wem welche Rolle gegeben und welche Rechte geändert hat.
   - Wer bisher angemeldet war, behält alle Rechte. Notzugang auf dem Server: `sudo ju-finanzen rolle "Name" Administrator`.
   - In der Mac-App gibt es weiter nur eine Person mit allen Rechten.
