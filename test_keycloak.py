@@ -295,8 +295,9 @@ class AnmeldungTests(MitFake):
                        {'auth_time': None}, {'auth_time': 'jetzt'}, {'auth_time': jetzt - 5}):
             with self.subTest(claims=claims):
                 self.assertIn('ungültig', self.assertAbgelehnt(**claims))
-        self.assertEqual(self.anmelden(iat=jetzt + 30)['sub'], 'sub-1')      # Uhren-Toleranz
-        self.assertEqual(self.anmelden(auth_time=jetzt - 1)['sub'], 'sub-1')   # ganze Sekunden
+        # Zeit neu lesen: die Fälle oben dauern auf langsamen Rechnern (CI) länger als die geprüfte Toleranz
+        self.assertEqual(self.anmelden(iat=int(time.time()) + 30)['sub'], 'sub-1')      # Uhren-Toleranz
+        self.assertEqual(self.anmelden(auth_time=int(time.time()) - 1)['sub'], 'sub-1')   # ganze Sekunden
 
     def test_sso_ohne_neue_anmeldung_abgelehnt(self):
         # Browser entfernt prompt=login/max_age: Keycloak bestätigt mit der alten Sitzung (auth_time vor dem Start)
