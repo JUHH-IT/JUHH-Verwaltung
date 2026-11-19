@@ -324,20 +324,25 @@ function sicherung() {
 }
 
 function zugang() {
+  // Keycloak-Betrieb (ab 0.36): Passwort und Authenticator-App verwaltet das JU-Konto; ein lokales Passwort hat nur der Notzugang
+  const kc = store.auth === 'keycloak';
   return html`<div class="split-row">
-    <form class="panel grow1" id="password-form" style="display:flex;flex-direction:column;gap:12px">
-      <h2>Passwort ändern</h2>
+    ${kc ? html`<section class="panel grow1"><h2 style="margin-bottom:8px">Passwort ändern</h2>
+      <p class="small muted" style="margin-bottom:12px">Passwort und Authenticator-App gehören zu deinem JU-Konto. Du meldest dich dort noch einmal an und vergibst dann ein neues Passwort.</p>
+      <div class="form-actions"><a class="btn primary" href="/api/keycloak/start?aktion=passwort" id="kc-password">Passwort ändern</a></div></section>` : ''}
+    ${!kc || store.passwortLokal ? html`<form class="panel grow1" id="password-form" style="display:flex;flex-direction:column;gap:12px">
+      <h2>${kc ? 'Passwort für den Notzugang ändern' : 'Passwort ändern'}</h2>
       <input type="text" name="username" autocomplete="username" value="${store.user}" hidden>
       <label class="field">Bisheriges Passwort<input type="password" name="current" autocomplete="current-password" required></label>
       <label class="field">Neues Passwort<input type="password" name="new" autocomplete="new-password" minlength="12" required>
         <span class="small muted">Mindestens 12 Zeichen. Ein Satz aus mehreren Wörtern ist gut zu merken.</span></label>
       <label class="field">Neues Passwort wiederholen<input type="password" name="repeat" autocomplete="new-password" minlength="12" required></label>
       <div class="form-actions"><button type="submit" class="btn primary">Passwort ändern</button></div>
-    </form>
+    </form>` : ''}
     <section class="panel grow1"><h2 style="margin-bottom:8px">Hinweise</h2>
-      <p class="small muted">Angemeldet als <strong>${store.user}</strong>. Nach dem Ändern enden alle anderen Anmeldungen dieses Benutzers.
-        Ohne Aktivität endet eine Anmeldung nach 2 Stunden, spätestens nach 8 Stunden. Passwort vergessen: auf dem Server
-        <code>sudo ju-finanzen passwort "${store.user}"</code>.</p></section></div>`;
+      <p class="small muted">Angemeldet als <strong>${store.user}</strong>. Ohne Aktivität endet eine Anmeldung nach 2 Stunden, spätestens nach 8 Stunden.
+        ${kc ? 'Passwort vergessen oder Handy mit der App verloren: Die Verwaltung vergibt unter Benutzer & Rollen ein neues Startpasswort bzw. setzt die App zurück.'
+          : html`Nach dem Ändern enden alle anderen Anmeldungen dieses Benutzers. Passwort vergessen: auf dem Server <code>sudo ju-finanzen passwort "${store.user}"</code>.`}</p></section></div>`;
 }
 
 function collect(form) {

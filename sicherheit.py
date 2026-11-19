@@ -3,8 +3,8 @@
 - Ereignisse (`sicherheit_ereignisse`): Anmeldungen, Fehlversuche, Sperren, verweigerte Zugriffe, Passwortbestätigungen,
   beendete Sitzungen, Notfall/Wartung, Sicherungen. Nie Passwörter, nie Mitglieder- oder Finanzdaten. Die Änderungen an
   Personen und Rollen stehen im Änderungsprotokoll (`audit`, rollen.AUDIT_ACTIONS) und werden hier dazugemischt.
-- Zustand (`sicherheit_zustand`): Notfall, Wartung, letzte Dateiprüfung – bewusst nicht in `settings`, die gehen mit den
-  Gesamtdaten an die Oberfläche.
+- Zustand (`sicherheit_zustand`): Notfall, Wartung, Freischaltung des Notzugangs, letzte Dateiprüfung – bewusst nicht in
+  `settings`, die gehen mit den Gesamtdaten an die Oberfläche.
 - Sperre: Im Notfall- oder Wartungsmodus arbeiten nur Personen mit „Sicherheit ändern“ (`app.py` prüft jede Anfrage).
 - Dateiprüfung: Programmdateien gegen die Prüfliste, die `server/install.sh` beim Installieren anlegt (`server/PRUEFLISTE`).
 """
@@ -21,6 +21,9 @@ import rollen
 ARTEN = {
     'anmeldung': 'Anmeldung',
     'anmeldung_fehl': 'Fehlanmeldung',
+    'notzugang': 'Notzugang',   # Keycloak-Betrieb: Anmeldung mit dem Passwort der Verwaltung
+    'notzugang_auf': 'Notzugang freigeschaltet',   # auf dem Server: sudo ju-finanzen notzugang
+    'notzugang_zu': 'Notzugang geschlossen',
     'bestaetigung_fehl': 'Passwortbestätigung falsch',
     'verweigert': 'Zugriff verweigert',
     'sitzung_beendet': 'Sitzung beendet',
@@ -34,6 +37,7 @@ ARTEN = {
 }
 AUFBEWAHREN_TAGE = 400
 UNGENUTZT_TAGE = 90
+NOTZUGANG_HOECHSTENS = 240   # Minuten; Standard von `sudo ju-finanzen notzugang`: 60
 PRUEFLISTE = 'server/PRUEFLISTE'
 NICHT_PRUEFEN = ('.git',)   # venv und __pycache__ gehören dazu: ein eingeschleustes .pth oder .pyc wirkt genauso
 
@@ -116,6 +120,23 @@ def wartung(db, actor, an, text='', geraet=''):
             return
         _schreiben(db, 'wartung', {'seit': _jetzt(), 'von': actor, 'text': ' '.join(str(text or '').split())[:300]} if an else None)
     ereignis(db, 'wartung_an' if an else 'wartung_aus', actor, geraet)
+
+
+def notzugang_offen(db):
+    """Freischaltung des Notzugangs ({'bis', 'von'}) oder None. Im Keycloak-Betrieb gilt die Passwort-Anmeldung nur solange."""
+    z = _lesen(db, 'notzugang')
+    return z if z and z.get('bis', '') > _jetzt() else None
+
+
+def notzugang_setzen(db, minuten, actor, geraet=''):
+    """Notzugang für `minuten` freischalten (1 … NOTZUGANG_HOECHSTENS) bzw. mit 0 schließen. Liefert das Ende oder None."""
+    if not isinstance(minuten, int) or not 0 <= minuten <= NOTZUGANG_HOECHSTENS:
+        raise ValueError(f'Der Notzugang lässt sich für 1 bis {NOTZUGANG_HOECHSTENS} Minuten freischalten.')
+    bis = (datetime.now() + timedelta(minutes=minuten)).isoformat(timespec='seconds') if minuten else None
+    with db:
+        _schreiben(db, 'notzugang', {'bis': bis, 'von': actor} if bis else None)
+    ereignis(db, 'notzugang_auf' if bis else 'notzugang_zu', actor, geraet, {'bis': bis} if bis else {})
+    return bis
 
 
 def ereignisse(db, art='', tage=30, suche='', limit=1000):
@@ -204,10 +225,11 @@ def letzte_dateipruefung(db, app_dir):
 
 def konten(db):
     """Personen mit letzter Anmeldung, Verwaltungs-/Sicherheitsrechten und Hinweisen (ungenutzt, ohne Passwort, deaktiviert)."""
-    zuletzt = dict(db.execute("SELECT person,max(zeit) FROM sicherheit_ereignisse WHERE art='anmeldung' GROUP BY person").fetchall())
+    zuletzt = dict(db.execute("SELECT person,max(zeit) FROM sicherheit_ereignisse WHERE art IN ('anmeldung','notzugang') GROUP BY person").fetchall())
     grenze = (datetime.now() - timedelta(days=UNGENUTZT_TAGE)).isoformat()
     result = []
-    for name, password, active in db.execute('SELECT name,password,active FROM users ORDER BY name COLLATE NOCASE').fetchall():
+    # aktiv = darf hinein (rollen.GILT): abgelaufene Personen („gültig bis“ vorbei) zählen wie deaktivierte
+    for name, password, active in db.execute(f'SELECT name,password,{rollen.GILT} FROM users ORDER BY name COLLATE NOCASE').fetchall():
         rights = rollen.rights_of(db, name)
         result.append({'name': name, 'aktiv': bool(active), 'passwort': str(password or '').startswith('scrypt$'),
                        'zuletzt': zuletzt.get(name, ''), 'ungenutzt': bool(active) and zuletzt.get(name, '') < grenze,
@@ -222,7 +244,7 @@ def lagebild(db, sitzungen, sperren, letzte_sicherung, app_dir):
     zaehle = lambda art, seit: db.execute('SELECT count(*) FROM sicherheit_ereignisse WHERE art=? AND zeit>=?', (art, seit)).fetchone()[0]
     k = konten(db)
     return {
-        'sperre': sperre(db),
+        'sperre': sperre(db), 'notzugang': notzugang_offen(db),
         'fehlanmeldungen_24h': zaehle('anmeldung_fehl', tag), 'fehlanmeldungen_7t': zaehle('anmeldung_fehl', woche),
         'verweigert_7t': zaehle('verweigert', woche), 'bestaetigung_fehl_7t': zaehle('bestaetigung_fehl', woche),
         'sitzungen': len(sitzungen), 'gesperrt': len(sperren),

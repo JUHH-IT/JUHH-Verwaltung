@@ -94,7 +94,9 @@ def check_login(db, name, password):
     """Name des Benutzers bei richtigem Passwort, sonst None – in jedem Fall mit einer vollen scrypt-Prüfung."""
     user = find_user(db, name)
     usable = isinstance(password, str) and 0 < len(password) <= MAX_LENGTH
-    active = bool(user) and ('active' not in user.keys() or user['active'])   # deaktivierte Personen (rollen.py) melden sich nicht an
+    import rollen
+    # deaktivierte oder abgelaufene Personen (rollen.GILT) melden sich nicht an
+    active = bool(user) and db.execute(f'SELECT 1 FROM users WHERE id=? AND {rollen.GILT}', (user['id'],)).fetchone() is not None
     if not user or not active or not is_set(user['password']) or not usable:
         burn_time(password)
         return None

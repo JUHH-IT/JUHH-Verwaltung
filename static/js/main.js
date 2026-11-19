@@ -165,24 +165,45 @@ function lastUser() {
   try { return localStorage.getItem(LAST_USER) || ''; } catch { return ''; }
 }
 
-/** Anmeldung im Serverbetrieb: Benutzername und Passwort. */
+// Rückkehr von Keycloak mit Fehler (/?anmeldung=<Kürzel>, app.py keycloak_rueckkehr) – nur feste Texte, nie der Wert aus der Adresse
+const KEYCLOAK_ERRORS = {
+  abgelaufen: 'Die Anmeldung ist abgelaufen oder wurde schon verwendet. Bitte erneut anmelden.',
+  gesperrt: 'Zu viele Fehlversuche von diesem Gerät. Bitte einige Minuten warten.',
+  ueberlastet: 'Gerade laufen zu viele Anmeldungen gleichzeitig. Bitte in einigen Minuten erneut versuchen.',
+  abgebrochen: 'Die Anmeldung wurde abgebrochen.',
+  fehler: 'Die Anmeldung über das JU-Konto hat nicht geklappt. Bitte erneut versuchen.',
+  'kein-zugang': 'Dein JU-Konto hat keinen gültigen Zugang zu diesem Programm. Bitte wende dich an die Verwaltung.',
+  app: 'Für dein Konto ist die Authenticator-App Pflicht, aber noch nicht eingerichtet. Bitte erneut anmelden und die App einrichten oder die Verwaltung fragen.',
+};
+
+/** Anmeldung im Serverbetrieb: Benutzername und Passwort – im Keycloak-Betrieb „Mit JU-Konto anmelden“ und das Passwort nur als Notzugang. */
 function passwordLogin(status, notice) {
+  const keycloak = status.auth === 'keycloak';
+  const fields = html`<label class="field">Benutzername<input name="name" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required value="${lastUser()}"></label>
+      <label class="field">Passwort<input name="password" type="password" autocomplete="current-password" required></label>
+      <p class="login-error" role="alert" hidden></p>
+      <button class="btn ${keycloak ? '' : 'primary'} large" type="submit">${keycloak ? 'Mit Notzugang anmelden' : 'Anmelden'}</button>`;
   mount(root, html`<div class="login">
     <img src="/JU-Hamburg-Finanzen.svg" alt="Junge Union Hamburg – Finanzen">
-    <form class="login-card" id="login-form" autocomplete="on">
+    ${keycloak ? html`<div class="login-card">
+      <h1>Anmelden</h1>
+      ${notice ? html`<p class="notice warn">${notice}</p>` : ''}
+      <a class="btn primary large" href="/api/keycloak/start" id="login-keycloak">Mit JU-Konto anmelden</a>
+      <details><summary class="small muted">Notzugang (Administrator)</summary>
+        <form id="login-form" autocomplete="on" style="display:flex;flex-direction:column;gap:16px;margin-top:12px">
+          <p class="small muted">Nur nach Freischaltung auf dem Server (<code>sudo ju-finanzen notzugang</code>) – wenn die Anmeldung mit dem JU-Konto nicht funktioniert, mit dem Passwort der Verwaltung.</p>
+          ${fields}</form></details></div>`
+    : html`<form class="login-card" id="login-form" autocomplete="on">
       <h1>Anmelden</h1>
       ${notice ? html`<p class="notice">${notice}</p>` : ''}
       ${status.configured ? '' : html`<p class="notice warn">Noch kein Passwort eingerichtet. Auf dem Server einmal ausführen:<br><code>sudo ju-finanzen passwort "Vorname Nachname"</code></p>`}
-      <label class="field">Benutzername<input name="name" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required value="${lastUser()}"></label>
-      <label class="field">Passwort<input name="password" type="password" autocomplete="current-password" required></label>
-      <p class="login-error" role="alert" hidden></p>
-      <button class="btn primary large" type="submit">Anmelden</button>
-    </form>
+      ${fields}
+    </form>`}
     <p class="small muted">Nur über Tailscale erreichbar · Abmeldung nach 2 Stunden ohne Aktivität</p>
   </div>`);
   const form = root.querySelector('#login-form');
   const error = form.querySelector('.login-error');
-  (form.name.value ? form.password : form.name).focus();
+  if (!keycloak) (form.name.value ? form.password : form.name).focus();
   form.onsubmit = async (e) => {
     e.preventDefault();
     const button = form.querySelector('button[type=submit]');
@@ -204,7 +225,13 @@ function passwordLogin(status, notice) {
 }
 
 async function boot(notice = '') {
-  const code = new URLSearchParams(location.search).get('login');
+  const params = new URLSearchParams(location.search);
+  const code = params.get('login');
+  // Rückkehr von Keycloak: Fehlerkürzel bzw. Bestätigung einmal auswerten, dann aus der Adresse nehmen
+  const kcError = params.get('anmeldung');
+  const confirmed = params.has('bestaetigt');
+  if (kcError || confirmed) history.replaceState({}, '', '/');
+  if (kcError) notice = KEYCLOAK_ERRORS[kcError] || KEYCLOAK_ERRORS.fehler;
   if (code) {
     history.replaceState({}, '', '/');                     // Code ist einmalig – nicht in Verlauf oder Neuladen
     try {
@@ -216,12 +243,15 @@ async function boot(notice = '') {
   const status = await api('/api/status');
   store.version = status.version || '';
   store.mode = status.mode || 'mac';
+  store.auth = status.auth || '';
+  store.passwortLokal = !!status.passwort_lokal;
   layout();
   setCsrf(status.csrf);
+  if (confirmed && status.user) toast('Bestätigt. Bitte die Aktion jetzt innerhalb von 5 Minuten erneut ausführen.');
   if (status.user && !status.sperre?.fuer_mich) return start(status.user);
   onChange(() => {});
   if (status.user) return lockScreen(status.sperre);
-  if (status.auth === 'password') return passwordLogin(status, notice);
+  if (status.auth === 'password' || status.auth === 'keycloak') return passwordLogin(status, notice);
   mount(root, html`<div class="login">
     <img src="/JU-Hamburg-Finanzen.svg" alt="Junge Union Hamburg – Finanzen">
     <div class="login-card">
@@ -295,8 +325,20 @@ function askPassword() {
     };
   });
 }
+/** Kritische Aktion im Keycloak-Betrieb (ohne Notzugang): zur Bestätigung erneut mit dem JU-Konto anmelden. Die Seite wird dabei
+ *  verlassen; nach der Rückkehr gilt die Bestätigung 5 Minuten, die Aktion wird dann erneut ausgeführt. */
+function askKeycloak() {
+  return new Promise((resolve, reject) => {
+    const el = overlay('Bestätigen', html`<div style="display:flex;flex-direction:column;gap:14px">
+      <p class="small muted">Für diese Aktion meldest du dich zur Bestätigung noch einmal mit deinem JU-Konto an. Danach bist du wieder hier und
+        führst die Aktion innerhalb von 5 Minuten erneut aus. Nicht gespeicherte Eingaben gehen dabei verloren.</p>
+      <div class="form-actions"><button type="button" class="btn ghost" data-close>Abbrechen</button>
+        <a class="btn primary" href="/api/keycloak/start?aktion=bestaetigen">Mit JU-Konto bestätigen</a></div></div>`, { wide: false });
+    el.addEventListener('close', () => reject(new Error('Abgebrochen.')), { once: true });
+  });
+}
 let asking = null;   // mehrere Anfragen zugleich: nur einmal fragen
-onConfirm(() => (asking ||= askPassword().finally(() => { asking = null; })));
+onConfirm(() => (asking ||= (store.auth === 'keycloak' && !store.passwortLokal ? askKeycloak() : askPassword()).finally(() => { asking = null; })));
 
 // Sitzung abgelaufen (Serverbetrieb: nach Untätigkeit oder Passwortwechsel) oder Sperre (Notfall/Wartung):
 // offene Dialoge schließen, neu starten (Anmeldung bzw. Sperrbildschirm).

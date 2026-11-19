@@ -5,6 +5,7 @@ import json
 import re
 import tempfile
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 
 import app
@@ -16,6 +17,11 @@ from core import Store
 PASSWORT = test_server.PASSWORT
 ROOT = Path(__file__).resolve().parent
 VOLL = {**rollen.ALL, 'auswertung': 'lesen'}   # die erste Person: alles ändern (in der Auswertung gibt es nichts zu ändern)
+
+
+def P(name, **extra):
+    """Pflichtangaben einer erfundenen Person zum Benutzernamen (Vorname, Nachname, E-Mail)."""
+    return {'name': name, 'vorname': 'Test', 'nachname': name, 'email': re.sub(r'[^a-z0-9.-]', '', name.lower()) + '@example.org', **extra}
 
 
 def role_id(db, name):
@@ -62,11 +68,11 @@ class RollenTests(unittest.TestCase):
 
     def test_rights_are_the_maximum_over_roles(self):
         zugang.set_password(self.db, 'Erste', PASSWORT, create=True)
-        uid = rollen.save_user(self.db, {'name': 'Zwei Rollen', 'password': PASSWORT, 'roles': [
+        uid = rollen.save_user(self.db, {**P('Zwei-Rollen'), 'password': PASSWORT, 'roles': [
             role_id(self.db, 'Landesmitgliederbeauftragter'), role_id(self.db, 'Landesgeschäftsführer')]}, 'Erste')
-        self.assertEqual(rollen.rights_of(self.db, 'Zwei Rollen'), {'mitglieder': 'schreiben', 'buchhaltung': 'lesen', 'verband': 'lesen', 'auswertung': 'lesen', 'sicherheit': 'lesen'})
-        rollen.save_user(self.db, {'id': uid, 'name': 'Zwei Rollen', 'roles': [role_id(self.db, 'Landesvorsitzender')], 'active': False}, 'Erste')
-        self.assertEqual(rollen.rights_of(self.db, 'Zwei Rollen'), {})                 # deaktiviert
+        self.assertEqual(rollen.rights_of(self.db, 'Zwei-Rollen'), {'mitglieder': 'schreiben', 'buchhaltung': 'lesen', 'verband': 'lesen', 'auswertung': 'lesen', 'sicherheit': 'lesen'})
+        rollen.save_user(self.db, {**P('Zwei-Rollen'), 'id': uid, 'roles': [role_id(self.db, 'Landesvorsitzender')], 'active': False}, 'Erste')
+        self.assertEqual(rollen.rights_of(self.db, 'Zwei-Rollen'), {})                 # deaktiviert
 
     def test_allowed_and_required(self):
         reader = {'buchhaltung': 'lesen'}
@@ -110,9 +116,9 @@ class RollenTests(unittest.TestCase):
             rollen.save_role(self.db, {'id': admin, 'name': 'Administrator', 'rights': {'sicherung': 'lesen'}}, 'Erste')
         erste = self.db.execute("SELECT id FROM users WHERE name='Erste'").fetchone()[0]
         with self.assertRaises(ValueError):                                            # … oder die Person deaktivieren
-            rollen.save_user(self.db, {'id': erste, 'name': 'Erste', 'roles': [admin], 'active': False}, 'Erste')
+            rollen.save_user(self.db, {**P('Erste'), 'id': erste, 'roles': [admin], 'active': False}, 'Erste')
         with self.assertRaises(ValueError):                                            # … oder ihr die Rolle nehmen
-            rollen.save_user(self.db, {'id': erste, 'name': 'Erste', 'roles': [role_id(self.db, 'Schatzmeister')]}, 'Erste')
+            rollen.save_user(self.db, {**P('Erste'), 'id': erste, 'roles': [role_id(self.db, 'Schatzmeister')]}, 'Erste')
         self.assertEqual(rollen.rights_of(self.db, 'Erste'), VOLL)               # nichts davon wurde gespeichert
         rid = rollen.save_role(self.db, {'name': 'Kassenprüfer', 'rights': {'buchhaltung': 'lesen', 'verband': ''}}, 'Erste')
         self.assertEqual(json.loads(self.db.execute('SELECT rights FROM roles WHERE id=?', (rid,)).fetchone()[0]), {'buchhaltung': 'lesen'})
@@ -120,19 +126,18 @@ class RollenTests(unittest.TestCase):
                     {'name': 'Neu', 'rights': {'buchhaltung': 'alles'}}, {'name': '<b>Neu</b>', 'rights': {}}, {'name': 'Neu', 'rights': []}):
             with self.assertRaises(ValueError, msg=bad):
                 rollen.save_role(self.db, bad, 'Erste')
-        uid = rollen.save_user(self.db, {'name': 'Prüferin', 'password': PASSWORT, 'roles': [rid]}, 'Erste')
+        uid = rollen.save_user(self.db, {**P('Pruefer'), 'password': PASSWORT, 'roles': [rid]}, 'Erste')
         with self.assertRaises(ValueError):
             rollen.delete_role(self.db, rid, 'Erste')                                  # noch vergeben
-        rollen.save_user(self.db, {'id': uid, 'name': 'Prüferin', 'roles': []}, 'Erste')
+        rollen.save_user(self.db, {**P('Pruefer'), 'id': uid, 'roles': []}, 'Erste')
         rollen.delete_role(self.db, rid, 'Erste')
-        for bad in ({'name': 'Ohne Passwort', 'roles': []}, {'name': 'Kurz', 'password': 'kurz', 'roles': []}, {'name': 'Prüferin', 'password': PASSWORT, 'roles': []},
-                    {'name': 'Neu', 'password': PASSWORT, 'roles': [9999]}, {'name': 'Neu', 'password': PASSWORT, 'roles': ['1']},
-                    {'id': uid, 'name': 'Anderer Name', 'roles': []}):
+        for bad in (P('Ohne-Passwort', roles=[]), P('Kurz', password='kurz', roles=[]), P('Pruefer', email='neu@example.org', password=PASSWORT, roles=[]),
+                    P('Neu', password=PASSWORT, roles=[9999]), P('Neu', password=PASSWORT, roles=['1']), P('Anderer-Name', id=uid, roles=[])):
             with self.assertRaises(ValueError, msg=bad.get('name')):
                 rollen.save_user(self.db, bad, 'Erste')
-        for bad in ({'id': uid, 'name': 'Prüferin', 'roles': [], 'active': 'false'}, {'id': 'abc', 'name': 'Prüferin', 'roles': []},
-                    {'name': 'Erste\u200b', 'password': PASSWORT, 'roles': []}, {'name': 'PRÜFERIN', 'password': PASSWORT, 'roles': []},
-                    {'name': 'Klingel\x07ton', 'password': PASSWORT, 'roles': []}):
+        for bad in (P('Pruefer', id=uid, roles=[], active='false'), P('Pruefer', id='abc', roles=[]),
+                    P('Erste\u200b', email='z@example.org', password=PASSWORT, roles=[]), P('PRUEFER', email='anders@example.org', password=PASSWORT, roles=[]),
+                    P('Klingel\x07ton', email='k@example.org', password=PASSWORT, roles=[])):
             with self.assertRaises(ValueError, msg=repr(bad.get('name'))):
                 rollen.save_user(self.db, bad, 'Erste')
         with self.assertRaises(ValueError):
@@ -140,7 +145,7 @@ class RollenTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             rollen.delete_role(self.db, 'abc', 'Erste')
         # Protokoll: Rollen und Rechte vorher und nachher – wer hat wem was gegeben
-        rollen.save_user(self.db, {'id': uid, 'name': 'Prüferin', 'roles': [role_id(self.db, 'Schatzmeister')]}, 'Erste')
+        rollen.save_user(self.db, {**P('Pruefer'), 'id': uid, 'roles': [role_id(self.db, 'Schatzmeister')]}, 'Erste')
         vorsitz = role_id(self.db, 'Landesvorsitzender')
         rollen.save_role(self.db, {'id': vorsitz, 'name': 'Landesvorsitzender', 'rights': {'buchhaltung': 'schreiben'}}, 'Erste')
         log = rollen.overview(self.db)['audit']
@@ -156,7 +161,9 @@ class RollenTests(unittest.TestCase):
     def test_emergency_command_keeps_one_admin(self):
         import contextlib, io, verwaltung
         zugang.set_password(self.db, 'Erste', PASSWORT, create=True)
-        self.db.execute("INSERT INTO users(name,password,active) VALUES('Zweite','',0)")
+        self.db.execute("INSERT INTO users(name,password,active,gueltig_bis) VALUES('Zweite','',0,'2020-01-31')")
+        self.db.execute("UPDATE users SET vorname='Erika',nachname='Muster',funktion='Landesschatzmeisterin' WHERE name='Erste'")
+        self.db.execute("INSERT INTO users(name,password,gueltig_bis) VALUES('Dritte','','2020-01-31')")
         self.db.commit()
         data = str(Path(self.tmp.name))
         import shutil
@@ -170,8 +177,78 @@ class RollenTests(unittest.TestCase):
             run('benutzer')
         text = out.getvalue()
         self.assertIn('wieder aktiv', text)
-        self.assertIn('Erste: Passwort gesetzt; Rollen: Schatzmeister, Landesmitgliederbeauftragter, Administrator', text)
-        self.assertIn('Zweite: kein Passwort (Anmeldung gesperrt); Rollen: Landesvorsitzender', text)
+        self.assertIn('Erste (Erika Muster, Landesschatzmeisterin): Passwort gesetzt; Rollen: Schatzmeister, Landesmitgliederbeauftragter, Administrator', text)
+        self.assertIn('Zweite: kein Passwort (Anmeldung gesperrt); Rollen: Landesvorsitzender', text)   # Notbefehl: wieder aktiv, ohne Ablaufdatum
+        self.assertIn('Dritte: kein Passwort (Anmeldung gesperrt), abgelaufen; Rollen: keine', text)
+
+    def test_person_fields_are_checked_and_logged(self):
+        zugang.set_password(self.db, 'Erste', PASSWORT, create=True)
+        kv = self.db.execute('SELECT code FROM kv ORDER BY code LIMIT 1').fetchone()[0]
+        future = (date.today() + timedelta(days=30)).isoformat()
+        full = P('erika.muster', vorname=' Erika ', nachname='Muster-Beispiel', email='Erika.Muster@example.org', telefon='+49 (40) 123-456',
+                 funktion='Landesschatzmeisterin', kreisverband=kv, gueltig_bis=future, totp_pflicht=False, keycloak_id='geschmuggelt',
+                 password=PASSWORT, roles=[])
+        uid = rollen.save_user(self.db, full, 'Erste')
+        u = next(x for x in rollen.overview(self.db)['users'] if x['id'] == uid)
+        self.assertEqual((u['vorname'], u['nachname'], u['email'], u['telefon'], u['funktion'], u['kreisverband'], u['gueltig_bis']),
+                         ('Erika', 'Muster-Beispiel', 'Erika.Muster@example.org', '+49 (40) 123-456', 'Landesschatzmeisterin', kv, future))
+        self.assertEqual((u['totp_pflicht'], u['keycloak_verbunden'], u['abgelaufen'], u['active']), (False, False, False, True))   # keycloak_id nicht über die Eingabe
+        self.assertNotIn('keycloak_id', u)
+        self.assertIn({'code': kv, 'name': self.db.execute('SELECT name FROM kv WHERE code=?', (kv,)).fetchone()[0]}, rollen.overview(self.db)['kreisverbaende'])
+        erste = next(x for x in rollen.overview(self.db)['users'] if x['name'] == 'Erste')
+        self.assertEqual((erste['vorname'], erste['totp_pflicht'], erste['gueltig_bis']), (None, True, None))   # Notbefehl: ohne Angaben, App-Pflicht Standard
+        for key, value in (('name', 'zwei worte'), ('name', '-x'), ('name', 'jürgen'), ('name', 'a'), ('name', 'x' * 41), ('vorname', ''), ('nachname', 'N' * 61),
+                           ('vorname', '<b>'), ('email', ''), ('email', 'keine-adresse'), ('email', 'ERIKA.MUSTER@example.org'), ('telefon', '040 123 abc'),
+                           ('telefon', '1' * 31), ('funktion', 'F' * 81), ('kreisverband', 'gibt-es-nicht'), ('gueltig_bis', '31.12.2030'),
+                           ('gueltig_bis', '2020-01-01'), ('totp_pflicht', 'ja')):
+            with self.assertRaises(ValueError, msg=(key, value)):
+                rollen.save_user(self.db, {**full, 'name': 'neue.person', 'email': 'neu@example.org', key: value}, 'Erste')
+        self.assertIsNotNone(rollen.save_user(self.db, P('Kurz_1', vorname='A', nachname='B', password=PASSWORT, roles=[]), 'Erste'))   # ein Zeichen genügt
+        other = rollen.save_user(self.db, P('andere', password=PASSWORT, roles=[]), 'Erste')
+        with self.assertRaises(ValueError):                                            # E-Mail einer anderen Person (andere Schreibweise)
+            rollen.save_user(self.db, P('andere', id=other, email='erika.muster@EXAMPLE.org', roles=[]), 'Erste')
+        rollen.save_user(self.db, {**full, 'id': uid, 'password': None, 'telefon': '', 'funktion': 'Kassenwartin', 'kreisverband': None, 'totp_pflicht': True}, 'Erste')
+        log = rollen.overview(self.db)['audit'][0]
+        self.assertEqual((log['action'], log['detail']['funktion'], log['detail']['telefon'], log['detail']['totp_pflicht']), ('Person geändert', 'Kassenwartin', None, True))
+        self.assertEqual((log['detail']['vorher']['funktion'], log['detail']['vorher']['kreisverband'], log['detail']['vorher']['totp_pflicht']), ('Landesschatzmeisterin', kv, False))
+        self.assertNotIn(PASSWORT, json.dumps(self.store.rows('SELECT * FROM audit'), ensure_ascii=False))
+
+    def test_expired_access_counts_as_inactive(self):
+        zugang.set_password(self.db, 'Erste', PASSWORT, create=True)
+        uid = rollen.save_user(self.db, P('befristet', password=PASSWORT, roles=[role_id(self.db, 'Administrator')], gueltig_bis=date.today().isoformat()), 'Erste')
+        self.assertEqual(zugang.check_login(self.db, 'befristet', PASSWORT), 'befristet')   # „gültig bis“ heute: noch gültig
+        self.assertEqual(rollen.rights_of(self.db, 'befristet')['verwaltung'], 'schreiben')
+        self.db.execute('UPDATE users SET gueltig_bis=? WHERE id=?', ((date.today() - timedelta(days=1)).isoformat(), uid))
+        self.db.commit()
+        self.assertEqual(rollen.rights_of(self.db, 'befristet'), {})
+        self.assertIsNone(zugang.check_login(self.db, 'befristet', PASSWORT))
+        self.assertTrue(next(u for u in rollen.overview(self.db)['users'] if u['id'] == uid)['abgelaufen'])
+        erste = self.db.execute("SELECT id FROM users WHERE name='Erste'").fetchone()[0]
+        with self.assertRaises(ValueError):                                            # die abgelaufene Person zählt nicht als Verwaltung
+            rollen.save_user(self.db, P('Erste', id=erste, roles=[]), 'befristet')
+        past = (date.today() - timedelta(days=1)).isoformat()
+        rollen.save_user(self.db, P('befristet', id=uid, gueltig_bis=past, funktion='Technik', roles=[]), 'Erste')   # altes Datum darf stehen bleiben
+        rollen.save_user(self.db, P('befristet', id=uid, gueltig_bis=None, roles=[]), 'Erste')                      # verlängert: wieder gültig
+        self.assertEqual(zugang.check_login(self.db, 'befristet', PASSWORT), 'befristet')
+
+    def test_old_database_without_new_columns_is_migrated(self):
+        import sqlite3
+        path = Path(self.tmp.name) / 'alt.db'
+        con = sqlite3.connect(path)
+        con.execute('CREATE TABLE users(id INTEGER PRIMARY KEY,name TEXT UNIQUE NOT NULL,password TEXT NOT NULL)')
+        con.execute("INSERT INTO users(name,password) VALUES('Alte Person','')")   # Name mit Leerzeichen aus älterer Version bleibt gültig
+        con.commit()
+        con.close()
+        store = Store(path)
+        self.addCleanup(store.db.close)
+        columns = {row[1] for row in store.db.execute('PRAGMA table_info(users)')}
+        self.assertEqual({c for c, _ in rollen.USER_COLUMNS} - columns, set())
+        row = store.db.execute("SELECT active,totp_pflicht,sitzung_stand,vorname,gueltig_bis,keycloak_id FROM users WHERE name='Alte Person'").fetchone()
+        self.assertEqual(tuple(row), (1, 1, 0, None, None, None))
+        self.assertEqual(rollen.rights_of(store.db, 'Alte Person'), VOLL)
+        uid = store.db.execute("SELECT id FROM users WHERE name='Alte Person'").fetchone()[0]
+        rollen.save_user(store.db, P('Alte Person', id=uid, email='alt@example.org', password=PASSWORT, roles=[role_id(store.db, 'Administrator')]), 'Alte Person')
+        rollen.init(store.db)                                                          # zweimal: nichts doppelt
 
     def test_every_server_address_is_classified(self):
         """Neue Adressen in app.py müssen in rollen.GET bzw. rollen.POST stehen – und keine Einträge ohne Adresse."""
@@ -234,7 +311,7 @@ class RollenHttpTests(unittest.TestCase):
         return status, body
 
     def person(self, name, *roles):
-        status, body = self.post(self.chefin, '/api/benutzer', {'name': name, 'password': PASSWORT, 'roles': [self.roles[r] for r in roles], 'active': True})
+        status, body = self.post(self.chefin, '/api/benutzer', {**P(name), 'password': PASSWORT, 'roles': [self.roles[r] for r in roles], 'active': True})
         self.assertEqual(status, 200, body)
         return self.login(name)
 
@@ -269,8 +346,8 @@ class RollenHttpTests(unittest.TestCase):
         self.assertNotEqual(self.post(who, '/api/klaerfall-notiz', {})[0], 403)                        # darf (scheitert nur an den fehlenden Angaben)
 
     def test_read_only_roles_cannot_change_anything(self):
-        for role in ('Landesgeschäftsführer', 'Landesvorsitzender'):
-            who = self.person(role + ' Person', role)
+        for number, role in enumerate(('Landesgeschäftsführer', 'Landesvorsitzender')):
+            who = self.person(f'leitung{number}', role)
             status, data = self.get(who, '/api/data?year=2026')
             self.assertEqual(len(data['members']), 1)
             self.assertEqual(len(data['bank']), 1)
@@ -285,7 +362,7 @@ class RollenHttpTests(unittest.TestCase):
             self.assertEqual(self.get(who, '/api/sepa.xml?batch=1')[0], 403)
         store = Store(app.DB)
         try:
-            self.assertEqual(store.rows("SELECT action FROM audit WHERE actor LIKE 'Landes%'"), [])   # Lesen hinterlässt keine Änderung
+            self.assertEqual(store.rows("SELECT action FROM audit WHERE actor LIKE 'leitung%'"), [])   # Lesen hinterlässt keine Änderung
         finally:
             store.db.close()
 
@@ -301,10 +378,10 @@ class RollenHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual({u['name'] for u in overview['users']}, {'Chefin', 'Technik'})
         self.assertNotIn('scrypt', json.dumps(overview))
-        self.assertEqual(self.post(who, '/api/benutzer', {'name': 'Neue Person', 'password': PASSWORT, 'roles': [self.roles['Landesvorsitzender']]})[0], 200)
+        self.assertEqual(self.post(who, '/api/benutzer', {**P('Neue.Person'), 'password': PASSWORT, 'roles': [self.roles['Landesvorsitzender']]})[0], 200)
         # eine Person ohne Rolle sieht nur die leere Startseite
-        self.assertEqual(self.post(who, '/api/benutzer', {'name': 'Ohne Rolle', 'password': PASSWORT, 'roles': []})[0], 200)
-        nobody = self.login('Ohne Rolle')
+        self.assertEqual(self.post(who, '/api/benutzer', {**P('Ohne.Rolle'), 'password': PASSWORT, 'roles': []})[0], 200)
+        nobody = self.login('Ohne.Rolle')
         self.assertEqual(self.get(nobody, '/api/status')[1]['rights'], {})
         self.assertEqual(self.get(nobody, '/api/data?year=2026')[1]['members'], [])
         self.assertNotIn('issuer', self.get(nobody, '/api/data?year=2026')[1]['settings'])
@@ -321,10 +398,10 @@ class RollenHttpTests(unittest.TestCase):
         role = next(r for r in overview['roles'] if r['name'] == 'Landesvorsitzender')
         self.assertEqual(self.post(self.chefin, '/api/rolle', {'id': role['id'], 'name': role['name'], 'rights': {'auswertung': 'lesen'}})[0], 200)
         self.assertEqual(self.get(who, '/api/kasse?year=2026')[0], 403)                                # Rolle geändert: gilt sofort
-        self.assertEqual(self.post(self.chefin, '/api/benutzer', {'id': user['id'], 'name': 'Wechsel', 'roles': user['roles'], 'active': False})[0], 200)
+        self.assertEqual(self.post(self.chefin, '/api/benutzer', {**P('Wechsel'), 'id': user['id'], 'roles': user['roles'], 'active': False})[0], 200)
         self.assertEqual(self.get(who, '/api/data?year=2026')[0], 401)                                 # deaktiviert: Sitzung endet
         self.assertEqual(self.call('/api/login', {'name': 'Wechsel', 'password': PASSWORT})[0], 401)
-        self.assertEqual(self.post(self.chefin, '/api/benutzer', {'id': user['id'], 'name': 'Wechsel', 'roles': user['roles'], 'active': True, 'password': PASSWORT + '-neu'})[0], 200)
+        self.assertEqual(self.post(self.chefin, '/api/benutzer', {**P('Wechsel'), 'id': user['id'], 'roles': user['roles'], 'active': True, 'password': PASSWORT + '-neu'})[0], 200)
         self.assertEqual(self.call('/api/login', {'name': 'Wechsel', 'password': PASSWORT + '-neu'})[0], 200)
 
     def test_management_only_in_server_mode(self):
@@ -337,6 +414,28 @@ class RollenHttpTests(unittest.TestCase):
             app.MODE = 'server'
         self.assertEqual(self.get(self.chefin, '/api/benutzer')[0], 200)
 
+    def test_ending_sessions_and_expiry_end_the_session(self):
+        who = self.person('sitzung', 'Landesvorsitzender')
+        self.assertEqual(self.get(who, '/api/data?year=2026')[0], 200)
+        store = Store(app.DB)
+        try:
+            uid = store.db.execute("SELECT id FROM users WHERE name='sitzung'").fetchone()[0]
+            rollen.sitzungen_beenden(store.db, uid)
+        finally:
+            store.db.close()
+        self.assertEqual(self.get(who, '/api/data?year=2026')[0], 401)                 # Sitzungsstand hochgezählt: abgemeldet
+        self.assertEqual(self.get(self.chefin, '/api/data?year=2026')[0], 200)         # andere Personen nicht
+        who = self.login('sitzung')
+        self.assertEqual(self.get(who, '/api/data?year=2026')[0], 200)
+        store = Store(app.DB)
+        try:
+            store.db.execute("UPDATE users SET gueltig_bis='2020-01-31' WHERE id=?", (uid,))
+            store.db.commit()
+        finally:
+            store.db.close()
+        self.assertEqual(self.get(who, '/api/data?year=2026')[0], 401)                 # abgelaufen: Sitzung endet
+        self.assertEqual(self.call('/api/login', {'name': 'sitzung', 'password': PASSWORT})[0], 401)
+
     def test_session_without_fingerprint_is_invalid(self):
         for s in app.SESSIONS.values():
             s['fp'] = None
@@ -345,7 +444,7 @@ class RollenHttpTests(unittest.TestCase):
     def test_last_admin_is_protected_over_http(self):
         status, overview = self.get(self.chefin, '/api/benutzer')
         me = next(u for u in overview['users'] if u['name'] == 'Chefin')
-        status, body = self.post(self.chefin, '/api/benutzer', {'id': me['id'], 'name': 'Chefin', 'roles': [], 'active': True})
+        status, body = self.post(self.chefin, '/api/benutzer', {**P('Chefin'), 'id': me['id'], 'roles': [], 'active': True})
         self.assertEqual(status, 400)
         self.assertIn('Mindestens eine', body['error'])
         self.assertEqual(self.get(self.chefin, '/api/benutzer')[0], 200)

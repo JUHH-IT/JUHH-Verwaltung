@@ -36,8 +36,9 @@ import erechnung
 import erstattung
 import geheimnis
 import zugang
+import keycloak
 
-VERSION='0.35'
+VERSION='0.36'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -48,6 +49,11 @@ BACKUPS=None  # Standard: Sicherungen neben dem Datenordner
 MODE='mac'
 ADDRESSES=[]           # Servermodus: Adressen, unter denen die Oberfläche aufgerufen wird, z. B. https://ju-finanzen.beispiel.ts.net
 THROTTLE=zugang.Throttle()   # im Serverbetrieb mit Datei im Datenordner (main)
+# Anmeldung über Keycloak (0.36, JU_FINANZEN_ANMELDUNG=keycloak): Einstellungen und Admin-API; None = Anmeldung mit Passwort
+KEYCLOAK=None; KC_ADMIN=None
+KC_VORGAENGE={}        # begonnene Anmeldungen (state, nonce, PKCE) nur im Arbeitsspeicher; der Browser hat nur eine zufällige Kennung
+KC_MAX_VORGAENGE=200   # alle zusammen; darüber neue Starts ablehnen statt fremde Vorgänge zu verdrängen
+KC_JE_GERAET=5         # je Gerät (Handler.device); verdrängt wird nur innerhalb desselben Geräts
 MAC_PATHS=('/api/stop','/api/login-code','/api/login-device','/api/shutdown')
 NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltung (Benutzer und Rollen).'
 # Serverbetrieb (0.35): kritische Aktionen nur mit frischer Passwortbestätigung (POST /api/bestaetigen, gilt 5 Minuten)
@@ -56,6 +62,7 @@ CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-lis
          ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
          ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
          ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
+         ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben')}
 CONFIRM_SECONDS=300
 # im Notfall/Wartung auch ohne „Sicherheit ändern“ – bewusst ohne /api/password: ein übernommenes Konto soll die echte Person nicht aussperren
@@ -87,6 +94,48 @@ def save_receipt(store,table,rid,number,filename,suffix,raw):
         raise ValueError(f'{number} ist erfasst, der Beleg konnte aber nicht gespeichert werden.')
 
 def server_mode(): return MODE=='server'
+def keycloak_mode(): return server_mode() and KEYCLOAK is not None
+
+def notzugang(db,name):
+    """Keycloak-Betrieb: Anmeldung mit lokalem Passwort nur als Notzugang – solange auf dem Server freigeschaltet
+    (`sudo ju-finanzen notzugang`) und nur für eine Person mit „Verwaltung schreiben“ und Passwort."""
+    user=zugang.find_user(db,name)
+    return (bool(user) and zugang.is_set(user['password']) and sicherheit.notzugang_offen(db) is not None
+            and rollen.can(rollen.rights_of(db,user['name']),'verwaltung','schreiben'))
+
+def kc_abmelden(db,name):
+    """Keycloak-Sitzungen der Person beenden – best effort: ein Fehler wird nur protokolliert (Meldung ohne Tokens)."""
+    row=db.execute('SELECT keycloak_id FROM users WHERE name=?',(name,)).fetchone() if keycloak_mode() else None
+    if not row or not row[0]: return
+    try: KC_ADMIN.abmelden(row[0])
+    except keycloak.KeycloakFehler as e: log(f'Keycloak-Abmeldung für {name} nicht möglich: {e}')
+
+def kc_abgleichen(db,uid,actor):
+    """Person nach dem Speichern in Keycloak anlegen bzw. angleichen. Liefert beim Anlegen {'startpasswort'} – genau einmal,
+    nie gespeichert oder protokolliert – oder {'keycloak_fehler': Meldung}; die Person bleibt in jedem Fall gespeichert."""
+    u=db.execute(f'SELECT name,vorname,nachname,email,totp_pflicht,keycloak_id,{rollen.GILT} AS gilt FROM users WHERE id=?',(rollen._id(uid),)).fetchone()
+    if not u: raise ValueError('Person nicht gefunden.')
+    result={}
+    try:
+        if u['keycloak_id']:
+            KC_ADMIN.aendern(u['keycloak_id'],u['vorname'],u['nachname'],u['email'],bool(u['gilt']),bool(u['totp_pflicht']))
+        else:
+            if not (u['vorname'] and u['nachname'] and u['email']):
+                raise keycloak.KeycloakFehler('Bitte zuerst Vorname, Nachname und E-Mail in „Benutzer & Rollen“ ergänzen.')
+            if not rollen.USERNAME.fullmatch(u['name']):   # ältere Namen (z. B. mit Leerzeichen) nimmt Keycloak nicht an
+                raise keycloak.KeycloakFehler(f'„{u["name"]}“ geht nicht als Anmeldename in Keycloak. Bitte auf dem Server mit eigenem '
+                                              f'Anmeldenamen verbinden: sudo ju-finanzen keycloak-verbinden "{u["name"]}" --kc-name vorname.nachname')
+            pw=keycloak.startpasswort()
+            kid=KC_ADMIN.anlegen(u['name'],u['vorname'],u['nachname'],u['email'],bool(u['gilt']),pw,bool(u['totp_pflicht']))
+            with db:
+                db.execute('UPDATE users SET keycloak_id=? WHERE id=?',(kid,uid))
+                rollen._audit(db,actor,'Mit Keycloak verbunden',{'benutzer':u['name']})
+            result['startpasswort']=pw
+    except keycloak.KeycloakFehler as e:
+        log(f'Keycloak-Abgleich für {u["name"]} nicht möglich: {e}');result['keycloak_fehler']=str(e)
+    if not u['gilt']:   # inaktiv oder abgelaufen: überall abmelden
+        kc_abmelden(db,u['name']);rollen.sitzungen_beenden(db,uid)
+    return result
 
 def clean_address(text):
     """Adresse wie https://ju-finanzen.beispiel.ts.net oder http://100.64.0.1:8769 → 'schema://host[:port]'."""
@@ -110,14 +159,14 @@ def wait_text(seconds):
     return '1 Minute' if minutes==1 else f'{minutes} Minuten'
 
 def user_fingerprint(name):
-    """Fingerabdruck des gespeicherten Passwort-Hashes (Servermodus): ändert sich das Passwort – auch über verwaltung.py –,
-    enden bestehende Sitzungen bei der nächsten Anfrage."""
+    """Fingerabdruck aus Passwort-Hash und Sitzungsstand (Servermodus): ändert sich das Passwort – auch über verwaltung.py –
+    oder zählt `rollen.sitzungen_beenden` hoch, enden bestehende Sitzungen bei der nächsten Anfrage."""
     try:
         con=sqlite3.connect(f'file:{DB}?mode=ro',uri=True,timeout=5)
-        try: row=con.execute('SELECT password,active FROM users WHERE name=?',(name,)).fetchone()
+        try: row=con.execute(f'SELECT password,sitzung_stand FROM users WHERE name=? AND {rollen.GILT}',(name,)).fetchone()
         finally: con.close()
     except sqlite3.Error: return None
-    return zugang.fingerprint(row[0]) if row and row[1] else None   # deaktiviert: keine gültige Sitzung mehr
+    return zugang.fingerprint(f'{row[0]}#{row[1]}') if row else None   # deaktiviert oder abgelaufen: keine gültige Sitzung mehr
 
 def log(text): print(time.strftime('%Y-%m-%d %H:%M:%S')+' '+text,flush=True)
 
@@ -250,21 +299,90 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('X-Forwarded-Proto','').lower()=='https' and self.client_address[0] in ('127.0.0.1','::1'): return True
         host=(self.headers.get('Host') or '').lower()
         return any(a.startswith('https://') and urlparse(a).netloc in (host,host.removesuffix(':443')) for a in ADDRESSES)
-    def cookie_name(self):
+    def cookie_name(self,base='ju_session'):
         # über HTTPS mit __Host-Präfix: kein anderer Rechner im Tailnet (*.ts.net) kann den Cookie setzen oder überschreiben
-        return '__Host-ju_session' if self.via_https() else 'ju_session'
-    def cookie(self,sid=''):
-        flags='; HttpOnly; SameSite=Strict; Path=/'+('; Secure' if self.via_https() else '')
-        name=self.cookie_name()
-        return f'{name}={sid}{flags}' if sid else f'{name}=; Max-Age=0{flags}'
-    def session_id(self):
-        """Sitzungsschlüssel aus dem Cookie-Kopf – selbst gelesen, damit fremde Cookies (z. B. von anderen Rechnern im Tailnet)
+        return f'__Host-{base}' if self.via_https() else base
+    def cookie(self,sid='',base='ju_session'):
+        """Sitzung (SameSite=Strict) bzw. Keycloak-Vorgang `ju_kc` (Lax, 10 Minuten – muss die Rückkehr von Keycloak überstehen)."""
+        lax=base=='ju_kc'
+        flags=f'; HttpOnly; SameSite={"Lax" if lax else "Strict"}; Path=/'+('; Secure' if self.via_https() else '')
+        name=self.cookie_name(base)
+        if not sid: return f'{name}=; Max-Age=0{flags}'
+        return f'{name}={sid}{flags}'+(f'; Max-Age={keycloak.VORGANG_SEKUNDEN}' if lax else '')
+    def cookie_value(self,base='ju_session'):
+        """Wert aus dem Cookie-Kopf – selbst gelesen, damit fremde Cookies (z. B. von anderen Rechnern im Tailnet)
         das Lesen nicht verhindern; nur der Name zur aktuellen Verbindung (HTTPS: __Host-) zählt."""
-        wanted=self.cookie_name()
+        wanted=self.cookie_name(base)
         for part in self.headers.get('Cookie','').split(';'):
             name,_,value=part.strip().partition('=')
             if name==wanted and value: return value.strip()
         return None
+    def session_id(self): return self.cookie_value()
+    def redirect(self,target,cookies=()):
+        self.send_response(302);self.send_header('Location',target);self.send_header('Content-Length','0')
+        self.send_header('Cache-Control','no-store');self.send_header('Referrer-Policy','no-referrer')
+        for c in cookies: self.send_header('Set-Cookie',c)
+        self.end_headers()
+    def keycloak_start(self,query):
+        """Anmeldung über Keycloak beginnen (`aktion`: passwort = danach Passwort ändern, bestaetigen = erneut anmelden als
+        Bestätigung einer kritischen Aktion). Der Vorgang bleibt im Arbeitsspeicher; der Browser bekommt nur eine Kennung."""
+        aktion=query.get('aktion',[''])[0]
+        if aktion not in ('','passwort','bestaetigen'): return self.redirect('/?anmeldung=fehler')
+        s=self.session() if aktion=='bestaetigen' else None
+        if aktion=='bestaetigen' and not s: return self.redirect('/?anmeldung=abgelaufen')
+        url,vorgang=keycloak.anmeldung_starten(KEYCLOAK,keycloak.PASSWORT_AKTION if aktion=='passwort' else None)
+        vorgang.update(aktion=aktion,geraet=self.device())
+        if s: vorgang['sitzung']=s
+        vid=secrets.token_urlsafe(32)
+        with LOGIN_LOCK:
+            now=time.time()
+            for k,v in list(KC_VORGAENGE.items()):
+                if now-v['erstellt']>keycloak.VORGANG_SEKUNDEN: KC_VORGAENGE.pop(k,None)
+            eigene=sorted((v['erstellt'],k) for k,v in KC_VORGAENGE.items() if v['geraet']==vorgang['geraet'])
+            for _,k in eigene[:max(0,len(eigene)-KC_JE_GERAET+1)]: KC_VORGAENGE.pop(k)   # älteste Vorgänge desselben Geräts
+            voll=len(KC_VORGAENGE)>=KC_MAX_VORGAENGE
+            if not voll: KC_VORGAENGE[vid]=vorgang
+        if voll:
+            log(f'Anmeldung über Keycloak abgelehnt: zu viele offene Vorgänge ({self.who()})')
+            return self.redirect('/?anmeldung=ueberlastet')
+        return self.redirect(url,[self.cookie(vid,'ju_kc')])
+    def keycloak_rueckkehr(self,store,query):
+        """Rückkehr von Keycloak: Vorgang einmalig einlösen, Person NUR über keycloak_id = sub finden (nie über den Namen),
+        gültig (rollen.GILT), bei App-Pflicht eingerichtete App; dann Sitzung wie /api/login. Fehler → /?anmeldung=<Kürzel>,
+        nie Tokens oder Details in Adresse oder Protokoll."""
+        vid=self.cookie_value('ju_kc')
+        with LOGIN_LOCK: vorgang=KC_VORGAENGE.pop(vid,None) if vid else None
+        weg=[self.cookie('',base='ju_kc')]
+        def fehler(code,person='',grund=''):
+            if grund: sicherheit.ereignis(store.db,'anmeldung_fehl',person,self.device(),{'keycloak':grund})
+            log(f'Anmeldung über Keycloak abgelehnt: {code} ({self.who()})')
+            return self.redirect('/?anmeldung='+code,weg)
+        if not vorgang: return fehler('abgelaufen')
+        keys=('geraet:'+self.device(),)
+        wait=THROTTLE.attempt(keys)
+        if wait: return fehler('gesperrt')
+        try: info=keycloak.anmeldung_abschliessen(KEYCLOAK,vorgang,query)
+        except keycloak.KeycloakFehler: return fehler('abgebrochen' if query.get('error')==['access_denied'] else 'fehler',grund='keycloak')
+        row=store.db.execute(f'SELECT id,name,totp_pflicht,{rollen.GILT} AS gilt FROM users WHERE keycloak_id=?',(info['sub'],)).fetchone()
+        if not row: return fehler('kein-zugang',grund='unbekannt')
+        if not row['gilt']: return fehler('kein-zugang',row['name'],'inaktiv')
+        try: ohne_app=bool(row['totp_pflicht']) and not KC_ADMIN.hat_app(info['sub'])
+        except keycloak.KeycloakFehler: return fehler('fehler',row['name'],'keycloak')
+        if ohne_app: return fehler('app',row['name'],'app')
+        s=self.session()
+        if 'sitzung' in vorgang:   # erneute Anmeldung als Bestätigung: nur dieselbe Sitzung und dieselbe Person
+            if s is not vorgang['sitzung'] or s['actor']!=row['name']: return fehler('fehler',row['name'],'bestaetigung')
+            THROTTLE.succeeded(keys);s['confirmed']=time.time()
+            return self.redirect('/?bestaetigt=1',weg)
+        THROTTLE.succeeded(keys)
+        if vorgang['aktion']=='passwort' and query.get('kc_action_status')==['success']:   # neues Passwort: andere Sitzungen enden
+            rollen.sitzungen_beenden(store.db,row['id']);log(f'Passwort über Keycloak geändert: {row["name"]}, andere Sitzungen beendet')
+        for k,v in list(SESSIONS.items()):   # eine ältere Sitzung dieses Browsers endet
+            if s is not None and v is s: SESSIONS.pop(k,None)
+        log(f'Angemeldet über Keycloak: {row["name"]} ({self.who()})')
+        sicherheit.ereignis(store.db,'anmeldung',row['name'],self.device(),{'keycloak':True})
+        sid,_=self.new_session(row['name'])
+        return self.redirect('/',[*weg,self.cookie(sid)])
     def session(self):
         if hasattr(self,'_session'): return self._session
         sid=self.session_id();s=SESSIONS.get(sid) if sid else None;now=time.time()
@@ -360,9 +478,15 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/status':
                 s=self.session()
                 configured=any(zugang.is_set(u['password']) for u in store.rows('SELECT password FROM users')) if server_mode() else bool(store.rows('SELECT id FROM users'))
-                return self.send(200,{'app':APP_NAME,'version':VERSION,'instance':INSTANCE,'mode':MODE,'auth':'password' if server_mode() else 'macos','configured':configured,
+                auth='keycloak' if keycloak_mode() else 'password' if server_mode() else 'macos'
+                # passwort_lokal: eigenes Passwort im Programm (Passwortbetrieb; im Keycloak-Betrieb nur der Notzugang)
+                lokal=bool(s) and server_mode() and (not keycloak_mode() or notzugang(store.db,s['actor']))
+                return self.send(200,{'app':APP_NAME,'version':VERSION,'instance':INSTANCE,'mode':MODE,'auth':auth,'configured':configured,'passwort_lokal':lokal,
                                       'mail_busy':versand.busy(),'user':s['actor'] if s else None,'csrf':s['csrf'] if s else None,
                                       'rights':self.rights(store) if s else {},'sperre':self.sperre_info(store,s)})
+            if path in ('/api/keycloak/start','/api/keycloak/rueckkehr'):   # ohne Sitzung (rollen.OUTSIDE)
+                if not keycloak_mode(): return self.send(404,{'error':'Nicht gefunden.'})
+                return self.keycloak_start(query) if path.endswith('/start') else self.keycloak_rueckkehr(store,query)
             if path.startswith('/api/'):
                 if not self.session(): return self.send(401,{'error':'Bitte anmelden.'})
                 rights=self.rights(store)
@@ -601,13 +725,14 @@ class Handler(BaseHTTPRequestHandler):
                 wait=THROTTLE.attempt(keys)
                 if wait: return self.send(429,{'error':f'Zu viele Fehlversuche. Bitte {wait_text(wait)} warten.','wait':wait})
                 actor=zugang.check_login(store.db,data.get('name'),data.get('password'))
+                if actor and keycloak_mode() and not notzugang(store.db,actor): actor=None   # Keycloak-Betrieb: Passwort nur als Notzugang
                 if not actor:
                     log('Anmeldung fehlgeschlagen ('+self.who()+')')
                     known=zugang.find_user(store.db,data.get('name'))   # nur bekannte Namen ins Protokoll (Tippfehler könnten Passwörter sein)
                     sicherheit.ereignis(store.db,'anmeldung_fehl',known['name'] if known else '',self.device(),{'name_bekannt':bool(known)})
                     return self.send(401,{'error':'Benutzername oder Passwort ist falsch.'})
                 THROTTLE.succeeded(keys);log(f'Angemeldet: {actor} ({self.who()})')
-                sicherheit.ereignis(store.db,'anmeldung',actor,self.device())
+                sicherheit.ereignis(store.db,'notzugang' if keycloak_mode() else 'anmeldung',actor,self.device())
                 sid,s=self.new_session(actor);return self.send(200,{'csrf':s['csrf'],'user':actor},cookie=self.cookie(sid))
             if path=='/api/stop':
                 # Beenden durch den Mac-Starter bei Updates; Schlüssel liegt nur lesbar für den Benutzer in Daten/.steuerung
@@ -646,10 +771,13 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/logout':
                 for k,v in list(SESSIONS.items()):
                     if v is s: del SESSIONS[k]
+                kc_abmelden(store.db,actor)   # auch bei Keycloak abmelden (Keycloak-Betrieb)
                 return self.send(200,result,cookie=self.cookie())
             elif path=='/api/password':
                 # eigenes Passwort ändern (Servermodus): altes Passwort nötig; andere Sitzungen dieses Benutzers enden
                 if not server_mode(): return self.send(404,{'error':'Nicht gefunden.'})
+                if keycloak_mode() and not notzugang(store.db,actor):
+                    raise ValueError('Dein Passwort änderst du bei Keycloak: Einstellungen → Anmeldung → „Passwort ändern“.')
                 keys=('geraet:'+self.device(),'name:'+actor.lower())
                 wait=THROTTLE.attempt(keys)
                 if wait: return self.send(429,{'error':f'Zu viele Fehlversuche. Bitte {wait_text(wait)} warten.','wait':wait})
@@ -663,8 +791,12 @@ class Handler(BaseHTTPRequestHandler):
                 s['fp']=user_fingerprint(actor)   # eigene Sitzung bleibt gültig
                 log(f'Passwort geändert: {actor}')
             elif path in ('/api/benutzer','/api/rolle','/api/rolle-loeschen') and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
+            elif path in ('/api/benutzer-abgleichen','/api/benutzer-startpasswort','/api/benutzer-app-zuruecksetzen') and not keycloak_mode():
+                return self.send(404,{'error':'Nur bei Anmeldung über Keycloak.'})
             elif path=='/api/bestaetigen':
-                # Passwortbestätigung für kritische Aktionen; Fehlversuche zählen wie bei der Anmeldung
+                # Passwortbestätigung für kritische Aktionen; Fehlversuche zählen wie bei der Anmeldung.
+                # Keycloak-Betrieb: nur der Notzugang bestätigt mit Passwort, alle anderen melden sich erneut bei Keycloak an
+                if keycloak_mode() and not notzugang(store.db,actor): raise ValueError('Bitte zur Bestätigung erneut über Keycloak anmelden.')
                 keys=('geraet:'+self.device(),'name:'+actor.lower())
                 wait=THROTTLE.attempt(keys)
                 if wait: return self.send(429,{'error':f'Zu viele Fehlversuche. Bitte {wait_text(wait)} warten.','wait':wait})
@@ -687,7 +819,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not found: raise ValueError('Diese Sitzung gibt es nicht mehr.')
                 if SESSIONS.get(found[0]) is s: raise ValueError('Die eigene Sitzung bitte über „Abmelden“ beenden.')
                 gone=SESSIONS.pop(found[0],None)
-                if gone: sicherheit.ereignis(store.db,'sitzung_beendet',actor,self.device(),{'person':gone['actor']})
+                if gone:
+                    sicherheit.ereignis(store.db,'sitzung_beendet',actor,self.device(),{'person':gone['actor']})
+                    kc_abmelden(store.db,gone['actor'])   # sonst meldet sich der Browser ohne Passwort über Keycloak wieder an
             elif path=='/api/sperre-aufheben':
                 found=[x for x in self.sperren(store) if x['key']==str(data.get('key',''))]
                 keys=[k for k,_,_ in THROTTLE.gesperrt() if hashlib.sha256(k.encode()).hexdigest()[:16]==str(data.get('key',''))]
@@ -696,7 +830,23 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/dateipruefung': result['ergebnis']=sicherheit.dateipruefung_lauf(store.db,ROOT,actor,self.device())
             elif path=='/api/benutzer':
                 # Person anlegen/ändern (Verwaltung): ein neues Passwort oder das Deaktivieren beendet deren Sitzungen (Fingerabdruck)
-                result['id']=rollen.save_user(store.db,data,actor);log(f'Person gespeichert durch {actor}')
+                result['id']=rollen.save_user(store.db,data,actor,lokal=not keycloak_mode());log(f'Person gespeichert durch {actor}')
+                if keycloak_mode(): result.update(kc_abgleichen(store.db,result['id'],actor))   # Startpasswort nur in dieser Antwort
+            elif path=='/api/benutzer-abgleichen':
+                r=kc_abgleichen(store.db,data.get('id'),actor)
+                if 'keycloak_fehler' in r: raise keycloak.KeycloakFehler(r['keycloak_fehler'])
+                result.update(r)
+            elif path in ('/api/benutzer-startpasswort','/api/benutzer-app-zuruecksetzen'):
+                # neues Startpasswort bzw. Authenticator-App entfernen; danach überall abmelden (Programm und Keycloak)
+                uid=rollen._id(data.get('id'));u=store.db.execute('SELECT name,keycloak_id FROM users WHERE id=?',(uid,)).fetchone()
+                if not u: raise ValueError('Person nicht gefunden.')
+                if not u['keycloak_id']: raise ValueError('Die Person ist noch nicht mit Keycloak verbunden – bitte zuerst „Mit Keycloak abgleichen“.')
+                if path=='/api/benutzer-startpasswort':
+                    pw=keycloak.startpasswort();KC_ADMIN.startpasswort_setzen(u['keycloak_id'],pw);result['startpasswort']=pw
+                else: KC_ADMIN.app_zuruecksetzen(u['keycloak_id'])
+                with store.db: rollen._audit(store.db,actor,'Startpasswort neu vergeben' if path.endswith('startpasswort') else 'Authenticator-App zurückgesetzt',{'benutzer':u['name']})
+                rollen.sitzungen_beenden(store.db,uid);kc_abmelden(store.db,u['name'])
+                if u['name']==actor: s['fp']=user_fingerprint(actor)   # die eigene, gerade bestätigte Sitzung bleibt
             elif path=='/api/rolle': result['id']=rollen.save_role(store.db,data,actor)
             elif path=='/api/rolle-loeschen': rollen.delete_role(store.db,data.get('id') or 0,actor)
             elif path=='/api/shutdown':
@@ -933,6 +1083,7 @@ class Handler(BaseHTTPRequestHandler):
         except (csv.Error,OverflowError,zipfile.BadZipFile,EOFError):   # beschädigte oder ungewöhnliche Importdatei
             self.send(400,{'error':'Die Datei ist nicht lesbar oder beschädigt. Bitte das Original erneut exportieren.'})
         except mitglieder.PasswordNeeded as e: self.send(400,{'error':str(e),'password':e.state})   # Oberfläche fragt das Kennwort ab
+        except keycloak.KeycloakFehler as e: self.send(502,{'error':str(e)})   # Meldung ohne Tokens oder Antwortinhalte
         except (ValueError,KeyError,TypeError) as e: self.send(400,{'error':str(e)})
         except Exception:
             log_error('POST '+path);self.send(500,{'error':'Interner Fehler. Die Aktion konnte nicht abgeschlossen werden.'})
@@ -994,8 +1145,22 @@ def check_bind(host):
                          'so wäre das Programm ohne Verschlüsselung im lokalen Netz oder Internet erreichbar.')
     return str(ip)
 
+def keycloak_from_env(env):
+    """JU_FINANZEN_ANMELDUNG = passwort (Standard) | keycloak. Keycloak nur mit vollständiger, passender Einrichtung – sonst
+    ValueError (Start abgebrochen) statt stillem Rückfall auf Passwörter."""
+    art=(env.get('JU_FINANZEN_ANMELDUNG') or 'passwort').strip().lower()
+    if art not in ('passwort','keycloak'): raise ValueError('JU_FINANZEN_ANMELDUNG muss „passwort“ oder „keycloak“ sein.')
+    if art=='passwort': return None
+    cfg=keycloak.aus_umgebung(env)
+    if not cfg: raise ValueError('JU_FINANZEN_ANMELDUNG=keycloak, aber Keycloak ist nicht eingerichtet (JU_FINANZEN_KEYCLOAK_*; sudo ju-finanzen keycloak-einrichten).')
+    origin=lambda url:clean_address('{0.scheme}://{0.netloc}'.format(urlparse(url)))
+    # Keycloak muss unter derselben Adresse laufen (…/auth): sonst lehnt die Herkunftsprüfung (Sec-Fetch-Site) die Rückkehr ab
+    if origin(cfg.issuer) not in ADDRESSES or origin(cfg.redirect_uri) not in ADDRESSES or urlparse(cfg.redirect_uri).path!='/api/keycloak/rueckkehr' or urlparse(cfg.redirect_uri).query:
+        raise ValueError('Keycloak-Adressen passen nicht zu JU_FINANZEN_ADRESSEN: ISSUER und RUECKKEHR müssen auf eine eingetragene Adresse zeigen, RUECKKEHR auf /api/keycloak/rueckkehr.')
+    return cfg
+
 def main(argv=None):
-    global DATA,DB,BACKUPS,MODE,ADDRESSES,THROTTLE
+    global DATA,DB,BACKUPS,MODE,ADDRESSES,THROTTLE,KEYCLOAK,KC_ADMIN
     parser=argparse.ArgumentParser(description=f'{APP_NAME} {VERSION}')
     parser.add_argument('--no-browser',action='store_true');parser.add_argument('--port',type=int,default=int(os.environ.get('JU_FINANZEN_PORT') or 8769))
     parser.add_argument('--data',help='Ordner für Datenbank und importierte Kontoauszüge')
@@ -1013,6 +1178,9 @@ def main(argv=None):
         try: ADDRESSES=sorted({clean_address(a) for a in (args.adresse if args.adresse is not None else env_list('JU_FINANZEN_ADRESSEN'))})
         except ValueError as e: print(str(e),flush=True);return 4
         host=check_bind(args.host)
+        try: KEYCLOAK=keycloak_from_env(os.environ)
+        except ValueError as e: print('Start abgebrochen: '+str(e),flush=True);return 5
+        KC_ADMIN=keycloak.Verwaltung(KEYCLOAK) if KEYCLOAK else None
     backups=backups_dir()
     DATA.mkdir(parents=True,exist_ok=True);(DATA/'Importe').mkdir(exist_ok=True)
     print(f'{APP_NAME} {VERSION} – Start {time.strftime("%Y-%m-%d %H:%M:%S")} – Daten: {DATA}'+(' – Serverbetrieb' if server_mode() else ''),flush=True)

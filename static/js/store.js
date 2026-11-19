@@ -6,6 +6,8 @@ export const store = {
   user: '',
   version: '',
   mode: 'mac',       // 'mac' (Programmfenster) oder 'server' (Browser, Anmeldung mit Passwort)
+  auth: '',          // Anmeldung: 'macos' | 'password' | 'keycloak' (ab 0.36, Serverbetrieb mit Keycloak)
+  passwortLokal: false,   // eigenes Passwort im Programm (Passwortbetrieb; im Keycloak-Betrieb nur der Notzugang der Verwaltung)
   rights: {},        // Rechte der angemeldeten Person je Bereich: 'lesen' | 'schreiben' (ab 0.34; der Server prüft verbindlich)
   year: new Date().getFullYear(),
   page: 'overview',
