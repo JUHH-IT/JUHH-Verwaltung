@@ -26,18 +26,22 @@ AREAS = (
     ('einstellungen', 'Einstellungen', 'Stammdaten des Verbands, Schalter, E-Mail-Konto'),
     ('sicherung', 'Sicherung', 'lesen: Stand der Sicherung; schreiben: Sicherung herunterladen (enthält alle Daten)'),
     ('verwaltung', 'Benutzer und Rollen', 'Personen anlegen, Rollen und Rechte ändern'),
+    ('sicherheit', 'Sicherheit', 'lesen: Lagebild, Ereignisse, Notfall auslösen; ändern: Sitzungen und Sperren, Notfall beenden, Wartung, Dateiprüfung (ab 0.35)'),
 )
 AREA_IDS = tuple(area for area, _, _ in AREAS)
 ALL = {area: 'schreiben' for area in AREA_IDS}
 
 READ_ALL = {'mitglieder': 'lesen', 'buchhaltung': 'lesen', 'verband': 'lesen', 'auswertung': 'lesen'}
+LEITUNG = {**READ_ALL, 'sicherheit': 'lesen'}   # sieht die Sicherheitslage und darf im Ernstfall den Notfall auslösen
+# shortcut: der Anfangsbestand gilt nur für eine Datenbank ohne Rollen – 0.34 lief nirgends produktiv, deshalb keine Ergänzung
+# bestehender Rollen um „sicherheit“; bei einer späteren Rechte-Erweiterung mit bestehenden Rollen eine einmalige Übernahme bauen
 DEFAULT_ROLES = (   # Entscheidung Lennert Gust 12.11.2026; in der Verwaltung änderbar
     ('Schatzmeister', {'mitglieder': 'lesen', 'buchhaltung': 'schreiben', 'verband': 'schreiben', 'auswertung': 'lesen',
-                       'einstellungen': 'schreiben', 'sicherung': 'schreiben'}),
+                       'einstellungen': 'schreiben', 'sicherung': 'schreiben', 'sicherheit': 'lesen'}),
     ('Landesmitgliederbeauftragter', {'mitglieder': 'schreiben', 'auswertung': 'lesen'}),
-    ('Landesgeschäftsführer', READ_ALL),
-    ('Landesvorsitzender', READ_ALL),
-    ('Administrator', {'verwaltung': 'schreiben', 'sicherung': 'lesen'}),
+    ('Landesgeschäftsführer', LEITUNG),
+    ('Landesvorsitzender', LEITUNG),
+    ('Administrator', {'verwaltung': 'schreiben', 'sicherung': 'lesen', 'sicherheit': 'schreiben'}),
 )
 OWNER_ROLES = ('Schatzmeister', 'Landesmitgliederbeauftragter', 'Administrator')   # zusammen: alles schreiben
 
@@ -72,6 +76,9 @@ GET = {
     # Lastschriftdatei: enthält die IBANs im Klartext und vermerkt den Abruf – das ist kein Lesen
     '/api/sepa.xml': _w(_B),
     '/api/benutzer': _r('verwaltung'),
+    # Sicherheit (0.35): Lage und Ereignisse lesen; Sitzungen, Konten und System nur mit „ändern“
+    **{path: _r('sicherheit') for path in ('/api/sicherheit', '/api/sicherheit-ereignisse', '/api/sicherheit-ereignisse.csv')},
+    '/api/sicherheit-verwaltung': _w('sicherheit'),
 }
 POST = {
     '/api/logout': FREE, '/api/password': FREE,
@@ -98,6 +105,9 @@ POST = {
         '/api/cancel-invoice', '/api/preview-bank', '/api/preview-master', '/api/import-master', '/api/import-bank', '/api/book',
         '/api/park', '/api/forget', '/api/reverse-bank')},
     **{path: _w('verwaltung') for path in ('/api/benutzer', '/api/rolle', '/api/rolle-loeschen')},
+    '/api/bestaetigen': FREE,
+    '/api/notfall-an': _r('sicherheit'),   # viele dürfen auslösen, nur „ändern“ darf beenden (ein übernommenes Konto hebt ihn nicht auf)
+    **{path: _w('sicherheit') for path in ('/api/notfall-aus', '/api/wartung', '/api/sitzung-beenden', '/api/sperre-aufheben', '/api/dateipruefung')},
 }
 # ohne Sitzung bzw. nur in der Mac-App (dort keine Rechteprüfung)
 OUTSIDE = ('/api/status', '/api/login', '/api/stop', '/api/login-code', '/api/login-device', '/api/shutdown')

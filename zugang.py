@@ -191,6 +191,24 @@ class Throttle:
             self._prune(now)
             return max([self._pause(self.all, GLOBAL_ATTEMPTS, now)] + [self._pause(self.keys.get(k, []), FREE_ATTEMPTS, now) for k in keys])
 
+    def gesperrt(self):
+        """Gerade gesperrte Schlüssel als (Schlüssel, Versuche, Wartezeit in Sekunden); '*' = alle Geräte zusammen."""
+        with self.lock:
+            now = self.clock()
+            self._prune(now)
+            result = [(k, len(t), self._pause(t, FREE_ATTEMPTS, now)) for k, t in self.keys.items()]
+            result.append(('*', len(self.all), self._pause(self.all, GLOBAL_ATTEMPTS, now)))
+            return [r for r in result if r[2]]
+
+    def freigeben(self, key):
+        """Fehlversuche eines Schlüssels löschen ('*' = die Obergrenze für alle)."""
+        with self.lock:
+            if key == '*':
+                self.all = []
+            else:
+                self.keys.pop(key, None)
+            self._save()
+
     def attempt(self, keys=('*',)):
         with self.lock:
             now = self.clock()

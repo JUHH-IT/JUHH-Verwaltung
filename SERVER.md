@@ -198,6 +198,7 @@ Zur vorherigen Version zurück: `sudo /opt/ju-finanzen/current/server/install.sh
 | --- | --- |
 | `sudo ju-finanzen passwort "Name"` | Passwort setzen/ändern (neuer Benutzer zusätzlich mit `--neu`) |
 | `sudo ju-finanzen benutzer` | Benutzer mit Rollen anzeigen (ohne Passwörter) |
+| `sudo ju-finanzen notfall-aus` | Notzugang: Notfall- und Wartungsmodus beenden (0.35) |
 | `sudo ju-finanzen rolle "Name" Administrator` | Notzugang: einer Person eine Rolle geben (`--entfernen` nimmt sie); sonst im Programm unter Verwaltung → Benutzer & Rollen |
 | `sudo ju-finanzen uebernehmen DATEI [--ersetzen]` | Daten übernehmen bzw. zurückholen (ZIP oder .sqlite3) |
 | `sudo ju-finanzen sicherung` | Sicherung jetzt anlegen |
@@ -238,6 +239,10 @@ Ein Neustart während eines E-Mail-Versands hält den Versand nach der aktuellen
   - Anmeldungen mit Benutzername und Tailscale-Gerät;
   - bei Fehlern die Programmstelle.
   Mitgliedernamen, Beträge und IBANs stehen nie darin.
+- Sicherheit (ab 0.35): Programm → Verwaltung → Sicherheit (Lagebild, Ereignisse, Notfall, Wartung, Sitzungen, Dateiprüfung).
+  Die Dateiprüfung vergleicht die Programmdateien mit der Prüfliste, die `install.sh` beim Installieren anlegt
+  (`server/PRUEFLISTE`). Sie erkennt Änderungen ohne root-Rechte; wer root ist, kann Prüfliste und Programm zugleich
+  ändern – dagegen schützt nur der Zugang zum Server (Tailscale, SSH-Schlüssel).
 - Rollen (ab 0.34): Jede Person hat nur die Rechte ihrer Rollen (Programm: Verwaltung → Benutzer & Rollen). Der Server
   prüft jede Anfrage; unbekannte Adressen sind nur mit „Benutzer ändern“ erreichbar. Die erste Person, die auf dem Server
   ein Passwort bekommt, erhält alle Rechte; weitere Personen legt die Verwaltung im Programm an. Wer auf dem Server root

@@ -1,4 +1,4 @@
-# JU Hamburg Finanzen – Anleitung (Version 0.34)
+# JU Hamburg Finanzen – Anleitung (Version 0.35)
 
 ## Auf dem Server (Browser, ab 0.23)
 
@@ -17,7 +17,7 @@ Verwaltung stehen in `SERVER.md`.
 - **Benutzer & Rollen (ab 0.34):** Unter **Verwaltung → Benutzer & Rollen** legt die Verwaltung Personen an, vergibt Rollen
   und stellt ein, was jede Rolle darf.
   - Bereiche: Mitgliederverwaltung, Buchhaltung, Verband (Haushalt, Budgets, RPJ), Auswertung, Einstellungen, Sicherung,
-    Benutzer. Je Bereich: kein Zugriff, lesen oder ändern.
+    Benutzer, Sicherheit (ab 0.35). Je Bereich: kein Zugriff, lesen oder ändern.
   - Anfangsbestand: Schatzmeister, Landesmitgliederbeauftragter, Landesgeschäftsführer, Landesvorsitzender, Administrator.
     Rollen lassen sich ändern, ergänzen und – wenn niemand sie mehr hat – löschen. Eine Person kann mehrere Rollen haben.
   - Jede Person sieht nur die Seiten ihrer Bereiche; der Server prüft jede Anfrage zusätzlich selbst. Die
@@ -30,6 +30,24 @@ Verwaltung stehen in `SERVER.md`.
   - Unten auf der Seite steht, wer wem welche Rolle gegeben und welche Rechte geändert hat.
   - Wer bisher angemeldet war, behält alle Rechte. Notzugang auf dem Server: `sudo ju-finanzen rolle "Name" Administrator`.
   - In der Mac-App gibt es weiter nur eine Person mit allen Rechten.
+- **Sicherheit (ab 0.35, nur Server):** Unter **Verwaltung → Sicherheit**.
+  - **Lagebild:** Notfall/Wartung, Fehlanmeldungen, verweigerte Zugriffe, Sitzungen, gesperrte und ungenutzte Konten
+    (über 90 Tage ohne Anmeldung), Konten mit Verwaltungsrechten, letzte Sicherung, Dateiprüfung.
+  - **Ereignisse:** Anmeldungen, Fehlanmeldungen (unbekannte Namen ohne den eingegebenen Text), verweigerte Zugriffe,
+    falsche Passwortbestätigungen, beendete Sitzungen, aufgehobene Sperren, Notfall, Wartung, Sicherungen, Dateiprüfung
+    und alle Änderungen an Personen und Rollen – mit Filter und als CSV. Aufbewahrung 400 Tage.
+  - **Notfall:** Wer „Sicherheit lesen“ hat, kann ihn auslösen (mit Grund). Dann werden alle ohne „Sicherheit ändern“
+    abgemeldet und gesperrt (sie sehen nur einen Hinweis), auf Wunsch auch alle anderen; der E-Mail-Versand hält an.
+    Daten bleiben unverändert. Beenden nur mit „Sicherheit ändern“ und Passwort – oder auf dem Server mit
+    `sudo ju-finanzen notfall-aus`.
+  - **Wartung:** sperrt wie der Notfall, ohne Abmelden und ohne den Versand anzuhalten, mit optionalem Hinweistext.
+  - **Passwortbestätigung:** Sicherung herunterladen, Personen und Rollen ändern, Mitglieder löschen, E-Mail-Passwort
+    speichern, Notfall beenden, Sitzungen beenden und Sperren aufheben verlangen das eigene Passwort noch einmal (gilt
+    dann 5 Minuten).
+  - **Sitzungen & Konten, System** (nur „Sicherheit ändern“): Sitzungen anderer beenden, Sperren nach Fehlversuchen
+    aufheben, Konten im Überblick, Version, Speicher, Sicherungen, Dateiprüfung der Programmdateien („Jetzt prüfen“;
+    sonst einmal am Tag beim Öffnen).
+  - Anfangsrechte: Administrator ändern; Schatzmeister, Landesgeschäftsführer, Landesvorsitzender lesen.
 - **Bedienung wie am Mac.** Unterschiede: Es gibt kein „Programm beenden“, der Server läuft ständig. Esc schließt Dialoge.
 - **Bis 1100 px Breite** (Tablet, Handy) öffnet ☰ oben links die Seitenleiste. Dialoge füllen auf dem Handy den
   ganzen Bildschirm.

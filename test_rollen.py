@@ -64,7 +64,7 @@ class RollenTests(unittest.TestCase):
         zugang.set_password(self.db, 'Erste', PASSWORT, create=True)
         uid = rollen.save_user(self.db, {'name': 'Zwei Rollen', 'password': PASSWORT, 'roles': [
             role_id(self.db, 'Landesmitgliederbeauftragter'), role_id(self.db, 'Landesgeschäftsführer')]}, 'Erste')
-        self.assertEqual(rollen.rights_of(self.db, 'Zwei Rollen'), {'mitglieder': 'schreiben', 'buchhaltung': 'lesen', 'verband': 'lesen', 'auswertung': 'lesen'})
+        self.assertEqual(rollen.rights_of(self.db, 'Zwei Rollen'), {'mitglieder': 'schreiben', 'buchhaltung': 'lesen', 'verband': 'lesen', 'auswertung': 'lesen', 'sicherheit': 'lesen'})
         rollen.save_user(self.db, {'id': uid, 'name': 'Zwei Rollen', 'roles': [role_id(self.db, 'Landesvorsitzender')], 'active': False}, 'Erste')
         self.assertEqual(rollen.rights_of(self.db, 'Zwei Rollen'), {})                 # deaktiviert
 
@@ -146,7 +146,7 @@ class RollenTests(unittest.TestCase):
         log = rollen.overview(self.db)['audit']
         self.assertEqual(log[0]['action'], 'Rolle geändert')
         self.assertEqual(log[0]['detail']['rechte'], {'buchhaltung': 'schreiben'})
-        self.assertEqual(log[0]['detail']['vorher']['rechte'], rollen.READ_ALL)
+        self.assertEqual(log[0]['detail']['vorher']['rechte'], rollen.LEITUNG)
         self.assertEqual((log[1]['action'], log[1]['actor'], log[1]['detail']['rollen'], log[1]['detail']['vorher']['rollen']), ('Person geändert', 'Erste', ['Schatzmeister'], []))
         audit = json.dumps(self.store.rows('SELECT * FROM audit'), ensure_ascii=False)
         self.assertNotIn(PASSWORT, audit)
@@ -217,10 +217,13 @@ class RollenHttpTests(unittest.TestCase):
             store.db.close()
         self.chefin = self.login('Chefin')
 
-    def login(self, name, password=PASSWORT):
+    def login(self, name, password=PASSWORT, confirm=True):
         status, body, headers = self.call('/api/login', {'name': name, 'password': password})
         self.assertEqual(status, 200, body)
-        return {'cookie': headers.get('Set-Cookie', '').split(';')[0].split('=', 1)[1], 'csrf': body['csrf']}
+        who = {'cookie': headers.get('Set-Cookie', '').split(';')[0].split('=', 1)[1], 'csrf': body['csrf']}
+        if confirm:   # Passwortbestätigung für kritische Aktionen (0.35) – geprüft in test_sicherheit.py
+            self.assertEqual(self.post(who, '/api/bestaetigen', {'password': password})[0], 200)
+        return who
 
     def get(self, who, path):
         status, body, _ = self.call(path, cookie=who['cookie'])

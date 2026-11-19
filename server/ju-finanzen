@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Verwaltungsbefehl für JU Hamburg Finanzen im Serverbetrieb (installiert nach /usr/local/bin/ju-finanzen).
 #   sudo ju-finanzen passwort "Name"        Passwort setzen/ändern (fragt zweimal, zeigt nichts an)
-#   sudo ju-finanzen benutzer               Benutzer anzeigen
+#   sudo ju-finanzen benutzer               Benutzer mit Rollen anzeigen
+#   sudo ju-finanzen rolle "Name" Rolle     Notzugang: Rolle vergeben (--entfernen nimmt sie)
+#   sudo ju-finanzen notfall-aus            Notfall- und Wartungsmodus beenden (Notzugang)
 #   sudo ju-finanzen uebernehmen DATEI      Daten aus der Mac-App übernehmen (stoppt und startet den Dienst)
 #   sudo ju-finanzen sicherung              Sicherung jetzt anlegen
 #   sudo ju-finanzen pruefen                Datenbank prüfen (nur Anzahlen)
@@ -29,7 +31,7 @@ run() {
 running() { systemctl is-active --quiet "$SERVICE" 2>/dev/null; }
 
 case "${1:-}" in
-  ""|-h|--help|hilfe) sed -n '2,9p' "$0"; exit 0 ;;
+  ""|-h|--help|hilfe) sed -n '2,11p' "$0"; exit 0 ;;
   status)
     echo "Programmversion: $(sed -n "s/^VERSION='\(.*\)'.*/\1/p" "$APP/app.py" | head -n 1)$( [ -f "$APP/server/GIT-STAND" ] && printf ' (Stand %.12s)' "$(cat "$APP/server/GIT-STAND")" )"
     systemctl status "$SERVICE" --no-pager || true; command -v tailscale >/dev/null && tailscale serve status || true ;;

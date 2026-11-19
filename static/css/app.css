@@ -675,3 +675,20 @@ button.map-kv:hover { background: var(--surface-2); }
 /* Benutzer & Rollen (ab 0.34): Name der Rolle als Verweis in der Tabelle */
 .panel .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--navy); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .panel .link-button:hover { color: var(--teal-ink); }
+
+/* Sicherheit (ab 0.35): Zustand, Warnkarten, Notfall-Knopf, Systemangaben */
+.sec-state p { margin: 8px 0 0; }
+.sec-state.sec-alert { border-color: var(--danger); }
+.card.sec-warn { border-color: var(--orange); }
+.card.sec-warn .value { color: var(--orange-ink); }
+.btn.sec-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.sec-danger:hover:not(:disabled) { background: var(--danger); filter: brightness(0.9); color: #fff; }
+.sec-effects { margin: 12px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; }
+.sec-effects code { overflow-wrap: anywhere; }
+.sec-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 12px 0 0; font-size: 14px; }
+.sec-facts dt { color: var(--muted); }
+.sec-facts dd { margin: 0; overflow-wrap: anywhere; }
+.sec-files { margin: 4px 0 12px; padding-left: 20px; font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.sec-page h3 { font-size: 14px; margin: 16px 0 0; }
+.sec-filter { justify-content: flex-start; }
+.sec-filter [data-csv] { margin-left: auto; }

@@ -47,6 +47,7 @@ async function seed() {
     return json;
   };
   const master = execFileSync('python3', ['-c', `import sys,base64; sys.path.insert(0, ${JSON.stringify(repo)}); import test_uebernahme; print(base64.b64encode(test_uebernahme.master_xlsx()).decode())`]).toString().trim();
+  await post('/api/bestaetigen', { password: PASSWORT });   // Stammdaten speichern verlangt die Passwortbestätigung (0.35)
   const preview = await post('/api/preview-master', { filename: 'master-test.xlsx', content: master });
   await post('/api/import-master', { token: preview.token });
   await post('/api/settings', { issuer: 'JU Test', issuer_address: 'Teststraße 1\n20000 Hamburg', iban: 'DE89370400440532013000', contact_email: 'kasse@example.org' });
@@ -71,8 +72,22 @@ try {
   const watch = (page, label) => {
     page.on('pageerror', (e) => errors.push(`${label}: ${e.message}`));
     page.on('console', (m) => {
-      if (m.type() === 'error' && !/status of (401|429)/.test(m.text())) errors.push(`${label}: ${m.text()}`);
+      if (m.location()?.url?.endsWith('/api/bestaetigen')) return;   // falsches Passwort in der Bestätigung (400) wird absichtlich geprüft
+      if (m.type() === 'error' && !/status of (401|428|429|503)/.test(m.text())) errors.push(`${label}: ${m.text()}`);   // 428/503: Bestätigung, Sperre (ab 0.35)
     });
+  };
+  // Kritische Aktion (ab 0.35): der Server verlangt das Passwort erneut – im Dialog bestätigen
+  const confirmPassword = async (p, password) => {
+    await p.waitForSelector('#preview[open] #confirm-form', { timeout: 8000 });
+    await p.fill('#confirm-form input[name=password]', password);
+    await p.click('#confirm-form button[type=submit]');
+    await p.waitForSelector('#preview[open]', { state: 'detached' });
+  };
+  const login = async (p, name, password) => {
+    await p.waitForSelector('#login-form');
+    await p.fill('input[name=name]', name);
+    await p.fill('input[name=password]', password);
+    await p.click('#login-form button[type=submit]');
   };
 
   // ---------- Laptop ----------
@@ -254,6 +269,7 @@ try {
   await ap.fill('#user-form input[name=password]', PASSWORT);
   await ap.screenshot({ path: join(shots, 's42-person-anlegen.png') });
   await ap.click('#user-form button[type=submit]');
+  await confirmPassword(ap, NEU);   // Person anlegen ist eine kritische Aktion (ab 0.35)
   await ap.waitForFunction(() => document.getElementById('toast').textContent.includes('angelegt'));
   check((await ap.locator('#main').textContent()).includes('Test Mitgliederbeauftragte'), 'Benutzer & Rollen: neue Person erscheint in der Liste');
 
@@ -282,6 +298,95 @@ try {
     const answer = await limited.request.get(url + path);
     check(answer.status() === 403, `Mitgliederbeauftragte: Server lehnt ${path.split('?')[0]} ab (${answer.status()})`);
   }
+
+  // ---------- Sicherheit (ab 0.35): Lagebild, Ereignisse, Notfall mit Sperrbildschirm und Passwortbestätigung ----------
+  // eigene, frische Sitzung: die Bestätigung von „Person anlegen“ gilt hier nicht, „Notfall beenden“ muss nachfragen
+  const secContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await guard(secContext);
+  const sp = await secContext.newPage();
+  watch(sp, 'Sicherheit');
+  await sp.goto(url);
+  await login(sp, 'Test Schatzmeisterin', NEU);
+  await sp.waitForSelector('.sidebar');
+  check(await mb.locator('[data-page=security]').count() === 0, 'Mitgliederbeauftragte: keine Seite Sicherheit');
+  await sp.click('[data-page=security]');
+  await sp.waitForSelector('.sec-page .cards');
+  const secTabs = await sp.locator('.sec-page [data-tab]').evaluateAll((els) => els.map((e) => e.dataset.tab));
+  check(['lagebild', 'ereignisse', 'notfall'].every((t) => secTabs.includes(t)), `Sicherheit: Reiter Lagebild, Ereignisse, Notfall (${secTabs.join(', ')})`);
+  check(await sp.locator('.sec-page .card').count() === 8, 'Sicherheit: Kennzahlen im Lagebild');
+  check((await sp.locator('.sec-state').textContent()).includes('Normalbetrieb'), 'Sicherheit: Lagebild zeigt Normalbetrieb');
+  await sp.screenshot({ path: join(shots, 's50-sicherheit-lagebild.png') });
+  await sp.click('[data-tab=ereignisse]');
+  await sp.waitForSelector('#sec-filter');
+  await sp.waitForSelector('.sec-page table tbody tr');
+  const events = await sp.locator('.sec-page table tbody').textContent();
+  check(events.includes('Anmeldung'), 'Sicherheit: Ereignisse zeigen eine Anmeldung');
+  check(!events.includes('{"'), 'Sicherheit: Einzelheiten ohne rohes JSON');
+  await sp.selectOption('#sec-filter select[name=art]', 'anmeldung');
+  await sp.waitForTimeout(400);
+  const kinds = await sp.locator('.sec-page table tbody tr td:nth-child(2)').allTextContents();
+  check(kinds.length > 0 && kinds.every((k) => k === 'Anmeldung'), `Sicherheit: Filter nach Art (${kinds.length} Anmeldungen)`);
+  await sp.screenshot({ path: join(shots, 's52-sicherheit-ereignisse.png') });
+  // Handy: alle Reiter ohne seitliches Scrollen
+  await sp.setViewportSize({ width: 390, height: 844 });
+  for (const t of secTabs) {
+    await sp.click(`[data-tab=${t}]`);
+    await sp.waitForTimeout(400);
+    const wide = await sp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check(wide <= 0, `Handy Sicherheit ${t}: kein seitliches Scrollen (${wide})`);
+  }
+  await sp.screenshot({ path: join(shots, 's53-handy-sicherheit-system.png') });
+  await sp.setViewportSize({ width: 1440, height: 900 });
+  // Notfall auslösen
+  await sp.click('[data-tab=notfall]');
+  await sp.click('[data-emergency-on]');
+  await sp.waitForSelector('#modal[open] #sec-emergency');
+  check(await sp.locator('#sec-emergency button[type=submit]').isDisabled(), 'Notfall: Auslösen erst nach „Ich habe die Wirkungen gelesen“');
+  await sp.fill('#sec-emergency textarea[name=grund]', 'Übung mit erfundenem Verdacht');
+  await sp.check('#sec-emergency input[name=gelesen]');
+  await sp.click('#sec-emergency button[type=submit]');
+  await sp.waitForFunction(() => document.getElementById('toast').textContent.includes('Notfallmodus ausgelöst'));
+  await sp.waitForSelector('[data-emergency-off]');
+  check((await sp.locator('.sec-state').textContent()).includes('Übung mit erfundenem Verdacht'), 'Notfall: Zustand mit Grund');
+  // eingeschränkte Person: abgemeldet, nach erneuter Anmeldung nur der Sperrbildschirm
+  await mb.reload();
+  await mb.waitForSelector('#login-form, #lock-retry');
+  if (await mb.locator('#login-form').count()) await login(mb, 'Test Mitgliederbeauftragte', PASSWORT);
+  await mb.waitForSelector('#lock-retry');
+  const lockText = await mb.locator('.login-card').textContent();
+  check(lockText.includes('Notfallmodus aktiv'), 'Notfall: eingeschränkte Person sieht den Sperrbildschirm');
+  check(!lockText.includes('Übung'), 'Notfall: Grund nur für Personen mit Sicherheitsrecht');
+  check(await mb.locator('.sidebar').count() === 0, 'Notfall: keine Oberfläche hinter dem Sperrbildschirm');
+  await mb.screenshot({ path: join(shots, 's51-sperrbildschirm.png') });
+  const blocked = await limited.request.get(url + '/api/data?year=2026');
+  check(blocked.status() === 503, `Notfall: Server sperrt Anfragen der eingeschränkten Person (${blocked.status()})`);
+  await mb.click('#lock-retry');
+  await mb.waitForSelector('#lock-retry');
+  await mb.click('#lock-logout');
+  await mb.waitForSelector('#login-form');
+  check(true, 'Sperrbildschirm: Abmelden führt zur Anmeldung');
+  // Notfall beenden: nur mit Passwortbestätigung; Abbrechen ändert nichts
+  await sp.click('[data-emergency-off]');
+  await sp.waitForSelector('#preview[open] #confirm-form');
+  await sp.screenshot({ path: join(shots, 's54-passwort-bestaetigen.png') });
+  await sp.click('#confirm-form [data-close]');
+  await sp.waitForFunction(() => document.getElementById('toast').textContent.includes('Abgebrochen'));
+  check(await sp.locator('[data-emergency-off]').count() === 1, 'Passwortbestätigung abgebrochen: Notfall bleibt aktiv');
+  await sp.click('[data-emergency-off]');
+  await sp.waitForSelector('#preview[open] #confirm-form');
+  await sp.fill('#confirm-form input[name=password]', 'falsch-falsch-falsch');
+  await sp.click('#confirm-form button[type=submit]');
+  await sp.waitForSelector('#confirm-form .login-error:not([hidden])');
+  check(await sp.inputValue('#confirm-form input[name=password]') === '', 'Passwortbestätigung: falsches Passwort, Feld geleert');
+  await sp.fill('#confirm-form input[name=password]', NEU);
+  await sp.click('#confirm-form button[type=submit]');
+  await sp.waitForFunction(() => document.getElementById('toast').textContent.includes('Notfallmodus beendet'));
+  await sp.waitForSelector('[data-emergency-on]');
+  check(true, 'Notfall beendet nach Passwortbestätigung');
+  await login(mb, 'Test Mitgliederbeauftragte', PASSWORT);
+  await mb.waitForSelector('.sidebar');
+  check(true, 'Nach dem Notfall: eingeschränkte Person kommt nach neuer Anmeldung wieder hinein');
+  await secContext.close();
   await limited.close();
   await adminContext.close();
 

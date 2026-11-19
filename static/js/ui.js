@@ -195,6 +195,7 @@ const ICONS = {
   trend: '<path d="M4 4v16h16"/><path d="M7.5 14.5l3.5-3.5 3 2.5 5-6.5"/>',
   right: '<path d="M9 6l6 6-6 6"/>',
   map: '<path d="M9 4l6 2 5-2v14l-5 2-6-2-5 2V6z"/><path d="M9 4v14M15 6v14"/>',
+  shield: '<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6z"/>',
 };
 
 export function icon(name, size = 18) {

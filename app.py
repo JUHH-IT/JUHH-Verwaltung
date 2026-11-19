@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from http.cookies import SimpleCookie
-import json, re, secrets, time, sqlite3, io, csv, base64, zipfile, tempfile, webbrowser, sys, argparse, threading, os, shutil, getpass, signal, traceback, ipaddress, gzip
+import json, re, secrets, time, sqlite3, io, csv, base64, zipfile, tempfile, webbrowser, sys, argparse, threading, os, shutil, getpass, signal, traceback, ipaddress, gzip, hashlib, platform
 from datetime import date
 from html import escape as html_escape
 from core import Store, money, KVS
@@ -12,6 +12,7 @@ import haushalt
 import workflow
 import sicherung
 import rollen
+import sicherheit
 import uebernahme
 import rechnung_pdf
 import versand
@@ -36,7 +37,7 @@ import erstattung
 import geheimnis
 import zugang
 
-VERSION='0.34'
+VERSION='0.35'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -49,6 +50,16 @@ ADDRESSES=[]           # Servermodus: Adressen, unter denen die Oberfläche aufg
 THROTTLE=zugang.Throttle()   # im Serverbetrieb mit Datei im Datenordner (main)
 MAC_PATHS=('/api/stop','/api/login-code','/api/login-device','/api/shutdown')
 NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltung (Benutzer und Rollen).'
+# Serverbetrieb (0.35): kritische Aktionen nur mit frischer Passwortbestätigung (POST /api/bestaetigen, gilt 5 Minuten)
+# Regel (AGENTS.md): alles, was alle Daten ausliefert, löscht, Zugänge/Rechte ändert oder Mail und Bankverbindung umlenken kann
+CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-listen.zip'),('GET','/api/sepa.xml'),
+         ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
+         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
+         ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
+         ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben')}
+CONFIRM_SECONDS=300
+# im Notfall/Wartung auch ohne „Sicherheit ändern“ – bewusst ohne /api/password: ein übernommenes Konto soll die echte Person nicht aussperren
+SPERRE_FREI_POST=('/api/logout','/api/bestaetigen','/api/notfall-an')
 PUBLIC_PATHS=('/api/login','/api/stop','/api/login-code','/api/login-device')   # ohne Sitzung erreichbar
 UPLOAD_PATHS=('/api/members-preview','/api/gliederung-vorschau','/api/sepa-vorschau','/api/sepa-begleitzettel','/api/rpj-import-vorschau','/api/einvoice','/api/bill','/api/kasse-beleg','/api/preview-bank','/api/preview-master','/api/preview-kv-master')
 TAILNET=[ipaddress.ip_network('100.64.0.0/10'),ipaddress.ip_network('fd7a:115c:a1e0::/48')]
@@ -267,9 +278,58 @@ class Handler(BaseHTTPRequestHandler):
         for k,v in list(SESSIONS.items()):   # abgelaufene Sitzungen aufräumen
             if v['expires']<=now or (server_mode() and now-v['seen']>IDLE_MINUTES*60): SESSIONS.pop(k,None)
         sid=secrets.token_urlsafe(32);SESSIONS[sid]={'actor':actor,'csrf':secrets.token_urlsafe(32),'expires':now+SESSION_HOURS*3600,'seen':now,
-                                                     'fp':user_fingerprint(actor) if server_mode() else None}
+                                                     'fp':user_fingerprint(actor) if server_mode() else None,'created':now,'geraet':self.device()}
         self._session=SESSIONS[sid]
         return sid,SESSIONS[sid]
+    def sitzungen(self):
+        """Aktive Sitzungen für die Sicherheit – mit öffentlicher Kennung (Prüfsumme), nie dem Sitzungsschlüssel selbst."""
+        own=self.session();now=time.time();iso=lambda t:time.strftime('%Y-%m-%dT%H:%M:%S',time.localtime(t))
+        return [{'id':hashlib.sha256(k.encode()).hexdigest()[:16],'person':v['actor'],'seit':iso(v.get('created',v['seen'])),'zuletzt':iso(v['seen']),
+                 'geraet':v.get('geraet',''),'eigene':v is own} for k,v in list(SESSIONS.items()) if v['expires']>now and now-v['seen']<=IDLE_MINUTES*60]
+    def sperren(self,store):
+        """Gesperrte Schlüssel mit Kennung (Prüfsumme) statt Schlüssel – ein unbekannter „Name“ kann ein vertipptes Passwort sein."""
+        result=[]
+        for k,n,w in THROTTLE.gesperrt():
+            kind,_,value=k.partition(':')
+            if k=='*': art,wert='alle',''
+            elif kind=='name':
+                user=zugang.find_user(store.db,value);art,wert='Name',user['name'] if user else 'unbekannter Name'
+            else: art,wert='Gerät',value
+            result.append({'key':hashlib.sha256(k.encode()).hexdigest()[:16],'art':art,'wert':wert,'versuche':n,'wartet_sekunden':w})
+        return result
+    def system_info(self):
+        stand=ROOT/'server'/'GIT-STAND';du=shutil.disk_usage(DATA);auto=backups_dir()/'Automatisch'
+        return {'version':VERSION,'stand':stand.read_text().strip()[:12] if stand.is_file() else '','python':platform.python_version(),
+                'daten_frei_gb':round(du.free/1e9,1),'daten_gesamt_gb':round(du.total/1e9,1),'datenbank_mb':round(DB.stat().st_size/1e6,1),
+                'letzte_sicherung':sicherung.last_daily(auto),'sicherungen':len(list(auto.glob('*.sqlite3'))) if auto.is_dir() else 0}
+    def verweigert(self,store,path):
+        if server_mode():
+            s=self.session();now=time.time()
+            if s and now-s.get('verweigert_zeit',0)>=60:   # höchstens ein Eintrag je Sitzung und Minute (sonst ließe sich das Protokoll fluten)
+                s['verweigert_zeit']=now;sicherheit.ereignis(store.db,'verweigert',s['actor'],self.device(),{'adresse':path[:120]})
+        return self.send(403,{'error':NO_RIGHT})
+    def gesperrt(self,store,rights,method,path):
+        """Notfall/Wartung: 503 für alle ohne „Sicherheit ändern“, außer den wenigen erlaubten Wegen. True = Antwort gesendet."""
+        if not server_mode(): return False
+        sp=sicherheit.sperre(store.db)
+        if not sp or sicherheit.darf_trotz_sperre(rights): return False
+        frei=SPERRE_FREI_POST if method=='POST' else (('/api/sicherheit',) if rollen.can(rights,'sicherheit') else ())
+        if path in frei: return False
+        self.send(503,{'error':'Notfallmodus: Das Programm ist vorübergehend gesperrt.' if sp['art']=='notfall' else 'Wartung: Das Programm ist vorübergehend nicht verfügbar.','sperre':sp['art']})
+        return True
+    def braucht_bestaetigung(self,method,path):
+        s=self.session()
+        if server_mode() and (method,path) in CONFIRM and time.time()-s.get('confirmed',0)>CONFIRM_SECONDS:
+            self.send(428,{'error':'Bitte zur Bestätigung dein Passwort eingeben.','confirm':True});return True
+        return False
+    def sperre_info(self,store,s):
+        """Sperre für /api/status: nur für Angemeldete; Grund und Auslöser nur mit „Sicherheit lesen“."""
+        sp=sicherheit.sperre(store.db) if server_mode() and s else None
+        if not sp: return None
+        r=self.rights(store);info={'art':sp['art'],'seit':sp['seit'],'fuer_mich':not sicherheit.darf_trotz_sperre(r)}
+        if sp['art']=='wartung': info['text']=sp.get('text','')
+        if rollen.can(r,'sicherheit'): info.update(grund=sp.get('grund',''),von=sp.get('von',''))
+        return info
     def rights(self,store):
         """Rechte der angemeldeten Person (rollen.py); die Mac-App hat eine Person und prüft keine Rechte."""
         s=self.session()
@@ -302,11 +362,23 @@ class Handler(BaseHTTPRequestHandler):
                 configured=any(zugang.is_set(u['password']) for u in store.rows('SELECT password FROM users')) if server_mode() else bool(store.rows('SELECT id FROM users'))
                 return self.send(200,{'app':APP_NAME,'version':VERSION,'instance':INSTANCE,'mode':MODE,'auth':'password' if server_mode() else 'macos','configured':configured,
                                       'mail_busy':versand.busy(),'user':s['actor'] if s else None,'csrf':s['csrf'] if s else None,
-                                      'rights':self.rights(store) if s else {}})
+                                      'rights':self.rights(store) if s else {},'sperre':self.sperre_info(store,s)})
             if path.startswith('/api/'):
                 if not self.session(): return self.send(401,{'error':'Bitte anmelden.'})
                 rights=self.rights(store)
-                if not rollen.allowed(rights,rollen.required('GET',path)): return self.send(403,{'error':NO_RIGHT})
+                if not rollen.allowed(rights,rollen.required('GET',path)): return self.verweigert(store,path)
+                if self.gesperrt(store,rights,'GET',path) or self.braucht_bestaetigung('GET',path): return
+                if path.startswith('/api/sicherheit') and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
+                if path=='/api/sicherheit':
+                    return self.send(200,{'lagebild':sicherheit.lagebild(store.db,self.sitzungen(),self.sperren(store),sicherung.last_daily(backups_dir()/'Automatisch'),ROOT)})
+                if path in ('/api/sicherheit-ereignisse','/api/sicherheit-ereignisse.csv'):
+                    q=lambda k,d='':query.get(k,[d])[0]
+                    rows=sicherheit.ereignisse(store.db,q('art'),int(q('tage','30')) if q('tage','30').isdigit() else 30,q('suche')[:100])
+                    if path.endswith('.csv'): return self.send(200,sicherheit.ereignisse_csv(rows).encode(),'text/csv; charset=utf-8',attachment='Sicherheitsereignisse.csv')
+                    return self.send(200,{'ereignisse':rows,'arten':{**sicherheit.ARTEN,'verwaltung':'Personen und Rollen'}})
+                if path=='/api/sicherheit-verwaltung':
+                    return self.send(200,{'sitzungen':self.sitzungen(),'sperren':self.sperren(store),'system':self.system_info(),
+                                          'konten':[{k:v for k,v in x.items() if k!='rechte'} for x in sicherheit.konten(store.db)]})
                 if path=='/api/data': return self.send(200,rollen.filter_snapshot({**store.snapshot(int(query.get('year',[time.localtime().tm_year])[0])),'last_backup':sicherung.last_daily(backups_dir()/'Automatisch'),'address_data':__import__('adressen').status(DATA)['available']},rights))
                 if path=='/api/benutzer':   # Personen und Rollen (ohne Passwörter) – die Mac-App hat nur eine Person
                     return self.send(200,rollen.overview(store.db)) if server_mode() else self.send(404,{'error':'Nur im Serverbetrieb.'})
@@ -479,6 +551,7 @@ class Handler(BaseHTTPRequestHandler):
                         writer.writerow([("'"+v if v.startswith(('=','+','-','@')) else v) if isinstance(v,str) else v for v in vals])
                     return self.send(200,b'\xef\xbb\xbf'+buf.getvalue().encode(),'text/csv; charset=utf-8',attachment='Buchungsjournal-Cent.csv')
                 if path=='/api/backup':
+                    sicherheit.ereignis(store.db,'sicherung',self.session()['actor'],self.device())
                     # ZIP über eine temporäre Datei (nicht im Arbeitsspeicher, auch bei vielen Belegen)
                     with tempfile.TemporaryDirectory(dir=DATA) as td, tempfile.TemporaryFile(dir=DATA) as out:
                         target=Path(td)/'finanzen.sqlite3'; dest=sqlite3.connect(target);store.db.backup(dest);dest.close()
@@ -530,8 +603,11 @@ class Handler(BaseHTTPRequestHandler):
                 actor=zugang.check_login(store.db,data.get('name'),data.get('password'))
                 if not actor:
                     log('Anmeldung fehlgeschlagen ('+self.who()+')')
+                    known=zugang.find_user(store.db,data.get('name'))   # nur bekannte Namen ins Protokoll (Tippfehler könnten Passwörter sein)
+                    sicherheit.ereignis(store.db,'anmeldung_fehl',known['name'] if known else '',self.device(),{'name_bekannt':bool(known)})
                     return self.send(401,{'error':'Benutzername oder Passwort ist falsch.'})
                 THROTTLE.succeeded(keys);log(f'Angemeldet: {actor} ({self.who()})')
+                sicherheit.ereignis(store.db,'anmeldung',actor,self.device())
                 sid,s=self.new_session(actor);return self.send(200,{'csrf':s['csrf'],'user':actor},cookie=self.cookie(sid))
             if path=='/api/stop':
                 # Beenden durch den Mac-Starter bei Updates; Schlüssel liegt nur lesbar für den Benutzer in Daten/.steuerung
@@ -560,7 +636,13 @@ class Handler(BaseHTTPRequestHandler):
                     actor=user['name'] if user else name
                 sid,s=self.new_session(actor);return self.send(200,{'csrf':s['csrf']},cookie=self.cookie(sid))
             actor=s['actor'];result={'ok':True}
-            if not rollen.allowed(self.rights(store),rollen.required('POST',path)): return self.send(403,{'error':NO_RIGHT})
+            rights=self.rights(store)
+            if not rollen.allowed(rights,rollen.required('POST',path)): return self.verweigert(store,path)
+            if self.gesperrt(store,rights,'POST',path) or self.braucht_bestaetigung('POST',path): return
+            if path in ('/api/bestaetigen','/api/notfall-an','/api/notfall-aus','/api/wartung','/api/sitzung-beenden','/api/sperre-aufheben','/api/dateipruefung') and not server_mode():
+                return self.send(404,{'error':'Nur im Serverbetrieb.'})
+            if path in ('/api/mail-send','/api/mail-test') and (sicherheit.sperre(store.db) or {}).get('art')=='notfall':
+                return self.send(503,{'error':'Notfallmodus: Der E-Mail-Versand ist angehalten.'})
             if path=='/api/logout':
                 for k,v in list(SESSIONS.items()):
                     if v is s: del SESSIONS[k]
@@ -581,6 +663,37 @@ class Handler(BaseHTTPRequestHandler):
                 s['fp']=user_fingerprint(actor)   # eigene Sitzung bleibt gültig
                 log(f'Passwort geändert: {actor}')
             elif path in ('/api/benutzer','/api/rolle','/api/rolle-loeschen') and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
+            elif path=='/api/bestaetigen':
+                # Passwortbestätigung für kritische Aktionen; Fehlversuche zählen wie bei der Anmeldung
+                keys=('geraet:'+self.device(),'name:'+actor.lower())
+                wait=THROTTLE.attempt(keys)
+                if wait: return self.send(429,{'error':f'Zu viele Fehlversuche. Bitte {wait_text(wait)} warten.','wait':wait})
+                if not zugang.check_login(store.db,actor,data.get('password')):
+                    sicherheit.ereignis(store.db,'bestaetigung_fehl',actor,self.device());raise ValueError('Das Passwort ist falsch.')
+                THROTTLE.succeeded(keys);s['confirmed']=time.time()
+            elif path=='/api/notfall-an':
+                alle=data.get('alle_abmelden') is True
+                if alle and not sicherheit.darf_trotz_sperre(rights): raise ValueError('Alle abmelden darf nur, wer „Sicherheit ändern“ hat.')
+                sicherheit.notfall_an(store.db,actor,data.get('grund'),self.device());beendet=0
+                versand.cancel()   # ein laufender E-Mail-Versand endet nach der aktuellen Nachricht
+                for k,v in list(SESSIONS.items()):   # alle außer „Sicherheit ändern“ (auf Wunsch auch diese) abmelden – die eigene Sitzung bleibt
+                    if v is not s and (alle or not sicherheit.darf_trotz_sperre(rollen.rights_of(store.db,v['actor']))):
+                        SESSIONS.pop(k,None);beendet+=1
+                result['beendet']=beendet;log(f'Notfall ausgelöst durch {actor}, {beendet} Sitzungen beendet')
+            elif path=='/api/notfall-aus': sicherheit.notfall_aus(store.db,actor,self.device());log(f'Notfall beendet durch {actor}')
+            elif path=='/api/wartung': sicherheit.wartung(store.db,actor,data.get('an') is True,data.get('text'),self.device())
+            elif path=='/api/sitzung-beenden':
+                found=[k for k in list(SESSIONS) if hashlib.sha256(k.encode()).hexdigest()[:16]==str(data.get('id',''))]
+                if not found: raise ValueError('Diese Sitzung gibt es nicht mehr.')
+                if SESSIONS.get(found[0]) is s: raise ValueError('Die eigene Sitzung bitte über „Abmelden“ beenden.')
+                gone=SESSIONS.pop(found[0],None)
+                if gone: sicherheit.ereignis(store.db,'sitzung_beendet',actor,self.device(),{'person':gone['actor']})
+            elif path=='/api/sperre-aufheben':
+                found=[x for x in self.sperren(store) if x['key']==str(data.get('key',''))]
+                keys=[k for k,_,_ in THROTTLE.gesperrt() if hashlib.sha256(k.encode()).hexdigest()[:16]==str(data.get('key',''))]
+                if not found or not keys: raise ValueError('Diese Sperre gibt es nicht mehr.')
+                THROTTLE.freigeben(keys[0]);sicherheit.ereignis(store.db,'sperre_aufgehoben',actor,self.device(),{'art':found[0]['art'],'wert':found[0]['wert']})
+            elif path=='/api/dateipruefung': result['ergebnis']=sicherheit.dateipruefung_lauf(store.db,ROOT,actor,self.device())
             elif path=='/api/benutzer':
                 # Person anlegen/ändern (Verwaltung): ein neues Passwort oder das Deaktivieren beendet deren Sitzungen (Fingerabdruck)
                 result['id']=rollen.save_user(store.db,data,actor);log(f'Person gespeichert durch {actor}')

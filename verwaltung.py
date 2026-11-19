@@ -103,6 +103,27 @@ def cmd_benutzer(args):
               + ('' if r['active'] else ', deaktiviert') + '; Rollen: ' + (', '.join(roles[r['id']]) or 'keine'))
 
 
+def cmd_notfall_aus(args):
+    """Notzugang: Notfall- und Wartungsmodus auf dem Server beenden (z. B. wenn sich niemand mehr anmelden kann)."""
+    data, _ = folders(args)
+    con = connect(data / 'finanzen.sqlite3')
+    try:
+        import rollen, sicherheit
+        rollen.init(con)
+        sicherheit.init(con)
+        sperre = sicherheit.sperre(con)
+        if not sperre:
+            print('Kein Notfall- oder Wartungsmodus aktiv.')
+            return 0
+        if sicherheit.sperre(con)['art'] == 'notfall':
+            sicherheit.notfall_aus(con, 'Serververwaltung')
+        sicherheit.wartung(con, 'Serververwaltung', False)
+    finally:
+        con.close()
+    print('Notfall- bzw. Wartungsmodus beendet. Alle können sich wieder anmelden.')
+    return 0
+
+
 def cmd_rolle(args):
     """Notzugang: einer Person eine Rolle geben oder nehmen, wenn sich niemand mehr für die Verwaltung anmelden kann."""
     data, _ = folders(args)
@@ -327,6 +348,7 @@ def main(argv=None):
     p.add_argument('name')
     p.add_argument('--neu', action='store_true', help='weiteren Benutzer anlegen')
     sub.add_parser('benutzer', help='Benutzer mit Rollen anzeigen')
+    sub.add_parser('notfall-aus', help='Notfall- und Wartungsmodus beenden (Notzugang)')
     p = sub.add_parser('rolle', help='einer Person eine Rolle geben (Notzugang, sonst in der Verwaltung des Programms)')
     p.add_argument('name')
     p.add_argument('rolle')
@@ -338,7 +360,7 @@ def main(argv=None):
     p.add_argument('--ersetzen', action='store_true', help='vorhandene Daten ersetzen (werden vorher gesichert)')
     args = parser.parse_args(argv)
     os.umask(0o077)
-    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'rolle': cmd_rolle, 'sicherung': cmd_sicherung,
+    return {'passwort': cmd_passwort, 'benutzer': cmd_benutzer, 'rolle': cmd_rolle, 'notfall-aus': cmd_notfall_aus, 'sicherung': cmd_sicherung,
             'pruefen': cmd_pruefen, 'uebernehmen': cmd_uebernehmen}[args.befehl](args) or 0
 
 
