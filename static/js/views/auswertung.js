@@ -1,6 +1,6 @@
 // Auswertung der Mitgliederdaten (0.29, Wunsch Lennert Gust 10.11.2026). Server: auswertung.py (nur lesend).
 // Stichtag und Auswahl Kreis-/Ortsverband; Kennzahlen, Altersstruktur (Altersgruppen, Pyramide), Geschlecht (gesamt, Eintritte, je
-// Kreisverband), Kreisverbände im Vergleich, Entwicklung (Bestand, Ein-/Austritte je Jahr, Eintritte je Monat), Eintrittsalter,
+// Kreisverband), Kreisverbände im Vergleich, Ortsverbände, Entwicklung (Bestand, Ein-/Austritte je Jahr und je Monat), Eintrittsalter,
 // Mitgliedsdauer, Zahlweg, Vereinigungen und Listen zum Handeln. Diagramme (ab 0.38) sind Listen/Tabellen aus HTML und CSS: jeder Wert
 // steht als Text am Balken (lesbar ohne Zeigen, auch für Vorleseprogramme). Farben: einfarbig Petrol; Geschlecht weiblich/männlich/
 // divers-ohne-Angabe (--aw-w/-m/-x, geprüfte Farbreihe) immer mit Beschriftung. Das PDF enthält nur Zahlen.
@@ -30,11 +30,14 @@ const GAPS = { no_email: 'ohne E-Mail', no_phone: 'ohne Telefon', no_ov: 'ohne O
 let gapTab = 'no_email';
 
 const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const BANDS = ['unter 18', '18–24', 'ab 25'];   // Altersschwerpunkt je Ortsverband (auswertung.BANDS)
 const SEXES = [['w', 'weiblich'], ['m', 'männlich'], ['x', 'divers/ohne Angabe']];
 const few = (v) => (v === null ? '< 3' : v);   // Rollen ohne Mitgliederrecht: der Server nennt Gruppen unter 3 Personen nicht (auswertung.redact)
+const part = (v) => (v === null ? '—' : pct(v));   // Anteil, den es nicht gibt (zu kleine Gruppe, keine Angaben)
+const soft = (s) => s.replace('/', '/\u200b');     // „divers/ohne Angabe“ darf auf schmalen Bildschirmen nach dem Schrägstrich umbrechen
 const signed = (v) => `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v)}`;
 const swatch = (k) => html`<i class="aw-sw ${k}" aria-hidden="true"></i>`;
-const legend = (items) => html`<ul class="aw-legend">${items.map(([k, label]) => html`<li>${swatch(k)}${label}</li>`)}</ul>`;
+const legend = (items) => html`<ul class="aw-legend">${items.map(([k, label]) => html`<li>${swatch(k)}${soft(label)}</li>`)}</ul>`;
 
 /** Einfarbige Balkenliste mit beschrifteten Werten. Zeile: label, count, optional text (statt Anzahl), sub (statt Anteil), pick (Kreisverband wählen). */
 function bars(title, rows, total, names = false) {
@@ -57,23 +60,26 @@ function twoSided(caption, mid, left, right, rows, extra = null) {
     <tbody>${rows.map((r) => html`<tr><td class="l">${side(r.l, left[0])}</td><th scope="row">${r.label}</th><td class="r">${side(r.r, right[0])}</td>${extra ? html`<td class="num">${r.extra}</td>` : ''}</tr>`)}</tbody></table>`;
 }
 
-/** Eine Zeile „100-%-Balken“ nach Geschlecht; die Zahlen stehen daneben (Anzahl und Anteil). */
-function sexRow(label, total, counts, strong = false) {
+/** Eine Zeile „100-%-Balken“ weiblich/männlich; `share` = Frauenanteil (weiblich : weiblich + männlich, vom Server). Divers/ohne Angabe
+ * steht nur als Anzahl daneben und zählt nicht in den Balken. */
+function sexRow(label, counts, share, strong = false) {
+  const shares = { w: share, m: share === null ? null : 1 - share };
   return html`<li class="${strong ? 'strong' : ''}"><span class="aw-label">${label}</span>
-    <span class="aw-seg" aria-hidden="true">${SEXES.map(([k]) => (counts[k] === 0 ? '' : html`<span class="${k}" style="flex-grow:${counts[k] ?? 1}"></span>`))}</span>
-    ${SEXES.map(([k, name]) => html`<span class="aw-n">${swatch(k)}<span class="sr-only">${name}: </span>${few(counts[k])}${counts[k] && total ? html`<small>${pct(counts[k] / total)}</small>` : ''}</span>`)}</li>`;
+    <span class="aw-seg" aria-hidden="true">${['w', 'm'].map((k) => (counts[k] === 0 ? '' : html`<span class="${k}" style="flex-grow:${counts[k] ?? 1}"></span>`))}</span>
+    ${SEXES.map(([k, name]) => html`<span class="aw-n">${swatch(k)}<span class="sr-only">${name}: </span>${few(counts[k])}${shares[k] != null ? html` <small>${pct(shares[k])}</small>` : ''}</span>`)}</li>`;
 }
 
 /** Säulen mit Wert über der Säule; `down` zeichnet eine zweite Reihe nach unten (Austritte). `slots` hält Platz für fehlende Monate frei. */
 function columns(title, items, { down = false, slots = 0 } = {}) {
   const H = 96, max = Math.max(1, ...items.flatMap((i) => [i.value, i.down || 0]));
   const px = (v) => (v ? Math.max(2, Math.round((v / max) * H)) : 0);
+  const year = (l) => (/^\d{4}$/.test(l) ? html`<span class="aw-cc">${String(l).slice(0, 2)}</span>${String(l).slice(2)}` : l);   // schmal: ’26 statt 2026 (CSS)
   const low = px(Math.max(0, ...items.map((i) => i.down || 0))) + 18;   // Platz für die längste Säule nach unten und ihren Wert
   return html`<div class="aw-chart"><h3>${title}</h3>
     <ol class="aw-cols ${down ? 'both' : ''}">${items.map((i) => html`<li title="${i.title}"><span class="sr-only">${i.title}</span>
       <span class="aw-up" aria-hidden="true"><span class="aw-value">${i.value}</span><span class="aw-col t" style="height:${px(i.value)}px"></span></span>
       ${down ? html`<span class="aw-down" aria-hidden="true" style="height:${low}px"><span class="aw-col x" style="height:${px(i.down)}px"></span><span class="aw-value">${i.down}</span></span>` : ''}
-      <span class="aw-x" aria-hidden="true">${i.label}</span></li>`)}${Array.from({ length: Math.max(0, slots - items.length) }, (_, k) => html`<li aria-hidden="true"><span class="aw-up"></span><span class="aw-x muted">${MONTHS[items.length + k]}</span></li>`)}</ol>
+      <span class="aw-x" aria-hidden="true">${year(i.label)}</span></li>`)}${Array.from({ length: Math.max(0, slots - items.length) }, (_, k) => html`<li aria-hidden="true"><span class="aw-up"></span>${down ? html`<span class="aw-down" style="height:${low}px"></span>` : ''}<span class="aw-x muted">${MONTHS[items.length + k]}</span></li>`)}</ol>
     ${down ? legend([['t', 'Eintritte (nach oben)'], ['x', 'Austritte (nach unten)']]) : ''}</div>`;
 }
 
@@ -128,8 +134,8 @@ function draw(main, r, q) {
       <div class="card"><span class="label">Entwicklung ${r.year}</span><span class="value ${c.net_year < 0 ? 'over' : ''}">${c.net_year > 0 ? '+' : ''}${c.net_year}</span>
         <span class="note">${c.joined_year} Eintritte · ${c.left_year} Austritte bis zum Stichtag</span></div>
       <div class="card"><span class="label">Durchschnittsalter</span><span class="value">${num(c.avg_age)}</span><span class="note">Median ${num(c.median_age)} Jahre</span></div>
-      <div class="card"><span class="label">Frauenanteil</span><span class="value">${pct(c.women_share)}</span>
-        <span class="note">${c.women} weiblich · ${c.men} männlich · ${c.active - c.women - c.men} divers/ohne Angabe</span></div>
+      <div class="card"><span class="label">Frauenanteil</span><span class="value">${part(c.women_share)}</span>
+        <span class="note">${c.women} weiblich · ${c.men} männlich · ${c.active - c.women - c.men} divers/ohne Angabe nicht mitgezählt</span></div>
       <div class="card"><span class="label">Erreichbarkeit</span><span class="value">${pct(c.with_email)}</span>
         <span class="note">mit E-Mail · ${pct(c.with_mandate)} mit SEPA-Mandat · ${pct(c.with_ov)} mit Ortsverband</span></div>
     </section>
@@ -140,39 +146,44 @@ function draw(main, r, q) {
           ${twoSided('Mitglieder je Altersgruppe, männlich und weiblich', 'Alter', ['m', 'männlich'], ['w', 'weiblich'], r.ages.map((a) => ({ label: a.label, l: a.m, r: a.w })))}
           <p class="small muted">Nur männlich und weiblich; ${r.age_stats[2].count} Mitglieder divers/ohne Angabe${c.no_birth ? html`, ${c.no_birth} ohne Geburtsdatum` : ''}.</p>
           ${table(['Geschlecht', { label: 'Mitglieder', className: 'num' }, { label: 'Ø Alter', className: 'num' }, { label: 'Median', className: 'num' }],
-            [...r.age_stats.map((a) => html`<tr><td>${swatch(a.key)}${a.label}</td><td class="num">${a.count}</td><td class="num">${num(a.avg_age)}</td><td class="num">${num(a.median_age)}</td></tr>`),
+            [...r.age_stats.map((a) => html`<tr><td>${swatch(a.key)}${soft(a.label)}</td><td class="num">${a.count}</td><td class="num">${num(a.avg_age)}</td><td class="num">${num(a.median_age)}</td></tr>`),
               html`<tr><td>gesamt</td><td class="num">${c.active}</td><td class="num">${num(c.avg_age)}</td><td class="num">${num(c.median_age)}</td></tr>`], { className: 'aw-small' })}
         </div>
       </div></section>
     <section class="panel"><div class="panel-head"><h2>Geschlecht</h2>${legend(SEXES)}</div>
-      <ul class="aw-sex">${sexRow('Mitglieder gesamt', c.active, { w: c.women, m: c.men, x: c.active - c.women - c.men }, true)}
-        ${sexRow(`Eintritte ${r.year}`, c.joined_year, r.joined_gender)}
-        ${r.kv_rows.length > 1 ? r.kv_rows.map((k) => sexRow(k.name, k.active, k)) : ''}</ul>
-      <p class="small muted">Anteil an allen Mitgliedern der Zeile.${others.length ? html` Divers/ohne Angabe gesamt: ${others.map((g) => `${g.count} ${g.label}`).join(', ')}.` : ''}</p></section>
+      <ul class="aw-sex">${sexRow('Mitglieder gesamt', { w: c.women, m: c.men, x: c.active - c.women - c.men }, c.women_share, true)}
+        ${sexRow(`Eintritte ${r.year}`, r.joined_gender, c.joined_women_share)}
+        ${r.kv_rows.length > 1 ? r.kv_rows.map((k) => sexRow(k.name, k, k.women_share)) : ''}</ul>
+      <p class="small muted">Frauenanteil: weiblich im Verhältnis zu weiblich + männlich; divers/ohne Angabe zählt nicht mit. Kein Anteil unter 3 Personen.${others.length ? html` Divers/ohne Angabe gesamt: ${others.map((g) => `${g.count} ${g.label}`).join(', ')}.` : ''}</p></section>
     <section class="panel"><div class="panel-head"><h2>Kreisverbände ${r.year}</h2><span class="small muted">Beitrag: Soll und gezahlt im Jahr ${r.year}; Rückstand Stand heute</span></div>
       ${r.kv_rows.length > 1 ? html`<div class="aw-grid three">
         ${bars('Mitglieder', r.kv_rows.map((k) => ({ label: k.name, count: k.active, pick: k.code })), c.active, true)}
         ${bars('Ø Alter', r.kv_rows.map((k) => ({ label: k.name, count: k.avg_age || 0, text: num(k.avg_age), sub: 'Jahre' })), 0, true)}
         <div class="aw-chart"><h3>Aus- und Eintritte ${r.year}</h3>
-          ${twoSided(`Austritte, Eintritte und Saldo ${r.year} je Kreisverband`, 'Kreisverband', ['x', 'Austritte'], ['t', 'Eintritte'],
+          ${twoSided(`Austritte, Eintritte und Saldo ${r.year} je Kreisverband`, html`<span class="sr-only">Kreisverband</span>`, ['x', 'Austritte'], ['t', 'Eintritte'],
             r.kv_rows.map((k) => ({ label: k.name, l: k.left_year, r: k.joined_year, extra: signed(k.net_year) })), 'Saldo')}</div>
       </div>` : ''}
       ${r.kv_rows.length ? table(['Kreisverband', { label: 'Mitglieder', className: 'num' }, { label: 'Ø Alter', className: 'num' }, { label: 'Frauenanteil', className: 'num' },
         { label: `Saldo ${r.year}`, className: 'num' }, { label: 'Beitrag Soll', className: 'num' }, { label: 'Gezahlt', className: 'num' }, { label: 'Rückstand', className: 'num' }, ''],
         r.kv_rows.map((k) => html`<tr><td>${k.name}</td><td class="num">${k.active}<span class="sub">${pct(k.share)}</span></td>
-          <td class="num">${num(k.avg_age)}</td><td class="num">${k.women_share === null ? '—' : pct(k.women_share)}</td>
+          <td class="num">${num(k.avg_age)}</td><td class="num">${part(k.women_share)}</td>
           <td class="num"><span class="${k.net_year < 0 ? 'over' : ''}">${signed(k.net_year)}</span><span class="sub">${k.joined_year} ein · ${k.left_year} aus</span></td><td class="num">${money(k.soll)}</td>
           <td class="num">${money(k.paid)}${k.paid_share !== null ? html`<span class="sub">${pct(k.paid_share)}</span>` : ''}</td>
           <td class="num ${k.arrears ? 'over' : ''}">${money(k.arrears)}${k.arrears_count ? html`<span class="sub">${k.arrears_count} Mitglieder</span>` : ''}</td>
           <td><button type="button" class="btn small" data-op-kv="${k.code}">OP-Liste</button></td></tr>`), { className: 'kv-table aw-kv' })
         : empty('Keine Mitglieder', 'Für die Auswahl gibt es keine Mitglieder.')}</section>
-    ${r.ov_rows.length ? html`<section class="panel"><h2>Ortsverbände</h2>${table(['Ortsverband', 'Kreisverband', { label: 'Mitglieder', className: 'num' }, { label: 'Ø Alter', className: 'num' }],
-      r.ov_rows.map((o) => html`<tr><td>${o.label}</td><td>${kvName(o.kv)}</td><td class="num">${o.active}</td><td class="num">${num(o.avg_age)}</td></tr>`))}</section>` : ''}
+    ${r.ov_rows.length ? html`<section class="panel"><h2>Ortsverbände</h2>${table(['Ortsverband', 'Kreisverband', { label: 'Mitglieder', className: 'num' }, { label: 'Frauenanteil', className: 'num' },
+      { label: 'Ø Alter', className: 'num' }, ...BANDS.map((label) => ({ label, className: 'num' }))],
+      r.ov_rows.map((o) => html`<tr><td>${o.label}</td><td>${kvName(o.kv)}</td><td class="num" data-label="Mitglieder">${o.active}</td>
+        <td class="num" data-label="Frauenanteil">${part(o.women_share)}</td><td class="num" data-label="Ø Alter">${num(o.avg_age)}</td>
+        ${BANDS.map((label, i) => html`<td class="num" data-label="${label}">${o.band_n[i] === null ? '< 3' : part(o.bands[i])}</td>`)}</tr>`), { className: 'aw-ov' })}
+      <p class="small muted">Unter 18 / 18–24 / ab 25: Anteil an den Mitgliedern des Ortsverbands (Alter am Stichtag).</p></section>` : ''}
     <section class="panel"><h2>Entwicklung</h2>
       <div class="aw-grid three">
         ${columns('Bestand am 31.12.', r.development.map((d) => ({ label: d.year, value: d.end, title: `${d.year}: ${d.end} Mitglieder` })))}
         ${columns('Ein- und Austritte je Jahr', r.development.map((d) => ({ label: d.year, value: d.joined, down: d.left, title: `${d.year}: ${d.joined} Eintritte, ${d.left} Austritte` })), { down: true })}
-        ${columns(`Eintritte ${r.year} je Monat`, r.months.map((n, i) => ({ label: MONTHS[i], value: n, title: `${MONTHS[i]} ${r.year}: ${n} Eintritte` })), { slots: 12 })}
+        ${columns(`Ein- und Austritte ${r.year} je Monat`, r.months.map((n, i) => ({ label: MONTHS[i], value: n, down: r.months_left[i],
+          title: `${MONTHS[i]} ${r.year}: ${n} Eintritte, ${r.months_left[i]} Austritte` })), { down: true, slots: 12 })}
       </div>
       <p class="small muted">${partial ? `${partial.year}: Stand ${date(partial.until)}. ` : ''}Austritt = letzter Tag der Mitgliedschaft.</p>
       <details class="aw-details"><summary>Zahlen als Tabelle</summary>${table(['Jahr', { label: 'Eintritte', className: 'num' }, { label: 'Austritte', className: 'num' }, { label: 'Saldo', className: 'num' }, { label: 'Bestand', className: 'num' }],

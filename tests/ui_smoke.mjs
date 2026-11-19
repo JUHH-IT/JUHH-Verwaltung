@@ -826,12 +826,29 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
     'Auswertung: Alterspyramide nach Geschlecht');
   check((await page.locator('.aw-page .aw-sex li').first().textContent()).includes('weiblich') && await page.locator('.aw-page .aw-sex li').count() >= 2,
     'Auswertung: Geschlechteranteile gesamt und bei den Eintritten');
-  check(await page.locator('.aw-page .aw-cols').count() === 3 && await page.locator('.aw-page .aw-cols').last().locator('li').count() === 12,
-    'Auswertung: Bestand, Ein-/Austritte je Jahr, Eintritte je Monat');
+  check(await page.locator('.aw-page .aw-cols').count() === 3 && await page.locator('.aw-page .aw-cols').last().locator('li').count() === 12
+    && await page.locator('.aw-page .aw-cols.both').count() === 2, 'Auswertung: Bestand, Ein-/Austritte je Jahr und je Monat');
   check(await page.evaluate(() => [...document.querySelectorAll('.aw-page .aw-bars li, .aw-page .aw-two tbody tr, .aw-page .aw-cols li:not([aria-hidden])')]
     .every((e) => /\d/.test(e.textContent))), 'Auswertung: jedes Diagramm nennt seine Zahlen als Text');
   await page.setViewportSize({ width: 390, height: 844 });
-  check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Auswertung: Handy (390 px) ohne seitliches Scrollen');
+  // erst prüfen, wenn main.js auf die kompakte Ansicht umgeschaltet hat (sonst misst man noch die Seitenleiste daneben – in der CI gescheitert)
+  await page.waitForFunction(() => document.documentElement.classList.contains('compact'));
+  const awFits = () => page.evaluate(() => {   // nichts ragt über den Bildschirm oder aus seinem Abschnitt (Tabellen und Reiter haben eigene Rahmen)
+    const out = [...document.querySelectorAll('.aw-page .panel *, .aw-page .card *')].filter((e) => !e.closest('.tablewrap, .tabs, .sr-only') && e.getClientRects().length).filter((e) => {
+      const box = e.closest('.panel, .card').getBoundingClientRect(), r = e.getBoundingClientRect();
+      return r.right > box.right + 0.5 || r.left < box.left - 0.5 || (!e.children.length && getComputedStyle(e).display !== 'inline' && e.scrollWidth > e.clientWidth + 1);
+    }).map((e) => `${e.tagName.toLowerCase()}.${e.className} „${e.textContent.trim().slice(0, 20)}“`);
+    return { ok: document.documentElement.scrollWidth <= window.innerWidth && !out.length, out: out.slice(0, 5) };
+  });
+  let fits = await awFits();
+  check(fits.ok, `Auswertung: Handy (390 px) ohne seitliches Scrollen ${fits.out.join(' | ')}`);
+  check(await page.evaluate(() => { const w = document.querySelector('.aw-page table.aw-ov')?.closest('.tablewrap'); return !w || w.scrollWidth <= w.clientWidth; }),
+    'Auswertung: Ortsverbände auf dem Handy ohne Scrollen in der Tabelle');
+  const wide = await page.addStyleTag({ content: '* { font-family: "DejaVu Sans", Verdana, sans-serif !important; letter-spacing: .06em; }' });   // Geräte mit breiterer Schrift
+  await page.waitForTimeout(300);
+  fits = await awFits();
+  check(fits.ok, `Auswertung: Handy (390 px) auch mit breiter Schrift ohne Überlauf ${fits.out.join(' | ')}`);
+  await wide.evaluate((e) => e.remove());
   await shot('38-auswertung-handy');
   await page.setViewportSize({ width: 1440, height: 900 });
   const awPdf = await page.evaluate(async () => (await fetch(document.querySelector('.aw-page a[href^="/api/auswertung.pdf"]').href)).headers.get('content-type'));

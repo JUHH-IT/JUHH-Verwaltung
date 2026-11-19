@@ -81,13 +81,13 @@ class AuswertungTests(unittest.TestCase):
         kv_line = next(line for line in auswertung.csv(self.s, DAY, kv='5300').decode('utf-8-sig').splitlines() if line.startswith('Kreisverband;'))
         self.assertEqual(kv_line.split(';')[4], '')                                            # kein Alter, keine Beträge einer Person
         self.assertEqual(kv_line.split(';')[9:12], ['', '', ''])
-        self.assertEqual(kv_line.split(';')[-3:], ['', '', ''])                                # auch kein Geschlecht einer Person
+        self.assertEqual(kv_line.split(';')[13:17], ['', '', '', ''])                          # auch kein Geschlecht, kein Frauenanteil einer Person
         self.assertNotIn('Altersgruppe', auswertung.csv(self.s, DAY, kv='5300').decode('utf-8-sig'))
 
     def test_new_figures(self):
         r = auswertung.report(self.s, DAY, today=DAY)
         c = r['cards']
-        self.assertEqual((c['women'], c['men'], c['women_share'], c['no_birth']), (1, 1, 0.25, 0))
+        self.assertEqual((c['women'], c['men'], c['women_share'], c['no_birth']), (1, 1, None, 0))   # 1 : 1 – unter 3 Personen kein Anteil
         self.assertEqual({a['label']: (a['w'], a['m']) for a in r['ages'] if a['count']},
                          {'16–17': (1, 0), '25–29': (0, 0), '30–34': (0, 1), '35 und älter': (0, 0)})     # T3 und T5 ohne Angabe: nicht in der Pyramide
         self.assertEqual({a['label']: a['count'] for a in r['entry_ages'] if a['count']}, {'16–17': 1, '18–20': 1, '21–24': 1, '25–29': 1})
@@ -97,7 +97,12 @@ class AuswertungTests(unittest.TestCase):
                          [('w', 1, None, None), ('m', 1, None, None), ('x', 2, None, None)])   # unter 3 Personen kein Alter
         kv = {k['code']: k for k in r['kv_rows']}
         self.assertEqual([(kv[k]['w'], kv[k]['m'], kv[k]['x'], kv[k]['women_share'], kv[k]['net_year']) for k in ('5100', '5300', '5600')],
-                         [(1, 1, 0, 0.5, 1), (0, 0, 1, 0.0, -1), (0, 0, 1, 0.0, 0)])
+                         [(1, 1, 0, None, 1), (0, 0, 1, None, -1), (0, 0, 1, None, 0)])              # 5300/5600 nur „ohne Angabe“: kein Frauenanteil
+        self.assertEqual((r['months_left'], sum(r['months_left'])), ([0, 0, 1, 0, 0, 0], c['left_year']))   # Austritt T4 am 31.03.
+        self.assertEqual(c['joined_women_share'], None)
+        ov = {(o['kv'], o['label']): o for o in r['ov_rows']}
+        self.assertEqual([(o['w'], o['m'], o['x'], o['women_share'], o['band_n'], o['bands']) for o in (ov['5100', '11 Testort'], ov['5300', 'ohne Ortsverband'])],
+                         [(0, 1, 0, None, [0, 0, 1], [0.0, 0.0, 1.0]), (0, 0, 1, None, [0, 0, 1], [0.0, 0.0, 1.0])])
         for k in r['kv_rows']:                                                                # Anteile ergeben 100 %
             self.assertEqual(k['w'] + k['m'] + k['x'], k['active'])
         self.assertEqual(sum(k['active'] for k in r['kv_rows']), c['active'])
@@ -109,11 +114,11 @@ class AuswertungTests(unittest.TestCase):
 
     def test_empty_selection(self):
         r = auswertung.report(self.s, DAY, kv='5800', today=DAY)                              # Schüler Union ohne Mitglieder
-        self.assertEqual((r['cards']['active'], r['cards']['women_share'], r['cards']['avg_age'], r['kv_rows']), (0, 0, None, []))
+        self.assertEqual((r['cards']['active'], r['cards']['women_share'], r['cards']['avg_age'], r['kv_rows']), (0, None, None, []))
         self.assertEqual({a['count'] for a in r['ages'] + r['entry_ages']}, {0})
-        self.assertEqual((r['months'], r['joined_gender']), ([0] * 6, {'w': 0, 'm': 0, 'x': 0}))
+        self.assertEqual((r['months'], r['months_left'], r['joined_gender']), ([0] * 6, [0] * 6, {'w': 0, 'm': 0, 'x': 0}))
         self.assertTrue(auswertung.pdf(self.s, DAY, kv='5800').startswith(b'%PDF'))
-        self.assertIn('Eintritte 2026-06', auswertung.csv(self.s, DAY, kv='5800').decode('utf-8-sig'))
+        self.assertIn('Monat 2026-06;;;;;0;0;', auswertung.csv(self.s, DAY, kv='5800').decode('utf-8-sig'))
         self.assertEqual(auswertung.report(self.s, '2026-01-01', today=DAY)['months'], [0])   # Stichtag im Januar: ein Monat
 
     def test_redact_small_groups(self):
@@ -126,14 +131,17 @@ class AuswertungTests(unittest.TestCase):
                          {'16–17': (1, None, 0), '25–29': (1, 0, 0), '30–34': (1, 0, None), '35 und älter': (1, 0, 0)})
         kv = {k['code']: k for k in red['kv_rows']}
         self.assertEqual((kv['5100']['w'], kv['5100']['m'], kv['5100']['x'], kv['5100']['women_share']), (None, None, 0, None))
-        self.assertEqual((kv['5300']['x'], kv['5300']['women_share'], kv['5300']['soll']), (None, 0.0, 0))
-        self.assertEqual(red['joined_gender'], {'w': None, 'm': 0, 'x': 0})
+        self.assertEqual((kv['5300']['x'], kv['5300']['women_share'], kv['5300']['soll']), (None, None, 0))
+        self.assertEqual((red['joined_gender'], red['cards']['joined_women_share']), ({'w': None, 'm': 0, 'x': 0}, None))
+        ov = {(o['kv'], o['label']): o for o in red['ov_rows']}                                # Ortsverbände mit 1 Person: nichts, was auf ihr beruht
+        self.assertEqual([(o['active'], o['w'], o['m'], o['x'], o['avg_age'], o['women_share'], o['band_n'], o['bands']) for o in (ov['5100', '11 Testort'], ov['5300', 'ohne Ortsverband'])],
+                         [(1, 0, None, 0, None, None, [0, 0, None], [0.0, 0.0, None]), (1, 0, 0, None, None, None, [0, 0, None], [0.0, 0.0, None])])
         text = json.dumps(red, ensure_ascii=False)
         for name in ('Test,', 'T1', 'Jung', 'Ü35', 'example.org'):                                    # keine Namen, Nummern, Kontaktdaten
             self.assertNotIn(name, text)
         lines = auswertung.csv(self.s, DAY).decode('utf-8-sig').splitlines()                    # PDF/CSV: Geschlecht unter 3 Personen nur „< 3“
-        self.assertEqual(next(x for x in lines if x.startswith('Altersgruppe;16–17')).split(';')[-3:], ['< 3', '0', '0'])
-        self.assertEqual(next(x for x in lines if x.startswith('Kreisverband;Altona')).split(';')[-4:], ['1', '< 3', '< 3', '0'])
+        self.assertEqual(next(x for x in lines if x.startswith('Altersgruppe;16–17')).split(';')[13:16], ['< 3', '0', '0'])
+        self.assertEqual(next(x for x in lines if x.startswith('Kreisverband;Altona')).split(';')[12:17], ['1', '< 3', '< 3', '0', ''])
         self.assertEqual(next(x for x in lines if x.startswith('Alter nach Geschlecht;weiblich')).split(';')[3:5], ['< 3', ''])
         self.assertEqual(len({len(x.split(';')) for x in lines}), 1)                           # jede Zeile gleich viele Spalten
 
@@ -165,9 +173,33 @@ class AltersgruppenTests(unittest.TestCase):
                          [(5, round((16 + 15 + 18 + 25 + 35) / 5, 1), 18), (5, round((17 + 21 + 20 + 30 + 34) / 5, 1), 21), (2, None, None)])
         self.assertEqual([a['count'] for a in r['entry_ages']], [1, 3, 2, 2, 2, 2, 0])            # ein Jahr jünger; G0 tritt am 16. Geburtstag ein
         self.assertEqual((r['months'], r['joined_gender']), ([0, 0, 0, 0, 0, 1], {'w': 1, 'm': 0, 'x': 0}))   # Eintritt am Stichtag zählt
+        self.assertEqual((r['cards']['women_share'], r['kv_rows'][0]['women_share']), (0.5, 0.5))   # 5 : 5, die 2 divers/ohne Angabe zählen nicht mit
+        ov = r['ov_rows'][0]                                                                  # alle ohne Ortsverband: eine Zeile
+        self.assertEqual((ov['active'], ov['w'], ov['m'], ov['x'], ov['women_share'], ov['band_n'], ov['bands']), (12, 5, 5, 2, 0.5, [3, 4, 5], [0.25, 0.3333, 0.4167]))
+        red = auswertung.redact(r, names=False)['ov_rows'][0]                                 # ab 3 Personen je Wert bleibt alles stehen, nur x = 2 nicht
+        self.assertEqual((red['w'], red['m'], red['x'], red['women_share'], red['avg_age'], red['band_n'], red['bands']), (5, 5, None, 0.5, ov['avg_age'], [3, 4, 5], ov['bands']))
+        lines = auswertung.csv(self.s, DAY).decode('utf-8-sig').splitlines()
+        self.assertEqual(next(x for x in lines if x.startswith('Ortsverband;')).split(';')[13:], ['5', '5', '< 3', '50,0', '25,0', '33,3', '41,7'])
+        self.assertEqual(next(x for x in lines if x.startswith('Kreisverband;')).split(';')[13:17], ['5', '5', '< 3', '50,0'])
+        self.assertEqual(next(x for x in lines if x.startswith('Eintritte nach Geschlecht')).split(';')[13:17], ['< 3', '0', '0', ''])
+        self.assertTrue(auswertung.pdf(self.s, DAY).startswith(b'%PDF'))
         self.s.db.execute("UPDATE members SET birth='' WHERE number='G11'")
         r = auswertung.report(self.s, DAY, today=DAY)
         self.assertEqual((r['cards']['no_birth'], sum(a['count'] for a in r['ages']), r['cards']['men']), (1, 11, 5))
+
+
+    def test_frauenanteil(self):
+        w = auswertung._women
+        self.assertEqual([w(2, 1), w(0, 3), w(1, 1), w(0, 0), w(None, 5), w(5, None)], [0.6667, 0.0, None, None, None, None])
+        self.assertEqual([w(5, 2, hidden=True), w(2, 5, hidden=True), w(5, 3, hidden=True), w(0, 3, hidden=True)], [None, None, 0.625, 0.0])   # PDF/CSV: „< 3“ nicht zurückrechenbar
+        self.assertEqual(auswertung._bands([1, 4, 0], hidden=True), [None, 0.8, 0.0])
+        self.assertEqual(auswertung._bands([0, 0, 0]), [None, None, None])
+        self.s.db.execute("UPDATE members SET gender=''")                                      # nur „ohne Angabe“: kein Frauenanteil, auch nicht 0 %
+        r = auswertung.report(self.s, DAY, today=DAY)
+        self.assertEqual((r['cards']['active'], r['cards']['women'], r['cards']['women_share'], r['kv_rows'][0]['women_share'], r['ov_rows'][0]['women_share']),
+                         (12, 0, None, None, None))
+        self.assertTrue(auswertung.pdf(self.s, DAY).startswith(b'%PDF'))
+        self.assertEqual(next(x for x in auswertung.csv(self.s, DAY).decode('utf-8-sig').splitlines() if x.startswith('Kreisverband;')).split(';')[13:17], ['0', '0', '12', ''])
 
 
 if __name__ == '__main__':
