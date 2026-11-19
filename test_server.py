@@ -22,6 +22,9 @@ import app
 import geheimnis
 import verwaltung
 import zugang
+
+PRODUKTIV_N = zugang._N
+zugang._N = 2 ** 10   # nur Tests: schnelles Hashing (die Prüfung liest N aus dem gespeicherten Hash) – spart Minuten je Lauf
 from core import Store
 
 PASSWORT = 'Testpasswort-2026!'
@@ -29,6 +32,9 @@ ADRESSE = 'https://ju-finanzen.beispiel.ts.net'
 
 
 class ZugangTests(unittest.TestCase):
+    def test_produktive_hash_parameter(self):
+        self.assertEqual(PRODUKTIV_N, 2 ** 16)   # OWASP-Empfehlung; die Tests rechnen mit kleinerem N (oben)
+
     def test_hash_and_verify(self):
         h = zugang.hash_password(PASSWORT)
         self.assertTrue(h.startswith('scrypt$') and zugang.is_set(h) and PASSWORT not in h)
