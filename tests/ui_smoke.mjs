@@ -366,7 +366,8 @@ try {
   const lastMail = readdirSync(mailDir).filter((f) => f.endsWith('.eml')).sort((a, b) => parseInt(a) - parseInt(b)).at(-1);
   const subject = execFileSync('python3', ['-c', 'import email, sys; from email import policy; print(email.message_from_bytes(open(sys.argv[1], "rb").read(), policy=policy.default)["Subject"])', join(mailDir, lastMail)]).toString();
   check(mails().length === 4 && subject.startsWith('Zahlungserinnerung zur Rechnung ' + dueNumber) && mails()[3].includes(dueNumber + '.pdf'), 'Zahlungserinnerung mit Rechnung beim Empfänger');
-  check((await page.locator('main tbody').textContent()).includes('1× erinnert'), 'Erinnerung in den offenen Posten');
+  // die Liste lädt nach dem Schließen des Dialogs neu – auf den erwarteten Stand warten statt sofort zu lesen
+  check(await page.locator('main tbody', { hasText: '1× erinnert' }).first().waitFor({ timeout: 8000 }).then(() => true, () => false), 'Erinnerung in den offenen Posten');
   await page.click('[data-page=invoices]');
 
   // SEPA-Lastschrift: Mandat erfassen, Beitrag 2027 mit Vorabankündigung, Lastschriftdatei pain.008.001.08
@@ -1429,6 +1430,15 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.waitForTimeout(500);
   check(await page.evaluate(() => document.querySelectorAll('.leaflet-container').length) === 1 && await page.locator('main .leaflet-control-zoom-in').getAttribute('title') === 'Vergrößern',
     'Seitenwechsel: genau eine Karte, Zoom-Knöpfe auf Deutsch');
+  // CI-Befund 19.11.2026 (clearRect): Karte neu zeichnen und noch vor dem nächsten Bild verlassen – nichts zeichnet danach auf der abgebauten Karte
+  const beforeLeave = errors.length;
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => { document.querySelector('main [data-mode=members]').click(); document.querySelector('[data-page=members]').click(); });
+    await page.click('[data-page=map]');
+    await page.waitForSelector('main .map-canvas.leaflet-container');
+  }
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  check(errors.length === beforeLeave, 'Karte neu zeichnen und sofort verlassen: kein Zeichnen auf der abgebauten Karte');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click('#menu-toggle');
   await page.click('[data-page=map]');
