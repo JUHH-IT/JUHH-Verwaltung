@@ -313,10 +313,12 @@ Der erste Lauf, Schritt für Schritt:
    ```bash
    sudo ju-finanzen haerten
    ```
-   Der Lauf endet mit der Aufforderung „Öffne jetzt ein ZWEITES Fenster …“. Die Änderungen gelten ab jetzt auf Probe:
-   Nach fünf Minuten nimmt der Server sie von selbst zurück, wenn sie niemand bestätigt.
+   Der Lauf endet mit der Aufforderung „Öffne jetzt ein ZWEITES Fenster …“ und nennt die Uhrzeit, zu der die Frist
+   abläuft. Die Änderungen gelten ab jetzt auf Probe: Fünf Minuten nach dieser Aufforderung nimmt der Server sie von
+   selbst zurück, wenn sie niemand bestätigt.
 5. **Zweites Fenster öffnen und dort neu anmelden** (ein weiteres Browser-Terminal oder eine neue SSH-Verbindung) – das
-   erste Fenster bleibt offen. Gelingt die neue Anmeldung nicht: nichts tun, nach fünf Minuten gilt wieder der alte Stand.
+   erste Fenster bleibt offen. Gelingt die neue Anmeldung nicht: nichts tun, nach fünf Minuten gilt wieder der alte Stand –
+   auch wenn das erste Fenster zugeht oder der Server in dieser Zeit neu startet.
 6. **Im zweiten Fenster bestätigen:**
    ```bash
    sudo ju-finanzen haerten --bestaetigen
@@ -338,15 +340,30 @@ eigenen Schalter mit Nachweis braucht (siehe „SSH“).
 
 So schützt der Befehl vor Fehlern:
 - Geändert wird an genau einer Stelle im Skript; `--pruefen` durchläuft denselben Weg und berichtet nur.
-- **Rücknahme, die nicht an der Sitzung hängt.** Ändert ein Lauf die Firewall-Maßnahme oder einen der beiden SSH-Schalter,
-  plant er *vor* der ersten Änderung eine eigene Timer-Unit (`systemd-run`, Unit `ju-haertung-ruecknahme`), die nach fünf
-  Minuten `haerten --zurueck` ausführt. Sie läuft auch, wenn das Fenster geschlossen wird, die Verbindung abreißt oder der
-  Lauf abstürzt. Nur `haerten --bestaetigen` sagt sie ab – und nur aus einer *anderen* Anmeldung als der, die den Lauf
-  gestartet hat: Eine bestehende Verbindung beweist nicht, dass eine neue noch gelingt. Aus derselben Anmeldung wird die
-  Bestätigung abgelehnt. Lässt sich die Rücknahme nicht planen, werden diese Maßnahmen nicht angewendet (der Rest schon).
-  Solange eine Rücknahme aussteht, zeigen `--pruefen` und `schutz-status` sie mit der Restzeit, und ein neuer Lauf beginnt
-  nicht. Ansehen: `systemctl list-timers ju-haertung-ruecknahme`. Nach einem Neustart innerhalb der fünf Minuten gibt es die
-  Unit nicht mehr – dann selbst entscheiden: `--bestaetigen` oder `--zurueck`.
+- **Rücknahme, die weder an der Sitzung noch am laufenden System hängt.** Ändert ein Lauf die Firewall-Maßnahme oder
+  einen der beiden SSH-Schalter, plant er *vor* der ersten Änderung die Rücknahme und merkt den Lauf als „auf Probe“
+  (Datei `RUECKNAHME` in seinem Ordner). Lässt sie sich nicht planen, werden diese Maßnahmen nicht angewendet (der Rest schon).
+  - *Frist:* Ein Timer (`ju-haertung-ruecknahme.timer`) löst zu einer festen Uhrzeit aus – fünf Minuten nach der
+    Aufforderung am Ende des Laufs – und startet `ju-haertung-ruecknahme.service`, das `haerten --zurueck` für den
+    unbestätigten Lauf ausführt. Das geschieht auch, wenn das Fenster geschlossen wird, die Verbindung abreißt oder der Lauf
+    abstürzt. Ansehen: `systemctl list-timers 'ju-haertung-*'`.
+  - *Neustart in der Frist:* Ein zweiter Timer (`ju-haertung-neustart.timer`) löst nach jedem Start des Servers aus. Liegt
+    dann noch ein unbestätigter Lauf vor, ist er rund zwei Minuten nach dem Start zurückgenommen; bis dahin gilt sein
+    Stand (auch die Schutztabelle wird beim Start so geladen). Ohne unbestätigten Lauf tut der Timer nichts.
+  - *Scheitert die Rücknahme* (ein Schritt meldet einen Fehler), wiederholt systemd sie fünfmal im Abstand von einer
+    Minute und nach dem nächsten Start erneut. `--pruefen`, `schutz-status` und der Statusbericht für das Programm melden
+    dann „Rücknahme gescheitert“; bestätigen lässt sich ein solcher Lauf nicht mehr, abschließen mit `haerten --zurueck`.
+  - *Läuft `haerten` noch,* wenn die Frist abläuft, wartet die Rücknahme, bis der Lauf fertig ist – nie laufen beide
+    zugleich. Der Lauf stellt die Frist am Ende ohnehin neu.
+  - *Absagen* kann sie nur `haerten --bestaetigen` – und nur aus einer *anderen* Anmeldung als der, die den Lauf gestartet
+    hat: Eine bestehende Verbindung beweist nicht, dass eine neue noch gelingt. Aus derselben Anmeldung wird die
+    Bestätigung abgelehnt, ebenso aus einem Aufruf ohne erkennbare Anmeldung (dann: Browser-Terminal oder `tailscale ssh`
+    ohne Befehl). Nach `--ssh-nur-schluessel` muss sich zusätzlich seit Beginn des Laufs jemand per SSH mit dem Schlüssel
+    angemeldet haben (siehe „SSH“).
+  - Solange ein Lauf auf Probe gilt, zeigen `--pruefen` und `schutz-status` ihn mit der Uhrzeit, die systemd für den Timer
+    nennt, und ein neuer Lauf beginnt nicht. Wer nach der Rücknahme noch bestätigen will, erfährt, wann sie stattfand.
+  - Die beiden Units liegen in `/etc/systemd/system`, sobald ein Lauf zum ersten Mal eine Rücknahme plant; `--zurueck`
+    des letzten Laufs entfernt sie wieder. Sie hängen an keinem Schalter in `haertung.conf`.
 - Jede geänderte Datei liegt vorher in `/var/backups/ju-haertung/<Zeit>/dateien/` (nur root), dazu `MANIFEST` (Dateien mit
   Prüfsumme nach dem Lauf, Rechte, Dienste, Kern-Werte vor dem Lauf, Gegenbefehle für ufw) und `protokoll.log`. Ein Lauf ohne
   Änderung legt nichts an.
@@ -359,8 +376,12 @@ So schützt der Befehl vor Fehlern:
   sonst nimmt er die Maßnahme zurück.
 - `--zurueck` nimmt den letzten Lauf zurück, ein weiteres `--zurueck` den davor. Es nimmt nur zurück, was der Lauf selbst
   getan hat: In ufw führt es die Gegenbefehle zu den eigenen Ergänzungen aus (später ergänzte Regeln bleiben), in
-  `/etc/ufw/sysctl.conf` stellt es nur die eigenen Zeilen zurück, und eine Datei, die seit dem Lauf von Hand geändert wurde,
-  überschreibt es nicht, sondern meldet sie. Neu installierte Pakete bleiben installiert, ihre Dienste werden abgeschaltet.
+  `/etc/ufw/sysctl.conf` stellt es nur die eigenen Zeilen zurück. Neu installierte Pakete bleiben installiert, ihre Dienste
+  werden abgeschaltet. Eine Datei, die seit dem Lauf von Hand geändert wurde, überschreibt es nicht: Der Befehl nennt am
+  Ende ihre Anzahl und Pfade, endet mit einem Fehler, und der Lauf gilt als „teilweise zurückgenommen“ – ein weiteres
+  `--zurueck` bietet genau diese Dateien erneut an, `--zurueck --trotzdem` überschreibt sie (die von Hand geänderte
+  Fassung bleibt unter `/var/backups/ju-haertung/<Zeit>/von-hand/`). Scheitert ein Schritt, sagt der Befehl das ebenfalls
+  und lässt sich wiederholen; was schon zurückgenommen ist, bleibt dabei so.
   Statusbericht und Sperrliste (`status.json`, `drop4.txt`, `drop6.txt`, `ju_mengen.nft`, `zaehler.json`) werden gelöscht,
   damit das Programm keinen veralteten Stand als „ok“ zeigt. `--zurueck --pruefen` zeigt nur, was zurückgenommen würde.
 - `--ohne-rueckfrage` heißt: keine Bestätigung nötig, es wird keine Rücknahme geplant. Der Schalter ist für die
@@ -450,7 +471,10 @@ dem Passwort anmeldet und Schlüssel im SSH-Agenten hat, nimmt `ssh -o PubkeyAut
 Schlüssel die drei Versuche, und solche Fehlverbindungen zählen bei fail2ban mit.
 
 Die beiden riskanten Schalter nimmt der Befehl nur an, wenn der Nachweis gelingt – sonst bricht er ab, bevor er
-irgendetwas ändert. Auch danach gelten sie erst auf Probe, bis `haerten --bestaetigen` aus einem zweiten Fenster kommt:
+irgendetwas ändert. Auch danach gelten sie erst auf Probe, bis `haerten --bestaetigen` aus einem zweiten Fenster kommt.
+Nach `--ssh-nur-schluessel` genügt dafür nicht irgendeine zweite Anmeldung: Der Befehl bestätigt nur, wenn sich seit
+Beginn des Laufs das Konto per SSH **mit dem Schlüssel** angemeldet hat (Journal von sshd) – also im zweiten Fenster mit
+`ssh` und Schlüssel anmelden, nicht über Tailscale-SSH oder die Konsole des Anbieters:
 
 ```bash
 sudo ju-finanzen haerten --ssh-nur-schluessel   # Anmeldung per Passwort abschalten
@@ -525,9 +549,19 @@ Sperrliste, Schutztabelle, Kern-Einstellungen und Updates gelten dann unverände
 ### Wenn etwas nicht geht
 
 - **Keine SSH-Anmeldung mehr:** Browser-Terminal des Anbieters öffnen, `sudo ju-finanzen haerten --zurueck`. War der Lauf
-  noch nicht bestätigt, genügt Warten: Nach fünf Minuten gilt von selbst wieder der alte Stand.
+  noch nicht bestätigt, genügt Warten: Nach fünf Minuten gilt von selbst wieder der alte Stand (nach einem Neustart des
+  Servers: rund zwei Minuten nach dem Start).
 - **„Nicht bestätigt: … derselben Anmeldung“:** Die Bestätigung muss aus einem zweiten Fenster mit eigener, neuer Anmeldung
   kommen – nicht aus dem Fenster, in dem `haerten` lief.
+- **„Nicht bestätigt: … lässt sich nicht erkennen“:** Der Aufruf kam ohne eigene Anmeldung (z. B. ein Befehl, der über
+  `ssh server befehl` aus einem Skript läuft). In einem neuen Fenster interaktiv anmelden und dort bestätigen.
+- **„Nichts mehr zu bestätigen: … von selbst zurückgenommen“:** Die Frist war abgelaufen. `sudo ju-finanzen haerten`
+  erneut starten und innerhalb von fünf Minuten aus dem zweiten Fenster bestätigen.
+- **„RÜCKNAHME GESCHEITERT“ in `--pruefen` oder `schutz-status`:** Der unbestätigte Lauf ist nur teilweise zurückgenommen.
+  Im Browser-Terminal `sudo ju-finanzen haerten --zurueck` – die Ausgabe nennt, was offen ist; Einzelheiten stehen in
+  `/var/backups/ju-haertung/<Zeit>/protokoll.log` und in `sudo journalctl -u ju-haertung-ruecknahme`.
+- **„NICHT VOLLSTÄNDIG zurückgenommen: … von Hand geändert“:** Die genannten Dateien ansehen; sollen auch sie zurück:
+  `sudo ju-finanzen haerten --zurueck --trotzdem`.
 - **„nicht angewendet: … (Grund)“ am Ende eines Laufs:** Diese Maßnahme wurde zurückgenommen, die übrigen gelten. Grund
   beheben (bei einem Paket: einige Minuten warten, dann `sudo apt-get update && sudo apt-get install <Paket>`) und
   `sudo ju-finanzen haerten` erneut aufrufen.
@@ -595,7 +629,7 @@ Zur vorherigen Version zurück: `sudo /opt/ju-finanzen/current/server/install.sh
 | `sudo ju-finanzen keycloak-sicherung` | Keycloak-Datenbank jetzt sichern (nach `/var/backups/ju-keycloak`, nur root) |
 | `sudo ju-finanzen keycloak-verbinden "Name" [--kc-name name]` | bestehende Person mit Keycloak verbinden (Startpasswort einmal) |
 | `sudo ju-finanzen notzugang [--minuten N \| --aus]` | Keycloak-Betrieb: Notzugang (Passwort-Anmeldung der Verwaltung) befristet öffnen bzw. schließen |
-| `sudo ju-finanzen haerten [--pruefen \| --zurueck]` | Betriebssystem härten: Firewall mit Sperrliste, fail2ban, Kern, Updates, SSH (Abschnitt 7); `--pruefen` ändert nichts |
+| `sudo ju-finanzen haerten [--pruefen \| --zurueck [--trotzdem]]` | Betriebssystem härten: Firewall mit Sperrliste, fail2ban, Kern, Updates, SSH (Abschnitt 7); `--pruefen` ändert nichts; `--zurueck --trotzdem` überschreibt auch seither von Hand geänderte Dateien |
 | `sudo ju-finanzen haerten --bestaetigen` | nach `haerten` aus einem zweiten Fenster (neu angemeldet): Änderungen an Firewall und SSH-Zugang behalten – sonst nimmt der Server sie nach fünf Minuten zurück |
 | `sudo ju-finanzen haerten --ssh-nur-schluessel` bzw. `--ssh-nur-tailscale` | SSH enger stellen – nur nach bestandenem Nachweis (Abschnitt 7, „SSH“) |
 | `sudo ju-finanzen schutz-status` | Statusbericht des Serverschutzes (derselbe, den das Programm liest) |

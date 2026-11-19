@@ -1,0 +1,12 @@
+# JU Hamburg Finanzen – nach jedem Start des Servers: eine noch unbestätigte Härtung zurücknehmen
+# (installiert von server/haerten.sh; ohne unbestätigten Lauf geschieht nichts – siehe ju-haertung-ruecknahme.service)
+[Unit]
+Description=JU Hamburg Finanzen – unbestätigte Härtung nach einem Neustart zurücknehmen
+
+[Timer]
+OnBootSec=2min
+AccuracySec=1s
+Unit=ju-haertung-ruecknahme.service
+
+[Install]
+WantedBy=timers.target

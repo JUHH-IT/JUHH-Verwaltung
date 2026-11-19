@@ -2,8 +2,8 @@
 
 Das Skript läuft gegen ein nachgestelltes Wurzelverzeichnis (WURZEL); Systembefehle kommen dort nur aus <Wurzel>/stub
 (tests/haertung_stub.sh). Alle Adressen sind erfunden (Dokumentationsbereiche 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24,
-2001:db8::/32). Nicht nachstellbar und deshalb hier ungeprüft: echtes systemd (auch systemd-run und die geplante
-Rücknahme als Timer-Unit), ufw, Tailscale, fail2ban und sshd.
+2001:db8::/32). Hier nur nachgestellt: systemd, ufw, Tailscale, fail2ban und sshd. Die geplante Rücknahme auf echtem
+systemd (Timer der Frist, Neustart, Wiederholung) prüft tests/haertung_systemd.sh – von Hand, nicht in der CI.
 Das erzeugte Regelwerk prüft und lädt ein Test zusätzlich mit dem echten nft – nur als root mit nft (sonst übersprungen).
 """
 import fcntl
@@ -20,13 +20,16 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest import mock
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
 HAERTEN = ROOT / 'server' / 'haerten.sh'
 sys.path.insert(0, str(ROOT / 'server' / 'haertung'))
 import serverschutz  # noqa: E402
+import schutz  # noqa: E402  (die Anwendung liest den Statusbericht)
 
 LINUX = sys.platform == 'linux' and shutil.which('bash') and shutil.which('flock')
 
@@ -37,6 +40,11 @@ def drop4(anzahl=150):
              for n in ipaddress.ip_network(basis).subnets(new_prefix=30)][:anzahl]
     kopf = '; Spamhaus DROP List 2026/11/19 - (c) 2026 The Spamhaus Project SLU\n; Last-Modified: Wed, 18 Nov 2026 12:50:31 GMT\n'
     return (kopf + ''.join(f'{n} ; SBL{100000 + i}\n' for i, n in enumerate(netze))).encode()
+
+
+def berlin(unixzeit):
+    """Uhrzeit, wie das Skript sie nennt (die Tests laufen mit TZ=Europe/Berlin)."""
+    return datetime.fromtimestamp(unixzeit, ZoneInfo('Europe/Berlin')).strftime('%H:%M:%S')
 
 
 def drop6(anzahl=12):
@@ -225,15 +233,15 @@ class StatusLogikTests(unittest.TestCase):
 
 class Wurzel:
     """Nachgestellter Server nach der Bestandsaufnahme: ufw aktiv, SSH von einer Quelle, Passwort an, Docker aus."""
-    BEFEHLE = ('systemctl systemd-run nft ufw sshd sysctl tailscale curl dpkg-query apt-get apt-config fail2ban-client ss ip '
-               'journalctl findmnt').split()
+    BEFEHLE = 'systemctl nft ufw sshd sysctl tailscale curl dpkg-query apt-get apt-config fail2ban-client ss ip journalctl findmnt'.split()
 
     def __init__(self, test):
         self.w = Path(tempfile.mkdtemp(prefix='ju-haertung-'))
         test.addCleanup(shutil.rmtree, self.w, True)
         self.z = self.w / 'zustand'
         for ordner in ('stub', 'zustand', 'etc/ufw', 'etc/default', 'etc/ssh/sshd_config.d', 'etc/ju-finanzen', 'root/.ssh',
-                       'var/lib/ju-finanzen', 'var/log', 'var/tmp', 'tmp', 'run/sshd', 'proc/self', 'etc/systemd/system'):
+                       'var/lib/ju-finanzen', 'var/log', 'var/tmp', 'tmp', 'run/sshd', 'run/systemd/system', 'proc/self',
+                       'etc/systemd/system'):
             (self.w / ordner).mkdir(parents=True)
         for name in self.BEFEHLE:
             (self.w / 'stub' / name).symlink_to(ROOT / 'tests' / 'haertung_stub.sh')
@@ -262,6 +270,7 @@ class Wurzel:
                           ('kernel.kptr_restrict', '1'), ('net.ipv4.ip_forward', '1'), ('kernel.yama.ptrace_scope', '2'),
                           ('kernel.core_pattern', '|/usr/share/apport/apport -p%p -s%s')):
             self.kernwert(name, ist)
+        self.datei('proc/sys/kernel/random/boot_id', 'erster-start\n')
         self.zustand('ufw-regeln', regeln)
         self.zustand('ufw-status', '\n'.join(UFW.splitlines()[7:]) + '\n')
         self.zustand('sshd-vorgaben', 'Port 22\nPermitRootLogin yes\nPasswordAuthentication yes\nPubkeyAuthentication yes\n'
@@ -303,25 +312,48 @@ class Wurzel:
     def lies(self, name):
         return (self.w / name).read_text(encoding='utf-8')
 
-    def lauf(self, *args, sitzung='7', frist='300', gruppe=False):
-        """haerten.sh gegen die Wurzel. sitzung = Kennung der Anmeldesitzung; gruppe = eigene Prozessgruppe (für Signale)."""
+    def lauf(self, *args, sitzung='7', start='erster-start', gruppe=False, warten=True):
+        """haerten.sh gegen die Wurzel. sitzung = Audit-Kennung der Anmeldung, start = Kennung des Systemstarts (boot_id);
+        gruppe = eigene Prozessgruppe (für Signale); warten=False gibt den laufenden Prozess zurück."""
         (self.w / 'proc/self/sessionid').write_text(sitzung, encoding='utf-8')
-        env = {**os.environ, 'WURZEL': str(self.w), 'JU_PYTHON': sys.executable, 'JU_PAUSE': '0', 'JU_FRIST': frist, 'TZ': 'Europe/Berlin'}
+        self.datei('proc/sys/kernel/random/boot_id', start + '\n')
+        env = {**os.environ, 'WURZEL': str(self.w), 'JU_PYTHON': sys.executable, 'JU_PAUSE': '0', 'TZ': 'Europe/Berlin'}
         for name in ('SUDO_USER', 'SSH_CONNECTION'):
             env.pop(name, None)
         mehr = {}
         if gruppe:   # Signale gelten wie am Terminal der ganzen Gruppe; ein vom Aufrufer geerbtes „ignorieren“ ließe sich nicht abfangen
             mehr = {'start_new_session': True,
                     'preexec_fn': lambda: [signal.signal(s, signal.SIG_DFL) for s in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM)]}
+        if not warten:
+            return subprocess.Popen(['bash', str(HAERTEN), *args], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                    stdin=subprocess.DEVNULL, **mehr)
         return subprocess.run(['bash', str(HAERTEN), *args], env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL,
                               timeout=120, **mehr)
+
+    def neustart(self):
+        """Der Server startet neu: /run ist leer (auch der Timer der Frist), eingeschaltete Timer warten wieder."""
+        shutil.rmtree(self.w / 'run/systemd')
+        (self.w / 'run/systemd/system').mkdir(parents=True)
+        for datei in list(self.z.glob('sub-*')) + list(self.z.glob('next-*')) + [self.z / 'active-ju-haertung-ruecknahme.timer']:
+            datei.unlink(missing_ok=True)
+        for an in self.z.glob('enabled-*.timer'):
+            if an.read_text(encoding='utf-8').strip() == 'enabled':
+                (self.z / an.name.replace('enabled-', 'sub-')).write_text('waiting\n', encoding='utf-8')
+        if (self.w / 'var/lib/ju-serverschutz/ju_schutz.nft').exists() and self.lies('zustand/enabled-ju-serverschutz.service').strip() == 'enabled':
+            (self.z / 'tabelle').touch()   # ju-serverschutz.service lädt die Tabelle beim Start
+
+    def lauf_ordner(self):
+        """Ordner des einzigen Laufs."""
+        laeufe = sorted((self.w / 'var/backups/ju-haertung').iterdir())
+        assert len(laeufe) == 1, laeufe
+        return laeufe[0]
 
     def bild(self, ohne=('aufrufe.log', 'proc/self')):
         """Alles unter der Wurzel: Pfad → (Rechte, Inhalt) – zum Vergleich vorher/nachher."""
         bild = {}
         for pfad in sorted(self.w.rglob('*')):
             rel = str(pfad.relative_to(self.w))
-            if rel.startswith(tuple(ohne)):
+            if rel.startswith(tuple(ohne)) or rel == 'proc/sys/kernel/random/boot_id':   # die Kennung des Systemstarts setzt jeder Aufruf
                 continue
             modus = stat.S_IMODE(pfad.lstat().st_mode)
             if pfad.is_symlink() or pfad.is_dir():
@@ -335,20 +367,23 @@ class Wurzel:
 
     def manifest(self):
         """MANIFEST des einzigen Laufs als Liste von Feldern."""
-        laeufe = sorted((self.w / 'var/backups/ju-haertung').iterdir())
-        assert len(laeufe) == 1, laeufe
-        return [z.split('\t') for z in (laeufe[0] / 'MANIFEST').read_text(encoding='utf-8').splitlines()]
+        return [z.split('\t') for z in (self.lauf_ordner() / 'MANIFEST').read_text(encoding='utf-8').splitlines()]
 
 
 AENDERND = re.compile(r'^(systemctl (enable|disable|start|stop|restart|reload|try-restart|daemon-reload)|ufw (allow|delete|default|--force|reload)'
-                      r'|nft (-f|delete)|sysctl|apt-get .*(install|update)|systemd-run|curl .*spamhaus)')
+                      r'|nft (-f|delete)|sysctl|apt-get .*(install|update)|curl .*spamhaus)')
 UFW_AENDERND = re.compile(r'^ufw (allow|delete|default|--force|reload|reset|deny|limit|insert)')
 # was ein Lauf außerhalb der gesicherten Dateien hinterlässt: Sicherungen, Arbeitsdaten des Serverschutzes, Sperre, leeres Protokoll
 NEBENBEI = ('aufrufe.log', 'proc/self', 'zustand', 'var/backups', 'var/lib/ju-serverschutz', 'run/ju-haertung.lock', 'var/log/fail2ban.log',
             'etc/fail2ban', 'etc/security', 'etc/sysctl.d', 'etc/apt', 'etc/systemd/journald.conf.d')
 LIB = 'var/lib/ju-serverschutz'
-PLAN = 'systemd-run --quiet --collect --unit=ju-haertung-ruecknahme --on-active=300 '
+# Planung der Rücknahme, in dieser Reihenfolge: Units einlesen, Timer der Frist starten, Timer für den Neustart einschalten
+PLAN = ['systemctl daemon-reload', 'systemctl restart ju-haertung-ruecknahme.timer', 'systemctl enable -q ju-haertung-neustart.timer']
+FRIST, NEUSTART = PLAN[1], PLAN[2]
 STOPP = 'systemctl stop ju-haertung-ruecknahme.timer'
+DIENST = 'etc/systemd/system/ju-haertung-ruecknahme.service'
+FRIST_DATEI = 'run/systemd/system/ju-haertung-ruecknahme.timer'
+SCHLUESSEL = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeispielBeispielBeispielBeispielBeispielBeispi beispiel\n'
 
 
 @unittest.skipUnless(LINUX, 'braucht Linux mit bash und flock')
@@ -366,13 +401,31 @@ class HaertenTests(unittest.TestCase):
         return self.gut('--ohne-rueckfrage', *args)
 
     def geplante_ruecknahme(self, **mehr):
-        """Führt aus, was die Timer-Unit nach Ablauf der Frist ausführen würde: den von systemd-run aufgezeichneten Befehl."""
-        zeile = [a for a in self.s.aufrufe() if a.startswith('systemd-run ')][-1]
-        self.assertTrue(zeile.startswith(PLAN), zeile)
-        befehl, _, args = zeile.partition(' --description=')[2].partition('haerten.sh ')
-        self.assertTrue(befehl.endswith(str(HAERTEN.parent) + '/'), zeile)
-        self.assertEqual(args.split(), ['--zurueck', '--ohne-rueckfrage'])
-        return self.s.lauf(*args.split(), **mehr)
+        """Tut, was systemd tut, wenn einer der beiden Timer auslöst: die Bedingung der installierten Unit prüfen und ihren
+        Befehl ausführen. None = systemd startete nichts (Unit fehlt oder kein Lauf auf Probe)."""
+        if not (self.s.w / DIENST).exists():
+            return None
+        unit = self.s.lies(DIENST)
+        if not list(self.s.w.glob(re.search(r'^ConditionPathExistsGlob=/(.+)$', unit, re.M).group(1))):
+            return None
+        befehl = re.search(r'^ExecStart=(.+)$', unit, re.M).group(1).split()
+        self.assertEqual(befehl[0], '/opt/ju-finanzen/current/server/haerten.sh')
+        return self.s.lauf(*befehl[1:], **mehr)
+
+    def frist_ende(self):
+        """Unixzeit, zu der der Timer der Frist auslöst (None: er wartet nicht)."""
+        if not (self.s.z / 'sub-ju-haertung-ruecknahme.timer').exists():
+            return None
+        return int(self.s.lies('zustand/next-ju-haertung-ruecknahme.timer'))
+
+    def marke(self):
+        """Marke des Laufs auf Probe als Wörterbuch."""
+        (datei,) = (self.s.w / 'var/backups/ju-haertung').glob('*/RUECKNAHME')
+        return dict(z.split('=', 1) for z in datei.read_text(encoding='utf-8').splitlines())
+
+    def vor_der_planung(self, aufrufe):
+        """Ändernde Aufrufe, bevor die Rücknahme fertig geplant ist – erlaubt sind nur die Schritte der Planung selbst."""
+        return [a for a in aufrufe[:aufrufe.index(NEUSTART)] if AENDERND.match(a)]
 
     def test_pruefen_aendert_nichts_und_nennt_die_lage(self):
         vorher = self.s.bild()
@@ -397,16 +450,27 @@ class HaertenTests(unittest.TestCase):
         self.assertNotIn('IdentitiesOnly', out)
         self.assertNotIn('kernel.yama.ptrace_scope (', out)           # der strengere vorhandene Wert bleibt
         # mit den riskanten Schaltern: nur die Ablehnung berichten
-        out = self.gut('--pruefen', '--ssh-nur-schluessel')
-        self.assertIn('ABGELEHNT: SSH nur mit Schlüssel: für das Konto root ist kein SSH-Schlüssel hinterlegt', out)
+        mit = self.gut('--pruefen', '--ssh-nur-schluessel')
+        self.assertIn('ABGELEHNT: SSH nur mit Schlüssel: für das Konto root ist kein SSH-Schlüssel hinterlegt', mit)
         self.assertEqual(self.s.bild(), vorher)
+        # je Maßnahme: Stand → Änderung → Risiko; „Änderung: keine“ steht vor dem Risiko, das Risiko am Schluss
+        for block in out.split('\n==> ')[2:-1]:
+            arten = [z.split(':')[0].strip() for z in block.splitlines()[1:] if re.match(r'    (Stand|Änderung|Risiko):', z)]
+            self.assertEqual(arten, sorted(arten, key=('Stand', 'Änderung', 'Risiko').index), block)
+            self.assertIn('Änderung', arten, block)
+            self.assertTrue(block.rstrip().splitlines()[-1].startswith('    Risiko:') or 'Risiko' not in arten, block)
+        self.assertRegex(out, r'6\. Unnötige Dienste \(Docker\)\n(.*\n)*?    Änderung: keine\n    Risiko:')
+        # der Prüflauf kündigt genau so viele Änderungen an, wie der Lauf dann meldet
+        angekuendigt = re.search(r'(\d+) Änderungen stünden an', out).group(1)
+        self.assertIn(f'Fertig: {angekuendigt} Änderungen.', self.anwenden())
 
     def test_anwenden_wiederholen_zurueck(self):
         vorher = self.s.bild(NEBENBEI)
         out = self.anwenden()
         self.assertIn('Fertig:', out)
         self.assertNotIn('ZWEITES Fenster', out)                      # --ohne-rueckfrage plant keine Rücknahme
-        self.assertEqual([a for a in self.s.aufrufe() if a.startswith('systemd-run')], [])
+        self.assertNotIn(FRIST, self.s.aufrufe())
+        self.assertFalse((self.s.w / DIENST).exists())
         # 1 Firewall: an ufw fehlt nichts – kein einziger ändernder Aufruf, keine ufw-Datei in der Sicherung
         self.assertEqual([a for a in self.s.aufrufe() if UFW_AENDERND.match(a)], [])
         manifest = self.s.manifest()
@@ -473,7 +537,7 @@ class HaertenTests(unittest.TestCase):
         self.assertIn('Änderung: keine', self.gut('--pruefen'))
         self.assertIn('0 Änderungen stünden an', self.gut('--pruefen'))
         self.assertIn('Alles war bereits umgesetzt', self.gut())       # ohne Änderung an der Firewall: nichts zu bestätigen
-        self.assertEqual([a for a in self.s.aufrufe() if a.startswith('systemd-run')], [])
+        self.assertNotIn(FRIST, self.s.aufrufe())
 
         # zurück: jede geänderte Datei, jedes Recht, jeder Kern-Wert und jeder Dienst wie vor dem Lauf
         zeigen = self.gut('--zurueck', '--pruefen')
@@ -504,19 +568,36 @@ class HaertenTests(unittest.TestCase):
     def test_ruecknahme_wird_vorher_geplant_und_nur_aus_anderer_sitzung_abgesagt(self):
         out = self.gut()
         for erwartet in ('WICHTIG – noch ein Schritt', 'In 5 Minuten (um ', 'werden die Änderungen von selbst zurückgenommen',
-                         'Öffne jetzt ein ZWEITES Fenster, melde dich dort neu an und führe aus:', 'sudo ju-finanzen haerten --bestaetigen'):
+                         'Öffne jetzt ein ZWEITES Fenster, melde dich dort neu an und führe aus:', 'sudo ju-finanzen haerten --bestaetigen',
+                         'auch wenn dieses Fenster zugeht oder der Server neu startet'):
             self.assertIn(erwartet, out)
         self.assertNotIn('Eingabetaste', out)
+        # geplant, bevor irgendetwas an der Firewall geändert ist: davor laufen nur die Schritte der Planung selbst
         aufrufe = self.s.aufrufe()
-        geplant = [i for i, a in enumerate(aufrufe) if a.startswith('systemd-run')]
-        self.assertEqual(len(geplant), 1)
-        self.assertTrue(aufrufe[geplant[0]].startswith(PLAN) and aufrufe[geplant[0]].endswith('haerten.sh --zurueck --ohne-rueckfrage'))
-        # geplant, bevor irgendetwas an der Firewall geändert ist
-        self.assertLess(geplant[0], min(i for i, a in enumerate(aufrufe) if a.startswith(('systemctl daemon-reload', 'systemctl restart'))))
-        # Prüflauf und Statusbericht zeigen die ausstehende Rücknahme mit Restzeit; ein neuer Lauf beginnt nicht
+        self.assertEqual(self.vor_der_planung(aufrufe), PLAN[:2])
+        self.assertLess(out.index('Geplant:  automatische Rücknahme in 5 Minuten'), out.index('Ändere:   /var/lib/ju-serverschutz/ju_schutz.nft'))
+        # die festen Units sind installiert, der Timer für den Neustart ist eingeschaltet, der Timer der Frist wartet
+        for unit in ('ju-haertung-ruecknahme.service', 'ju-haertung-neustart.timer'):
+            self.assertEqual(self.s.lies(f'etc/systemd/system/{unit}'), (ROOT / 'server' / 'haertung' / unit).read_text(encoding='utf-8'))
+        self.assertEqual(self.s.lies('zustand/enabled-ju-haertung-neustart.timer').strip(), 'enabled')
+        self.assertRegex(self.s.lies(FRIST_DATEI), r'(?m)^OnCalendar=\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC$')
+        # die Frist zählt ab der Aufforderung am Ende: nach dem letzten Schritt des Laufs ist der Timer neu gestellt, und
+        # angekündigt wird genau die Zeit, zu der er auslöst
+        self.assertEqual(aufrufe.count(FRIST), 2)
+        letzter = max(i for i, a in enumerate(aufrufe) if a == FRIST)
+        self.assertEqual([a for a in aufrufe[letzter + 1:] if AENDERND.match(a)], [])
+        ende = self.frist_ende()
+        self.assertLessEqual(abs(ende - time.time() - 300), 5)
+        self.assertEqual(self.marke()['ende'], str(ende))
+        uhrzeit = berlin(ende)
+        self.assertIn(f'In 5 Minuten (um {uhrzeit} Uhr) werden die Änderungen von selbst zurückgenommen.', out)
+        # Prüflauf und Statusbericht fragen den Timer selbst; ein neuer Lauf beginnt nicht
         for zeigen in (self.gut('--pruefen'), self.gut('status')):
             self.assertIn('ist noch nicht bestätigt', zeigen)
-            self.assertRegex(zeigen, r'In 5 Minuten \(um \d\d:\d\d:\d\d Uhr\) werden die Änderungen von selbst zurückgenommen')
+            self.assertIn(f'In 5 Minuten (um {uhrzeit} Uhr) werden die Änderungen von selbst zurückgenommen', zeigen)
+        self.s.zustand('next-ju-haertung-ruecknahme.timer', str(ende + 3600))  # was der Timer sagt, gilt – nicht die eigene Notiz
+        self.assertIn(f'In 65 Minuten (um {berlin(ende + 3600)} Uhr)', self.gut('--pruefen'))
+        self.s.zustand('next-ju-haertung-ruecknahme.timer', str(ende))
         r = self.s.lauf()
         self.assertEqual(r.returncode, 1)
         self.assertIn('ist noch nicht bestätigt', r.stderr)
@@ -525,22 +606,41 @@ class HaertenTests(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn('derselben Anmeldung', r.stderr)
         self.assertNotIn(STOPP, self.s.aufrufe())
-        self.assertEqual(self.s.lies('zustand/active-ju-haertung-ruecknahme.timer').strip(), 'active')
-        r = self.s.lauf('--bestaetigen', sitzung='4294967295')         # Anmeldung nicht erkennbar (keine Audit-Sitzung, kein Terminal)
+        self.assertEqual(self.frist_ende(), ende)
+        # Anmeldung nicht erkennbar (keine Audit-Sitzung): abgelehnt mit dem Weg, der funktioniert – nie wird ersatzweise das Terminal verglichen
+        r = self.s.lauf('--bestaetigen', sitzung='4294967295')
         self.assertEqual(r.returncode, 1)
+        self.assertIn('Bitte in einem neuen Fenster interaktiv neu anmelden (Browser-Terminal des Anbieters oder „tailscale ssh“ ohne Befehl)', r.stderr)
         self.assertNotIn(STOPP, self.s.aufrufe())
-        # eine andere Anmeldung: angenommen, die Timer-Unit wird gestoppt, alles bleibt
+        self.assertTrue((self.s.lauf_ordner() / 'RUECKNAHME').exists())
+        # eine andere Anmeldung: angenommen, der Timer der Frist ist gestoppt und entfernt, alles bleibt
         self.assertIn('Bestätigt: Die Änderungen', self.gut('--bestaetigen', sitzung='8'))
         self.assertIn(STOPP, self.s.aufrufe())
+        self.assertIsNone(self.frist_ende())
+        self.assertFalse((self.s.w / FRIST_DATEI).exists())
         self.assertTrue((self.s.z / 'tabelle').exists())
         self.assertNotIn('noch nicht bestätigt', self.gut('--pruefen'))
         self.assertIn('nichts zu bestätigen', self.gut('--bestaetigen', sitzung='8'))
-        # liefe die Unit jetzt doch noch (Stoppen verpasst), nähme sie nichts zurück: sie gilt nur einem unbestätigten Lauf
-        r = self.geplante_ruecknahme()
+        # die festen Units bleiben für den nächsten Lauf, tun ohne Lauf auf Probe aber nichts – auch nicht nach einem Neustart
+        self.assertTrue((self.s.w / DIENST).exists())
+        self.s.neustart()
+        self.assertIsNone(self.geplante_ruecknahme())
+        r = self.s.lauf('--zurueck', '--ohne-rueckfrage')              # und liefe der Befehl doch: Er gilt nur einem unbestätigten Lauf
         self.assertEqual(r.returncode, 0)
         self.assertIn('Keine Rücknahme ausstehend', r.stdout)
         self.assertTrue((self.s.z / 'tabelle').exists())
         self.assertTrue((self.s.w / 'etc/sysctl.d/80-ju-haertung.conf').exists())
+        # --zurueck des bestätigten Laufs nimmt auch die festen Units wieder mit
+        self.gut('--zurueck')
+        for rest in (DIENST, 'etc/systemd/system/ju-haertung-neustart.timer', FRIST_DATEI):
+            self.assertFalse((self.s.w / rest).exists(), rest)
+        self.assertEqual(self.s.lies('zustand/enabled-ju-haertung-neustart.timer').strip(), 'disabled')
+
+    def test_gleiche_sitzungsnummer_nach_einem_neustart_ist_eine_neue_anmeldung(self):
+        self.gut(sitzung='1', start='erster-start')
+        self.assertEqual(self.marke()['sitzung'], 'erster-start/1')
+        self.s.neustart()                                              # nach dem Start beginnen die Nummern wieder bei 1
+        self.assertIn('Bestätigt: Die Änderungen', self.gut('--bestaetigen', sitzung='1', start='zweiter-start'))
 
     def test_ohne_bestaetigung_kommt_nach_der_frist_der_alte_stand(self):
         vorher = self.s.bild(NEBENBEI)
@@ -548,11 +648,105 @@ class HaertenTests(unittest.TestCase):
         self.assertTrue((self.s.z / 'tabelle').exists())
         r = self.geplante_ruecknahme()
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(self.s.bild(NEBENBEI), vorher)
+        self.assertEqual(self.s.bild(NEBENBEI), vorher)                # auch die Units der Rücknahme und der Timer der Frist sind weg
         self.assertFalse((self.s.z / 'tabelle').exists())
         self.assertFalse((self.s.w / LIB / 'status.json').exists())
+        self.assertIn('der Lauf wurde nicht bestätigt', (self.s.lauf_ordner() / 'protokoll.log').read_text(encoding='utf-8'))
+        # wer danach noch bestätigen will, erfährt, was geschehen ist und was jetzt zu tun ist
+        r = self.s.lauf('--bestaetigen', sitzung='8')
+        self.assertEqual(r.returncode, 1)
+        self.assertRegex(r.stderr, r'Der letzte Lauf \(\d{8}-\d{6}\) wurde am \d\d\.\d\d\.\d{4} um \d\d:\d\d:\d\d Uhr von selbst zurückgenommen')
+        self.assertIn('„sudo ju-finanzen haerten“ erneut starten und danach innerhalb von 5 Minuten aus einem zweiten Fenster bestätigen', r.stderr)
+        # nach einer Rücknahme von Hand gibt es dazu nichts zu sagen
+        self.gut()
+        self.gut('--zurueck')
         self.assertIn('nichts zu bestätigen', self.gut('--bestaetigen', sitzung='8'))
-        self.assertIn('der Lauf wurde nicht bestätigt', next((self.s.w / 'var/backups/ju-haertung').iterdir()).joinpath('protokoll.log').read_text(encoding='utf-8'))
+
+    def test_neustart_in_der_frist_nimmt_den_unbestaetigten_lauf_zurueck(self):
+        vorher = self.s.bild(NEBENBEI)
+        self.gut('--ohne-rueckfrage')                                  # ein früherer Lauf, der gilt
+        gehaertet = self.s.bild(NEBENBEI + ('etc/systemd/system/ju-haertung', 'etc/ju-finanzen/haertung.conf'))
+        # der Lauf auf Probe nimmt die Schutztabelle weg (FIREWALL=nein) – die Units der Rücknahme hängen an keinem Schalter
+        conf = self.s.lies('etc/ju-finanzen/haertung.conf')
+        self.s.datei('etc/ju-finanzen/haertung.conf', conf.replace('FIREWALL=ja', 'FIREWALL=nein').replace('SSH=ja', 'SSH=nein'))
+        out = self.gut()
+        self.assertIn('ZWEITES Fenster', out)
+        self.assertFalse((self.s.z / 'tabelle').exists())
+        self.assertFalse((self.s.w / 'etc/ssh/sshd_config.d/00-ju-haertung.conf').exists())
+        # Neustart in der Frist: den Timer der Frist gibt es nicht mehr – der Timer für den Neustart wartet
+        self.s.neustart()
+        self.assertFalse((self.s.w / FRIST_DATEI).exists())
+        for zeigen in (self.gut('--pruefen', start='zweiter-start'), self.gut('status', start='zweiter-start')):
+            self.assertIn('ist noch nicht bestätigt', zeigen)
+            self.assertIn('Der Server wurde seit dem Lauf neu gestartet: Etwa zwei Minuten nach dem Start werden die Änderungen von selbst zurückgenommen.', zeigen)
+            self.assertNotRegex(zeigen, 'abgelaufen|fand nicht statt')
+        r = self.geplante_ruecknahme(start='zweiter-start')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.s.bild(NEBENBEI + ('etc/systemd/system/ju-haertung', 'etc/ju-finanzen/haertung.conf')), gehaertet)
+        self.assertTrue((self.s.z / 'tabelle').exists())               # die Tabelle des früheren Laufs ist wieder geladen
+        self.assertTrue((self.s.w / DIENST).exists())                  # der frühere Lauf gilt weiter: die Units bleiben
+        self.assertNotIn('noch nicht bestätigt', self.gut('--pruefen'))
+        # wartet kein Timer mehr (weder Frist noch Neustart), sagt der Bericht das – statt eine Rücknahme zu versprechen
+        self.gut()
+        self.s.neustart()
+        (self.s.z / 'sub-ju-haertung-neustart.timer').write_text('elapsed\n', encoding='utf-8')
+        self.assertIn('ACHTUNG: Es wartet keine automatische Rücknahme mehr', self.gut('--pruefen'))
+        self.s.zustand('active-ju-haertung-ruecknahme.service', 'activating\n')
+        self.assertIn('Die Rücknahme läuft gerade.', self.gut('--pruefen'))
+        (self.s.z / 'active-ju-haertung-ruecknahme.service').unlink()
+        self.assertEqual(self.geplante_ruecknahme().returncode, 0)
+        self.gut('--zurueck', '--trotzdem')                            # haertung.conf hat der Test von Hand geändert
+        self.assertEqual(self.s.bild(NEBENBEI), vorher)
+
+    def test_gescheiterte_ruecknahme_wird_gemeldet_und_ein_weiterer_versuch_holt_sie_nach(self):
+        vorher = self.s.bild(NEBENBEI)
+        self.gut()
+        self.s.zustand('scheitert-sshd', '-t')                         # ein Schritt der Rücknahme scheitert: SSH wird nicht neu geladen
+        r = self.geplante_ruecknahme()
+        self.assertEqual(r.returncode, 1)                              # systemd wiederholt den Dienst (Restart=on-failure)
+        self.assertIn('NICHT VOLLSTÄNDIG zurückgenommen: Ein Schritt ist gescheitert', r.stdout)
+        self.assertNotIn('Fertig', r.stdout)
+        ordner = self.s.lauf_ordner()
+        self.assertTrue((ordner / 'RUECKNAHME').exists())              # der Lauf gilt weiter als unbestätigt: Timer und Neustart greifen erneut
+        self.assertFalse((ordner / 'ZURUECKGESPIELT').exists())
+        self.assertTrue((self.s.w / DIENST).exists())
+        self.assertEqual(self.s.lies('zustand/enabled-ju-haertung-neustart.timer').strip(), 'enabled')
+        self.assertIn('FEHLER:   sshd -t meldet Fehler – SSH nicht neu geladen', r.stdout)
+        # der Bericht für das Programm sagt es sofort – die gescheiterte Rücknahme schreibt ihn selbst, auch ohne seinen Zeitgeber
+        self.assertFalse((self.s.w / 'etc/systemd/system/ju-serverschutz-status.timer').exists())
+        bericht = schutz.serverschutz(self.s.w / LIB / 'status.json')
+        self.assertTrue(bericht['aktuell'])
+        self.assertIn({'id': 'ruecknahme', 'titel': 'Rücknahme der Härtung', 'stand': 'kritisch',
+                       'detail': 'Rücknahme gescheitert: Ein unbestätigter Lauf ist nur teilweise zurückgenommen (sudo ju-finanzen haerten --zurueck)'},
+                      bericht['pruefungen'])
+        # Prüflauf und schutz-status ebenso
+        for zeigen in (self.gut('--pruefen'), self.gut('status')):
+            self.assertIn('ACHTUNG – RÜCKNAHME GESCHEITERT: Der Lauf', zeigen)
+            self.assertRegex(zeigen, r'Ein Versuch, zuletzt um \d\d:\d\d:\d\d Uhr\.')
+            self.assertIn('sudo ju-finanzen haerten --zurueck', zeigen)
+        self.assertIn('KRITISCH  Rücknahme der Härtung: Rücknahme gescheitert', self.gut('status'))
+        # bestätigen lässt sich ein halb zurückgenommener Lauf nicht mehr, ein neuer Lauf beginnt nicht
+        r = self.s.lauf('--bestaetigen', sitzung='8')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('teilweise zurückgenommen und lässt sich nicht mehr bestätigen', r.stderr)
+        r = self.s.lauf()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('erst teilweise zurückgenommen', r.stderr)
+        # zweiter Versuch scheitert wieder, der dritte gelingt: danach ist alles wie vor dem Lauf – auch was schon zurückgenommen war
+        self.assertEqual(self.geplante_ruecknahme().returncode, 1)
+        self.s.zustand('active-ju-haertung-ruecknahme.service', 'activating\n')     # systemd wartet auf den nächsten Versuch
+        self.assertRegex(self.gut('--pruefen'), r'2 Versuche, zuletzt um \d\d:\d\d:\d\d Uhr; der nächste folgt in einer Minute von selbst\.')
+        (self.s.z / 'active-ju-haertung-ruecknahme.service').unlink()
+        (self.s.z / 'scheitert-sshd').unlink()
+        n = len(self.s.aufrufe())
+        r = self.geplante_ruecknahme()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.s.bild(NEBENBEI), vorher)
+        self.assertFalse((self.s.z / 'tabelle').exists())
+        self.assertIn('systemctl reload ssh.service', self.s.aufrufe()[n:])   # die Datei war schon entfernt – neu geladen wird trotzdem
+        self.assertFalse((ordner / 'RUECKNAHME').exists() or (ordner / 'TEILWEISE').exists())
+        self.assertNotIn('ACHTUNG', self.gut('--pruefen'))
+        self.assertIsNone(self.geplante_ruecknahme())
 
     def test_signal_nach_dem_anwenden_laesst_die_ruecknahme_geplant(self):
         # HUP: Fenster zu, während eine spätere Maßnahme läuft – die Firewall ist da schon geändert.
@@ -565,12 +759,13 @@ class HaertenTests(unittest.TestCase):
                 r = self.s.lauf(gruppe=True)
                 self.assertEqual(r.returncode, 130, r.stdout[-2000:] + r.stderr)
                 self.assertNotIn('ZWEITES Fenster', r.stdout)                         # der Lauf kam nicht bis zum Ende
-                self.assertEqual(len([a for a in self.s.aufrufe() if a.startswith(PLAN)]), 1)
+                self.assertEqual(self.s.aufrufe().count(FRIST), 1)
                 self.assertNotIn(STOPP, self.s.aufrufe())                             # die Rücknahme bleibt geplant
+                self.assertIsNotNone(self.frist_ende())
                 self.assertEqual((self.s.z / 'tabelle').exists(), tabelle)            # nur die begonnene Maßnahme ist zurückgenommen
                 self.assertFalse((self.s.w / 'etc/fail2ban/jail.d/ju-haertung.local').exists())
                 self.assertFalse((self.s.w / 'etc/sysctl.d/80-ju-haertung.conf').exists())   # spätere Maßnahmen begannen nicht
-                protokoll = next((self.s.w / 'var/backups/ju-haertung').iterdir()).joinpath('protokoll.log').read_text(encoding='utf-8')
+                protokoll = (self.s.lauf_ordner() / 'protokoll.log').read_text(encoding='utf-8')
                 self.assertIn(f'ABGEBROCHEN (Signal {name})', protokoll)
                 self.assertIn('Die geplante Rücknahme bleibt bestehen', protokoll)
                 self.assertIn('ist noch nicht bestätigt', self.gut('--pruefen'))
@@ -580,19 +775,29 @@ class HaertenTests(unittest.TestCase):
                 self.assertFalse((self.s.z / 'tabelle').exists())
 
     def test_ohne_planbare_ruecknahme_wird_die_firewall_nicht_angewendet(self):
-        (self.s.w / 'stub/systemd-run').unlink()
-        r = self.s.lauf()
-        self.assertEqual(r.returncode, 1)
-        self.assertIn('NICHT ANGEWENDET', r.stdout)
-        self.assertRegex(r.stdout, r'- Firewall \(ufw und Schutztabelle inet ju_schutz\) \(nicht angewendet, weil sich die automatische Rücknahme nicht planen lässt')
-        self.assertFalse((self.s.z / 'tabelle').exists())
-        self.assertFalse((self.s.w / LIB / 'ju_schutz.nft').exists())
-        self.assertFalse((self.s.w / 'etc/systemd/system/ju-serverschutz.service').exists())
-        self.assertNotIn('ZWEITES Fenster', r.stdout)
-        for rest in ('etc/sysctl.d/80-ju-haertung.conf', 'etc/fail2ban/jail.d/ju-haertung.local', 'etc/ssh/sshd_config.d/00-ju-haertung.conf'):
-            self.assertTrue((self.s.w / rest).exists(), rest)             # der Rest gilt
+        # systemd meldet beim Starten des Timers einen Fehler / meldet Erfolg, aber der Timer wartet nicht / der Timer für
+        # den Neustart lässt sich nicht einschalten: jedes Mal findet die Änderung nicht statt
+        for name, datei, inhalt in (('Fehler beim Start', 'scheitert-systemctl', 'restart ju-haertung-ruecknahme.timer'),
+                                    ('Timer wartet nicht', 'timer-startet-nicht', ''),
+                                    ('Neustart-Timer', 'scheitert-systemctl', 'enable -q ju-haertung-neustart.timer')):
+            with self.subTest(name):
+                self.s = Wurzel(self)
+                self.s.zustand(datei, inhalt)
+                r = self.s.lauf()
+                self.assertEqual(r.returncode, 1)
+                self.assertIn('NICHT ANGEWENDET', r.stdout)
+                self.assertRegex(r.stdout, r'- Firewall \(ufw und Schutztabelle inet ju_schutz\) \(nicht angewendet, weil sich die automatische Rücknahme nicht planen ließ')
+                self.assertFalse((self.s.z / 'tabelle').exists())
+                self.assertFalse((self.s.w / LIB / 'ju_schutz.nft').exists())
+                self.assertFalse((self.s.w / 'etc/systemd/system/ju-serverschutz.service').exists())
+                self.assertNotIn('ZWEITES Fenster', r.stdout)
+                self.assertFalse((self.s.lauf_ordner() / 'RUECKNAHME').exists())      # keine Marke ohne wartenden Timer
+                self.assertIsNone(self.frist_ende())
+                self.assertFalse((self.s.w / FRIST_DATEI).exists())
+                for rest in ('etc/sysctl.d/80-ju-haertung.conf', 'etc/fail2ban/jail.d/ju-haertung.local', 'etc/ssh/sshd_config.d/00-ju-haertung.conf'):
+                    self.assertTrue((self.s.w / rest).exists(), rest)             # der Rest gilt
         # der SSH-Sonderschalter braucht die Rücknahme ebenso
-        self.s.datei('root/.ssh/authorized_keys', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeispielBeispielBeispielBeispielBeispielBeispi beispiel\n', 0o600)
+        self.s.datei('root/.ssh/authorized_keys', SCHLUESSEL, 0o600)
         self.s.zustand('journal', 'Accepted publickey for root from 203.0.113.5 port 50001 ssh2: ED25519 SHA256:Beispiel\n')
         r = self.s.lauf('--ssh-nur-schluessel')
         self.assertEqual(r.returncode, 1)
@@ -600,32 +805,145 @@ class HaertenTests(unittest.TestCase):
         self.assertNotIn('PasswordAuthentication no', self.s.lies('etc/ssh/sshd_config.d/00-ju-haertung.conf'))
         self.assertNotIn('SSH_NUR_SCHLUESSEL=ja', self.s.lies('etc/ju-finanzen/haertung.conf'))
 
-    def test_sperrdatei_haelt_die_geplante_ruecknahme_nicht_auf(self):
+    def test_bestaetigen_gilt_erst_wenn_der_timer_wirklich_gestoppt_ist(self):
         self.gut()
-        with open(self.s.w / 'run/ju-haertung.lock', 'w', encoding='utf-8') as sperre:   # ein abgestürzter Lauf, dessen Kind die Sperre noch hält
+        self.s.zustand('stopp-wirkt-nicht', '')
+        r = self.s.lauf('--bestaetigen', sitzung='8')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('Die geplante Rücknahme ließ sich nicht absagen', r.stderr)
+        self.assertTrue((self.s.lauf_ordner() / 'RUECKNAHME').exists())    # sonst nähme der Timer einen „bestätigten“ Lauf nicht mehr zurück – oder doch
+        self.assertIn('ist noch nicht bestätigt', self.gut('--pruefen'))
+        (self.s.z / 'stopp-wirkt-nicht').unlink()
+        self.assertIn('Bestätigt: Die Änderungen', self.gut('--bestaetigen', sitzung='8'))
+
+    def test_geplante_ruecknahme_wartet_auf_die_sperre_statt_neben_einem_lauf_zu_laufen(self):
+        self.gut()
+        with open(self.s.w / 'run/ju-haertung.lock', 'w', encoding='utf-8') as sperre:   # ein haerten-Lauf ist noch nicht fertig
             fcntl.flock(sperre, fcntl.LOCK_EX)
-            r = self.s.lauf('--zurueck')
+            r = self.s.lauf('--zurueck')                               # von Hand: sofortige klare Absage
             self.assertEqual(r.returncode, 1)
             self.assertIn('läuft gerade schon', r.stderr)
+            prozess = self.s.lauf('--zurueck', '--ohne-rueckfrage', warten=False)
+            self.addCleanup(prozess.kill)
+            with self.assertRaises(subprocess.TimeoutExpired):         # die geplante Rücknahme wartet – beliebig lange
+                prozess.wait(timeout=3)
             self.assertTrue((self.s.z / 'tabelle').exists())
-            r = self.geplante_ruecknahme(frist='1')
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn('Die Sperre wurde nicht frei – die geplante Rücknahme läuft trotzdem', r.stdout)
+            self.assertFalse((self.s.lauf_ordner() / 'ZURUECKGESPIELT').exists())
+            # beendet systemd die wartende Rücknahme (der Lauf stellt am Ende die Frist neu), ist das kein Fehler und nimmt nichts zurück
+            wartend = self.s.lauf('--zurueck', '--ohne-rueckfrage', warten=False, gruppe=True)
+            self.addCleanup(wartend.kill)
+            time.sleep(1)
+            os.killpg(wartend.pid, signal.SIGTERM)                     # wie systemctl stop: das Signal trifft alle Prozesse der Unit
+            self.assertEqual(wartend.wait(timeout=30), 0, wartend.stderr.read())
+            self.assertTrue((self.s.z / 'tabelle').exists())
+            fcntl.flock(sperre, fcntl.LOCK_UN)                         # der Lauf ist fertig: jetzt nimmt sie zurück
+            out, err = prozess.communicate(timeout=60)
+            self.assertEqual(prozess.returncode, 0, out + err)
             self.assertFalse((self.s.z / 'tabelle').exists())
+        # lief die Frist schon während des Laufs ab, ersetzt der Lauf am Ende die wartende Rücknahme durch die neue Frist
+        self.s.zustand('active-ju-haertung-ruecknahme.service', 'activating\n')
+        out = self.gut()
+        aufrufe = self.s.aufrufe()
+        self.assertLess(max(i for i, a in enumerate(aufrufe) if a == FRIST), aufrufe.index('systemctl stop ju-haertung-ruecknahme.service'))
+        self.assertIn('In 5 Minuten (um ', out)
 
-    def test_ssh_nur_schluessel_gilt_erst_nach_bestaetigung(self):
-        self.s.datei('root/.ssh/authorized_keys', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeispielBeispielBeispielBeispielBeispielBeispi beispiel\n', 0o600)
+    def test_ssh_nur_schluessel_gilt_erst_nach_bestaetigung_mit_schluessel_anmeldung(self):
+        self.s.datei('root/.ssh/authorized_keys', SCHLUESSEL, 0o600)
         self.s.zustand('journal', 'Accepted publickey for root from 203.0.113.5 port 50001 ssh2: ED25519 SHA256:Beispiel\n')
         self.anwenden()
         n = len(self.s.aufrufe())
         out = self.gut('--ssh-nur-schluessel')
         self.assertIn('ZWEITES Fenster', out)
+        self.assertIn('Im zweiten Fenster per SSH mit dem Schlüssel anmelden (nicht über Tailscale-SSH oder die Konsole)', out)
         aufrufe = self.s.aufrufe()[n:]
-        self.assertLess(next(i for i, a in enumerate(aufrufe) if a.startswith(PLAN)), aufrufe.index('systemctl reload ssh.service'))
+        self.assertEqual(self.vor_der_planung(aufrufe), PLAN[:2])
+        self.assertLess(aufrufe.index(NEUSTART), aufrufe.index('systemctl reload ssh.service'))
         self.assertIn('PasswordAuthentication no', self.s.lies('etc/ssh/sshd_config.d/00-ju-haertung.conf'))
+        # eine zweite Anmeldung allein genügt hier nicht (Tailscale-SSH, Konsole): verlangt ist eine Schlüssel-Anmeldung per SSH
+        # seit Beginn des Laufs – die ältere, die den Schalter erlaubt hat, und eine Passwort-Anmeldung zählen nicht
+        beginn = int(self.marke()['beginn'])
+        with open(self.s.z / 'journal', 'a', encoding='utf-8') as f:
+            f.write(f'@{beginn + 5} Accepted password for root from 203.0.113.5 port 50002 ssh2\n'
+                    f'@{beginn + 5} Accepted publickey for jufinanzen from 203.0.113.5 port 50003 ssh2: ED25519 SHA256:Beispiel\n'
+                    f'@{beginn - 60} Accepted publickey for root from 203.0.113.5 port 50004 ssh2: ED25519 SHA256:Beispiel\n')
+        r = self.s.lauf('--bestaetigen', sitzung='8')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('seit seinem Beginn hat sich root nicht per SSH mit dem Schlüssel angemeldet', r.stderr)
+        self.assertIn('Melde dich im zweiten Fenster per SSH mit dem Schlüssel an, nicht über Tailscale-SSH oder die Konsole', r.stderr)
+        self.assertNotIn(STOPP, self.s.aufrufe())
+        self.assertEqual(self.marke()['konto'], 'root')                # die Marke liegt noch
+        self.assertIn('ist noch nicht bestätigt', self.gut('--pruefen'))
+        # ohne Bestätigung kommt die Passwort-Anmeldung zurück
         self.assertEqual(self.geplante_ruecknahme().returncode, 0)
         self.assertNotIn('PasswordAuthentication no', self.s.lies('etc/ssh/sshd_config.d/00-ju-haertung.conf'))
         self.assertIn('SSH_NUR_SCHLUESSEL=nein', self.s.lies('etc/ju-finanzen/haertung.conf'))
+        # mit der Schlüssel-Anmeldung im zweiten Fenster: angenommen
+        self.gut('--ssh-nur-schluessel')
+        with open(self.s.z / 'journal', 'a', encoding='utf-8') as f:
+            f.write(f'@{int(time.time()) + 1} Accepted publickey for root from 203.0.113.5 port 50005 ssh2: ED25519 SHA256:Beispiel\n')
+        self.assertIn('Bestätigt: Die Änderungen', self.gut('--bestaetigen', sitzung='8'))
+        self.assertIn('PasswordAuthentication no', self.s.lies('etc/ssh/sshd_config.d/00-ju-haertung.conf'))
+        # ein Lauf, der an der Art der Anmeldung nichts ändert, verlangt den Nachweis nicht
+        self.s.datei('etc/ju-finanzen/haertung.conf', self.s.lies('etc/ju-finanzen/haertung.conf').replace('SSH_NEU_JE_MINUTE=12', 'SSH_NEU_JE_MINUTE=20'))
+        self.s.zustand('journal', 'Accepted publickey for root from 203.0.113.5 port 50001 ssh2: ED25519 SHA256:Beispiel\n')
+        self.assertNotIn('per SSH mit dem Schlüssel anmelden', self.gut())
+        self.assertIn('Bestätigt: Die Änderungen', self.gut('--bestaetigen', sitzung='9'))
+
+    def test_zurueck_meldet_von_hand_geaenderte_dateien_und_bleibt_teilweise(self):
+        self.s.datei('etc/fail2ban/jail.d/ju-haertung.local', '# früherer Stand\n')
+        vorher = self.s.bild(NEBENBEI)
+        self.anwenden()
+        ordner = self.s.lauf_ordner()
+        self.s.datei('etc/fail2ban/jail.d/ju-haertung.local', '# von Hand\n')        # gab es vor dem Lauf
+        self.s.datei('etc/sysctl.d/80-ju-haertung.conf', '# von Hand\n')             # hat der Lauf angelegt
+        r = self.s.lauf('--zurueck')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('NICHT VOLLSTÄNDIG zurückgenommen: 2 Dateien wurden seit dem Lauf', r.stdout)
+        self.assertIn('    - /etc/fail2ban/jail.d/ju-haertung.local\n', r.stdout)
+        self.assertIn('    - /etc/sysctl.d/80-ju-haertung.conf\n', r.stdout)
+        self.assertIn('sudo ju-finanzen haerten --zurueck --trotzdem', r.stdout)
+        self.assertNotIn('Fertig', r.stdout)
+        self.assertNotIn('gilt wieder', r.stdout)
+        self.assertEqual(self.s.lies('etc/fail2ban/jail.d/ju-haertung.local'), '# von Hand\n')
+        self.assertEqual(self.s.lies('etc/sysctl.d/80-ju-haertung.conf'), '# von Hand\n')
+        self.assertFalse((self.s.w / 'etc/ssh/sshd_config.d/00-ju-haertung.conf').exists())    # alles Übrige ist zurückgenommen
+        self.assertFalse((self.s.z / 'tabelle').exists())
+        self.assertFalse((ordner / 'ZURUECKGESPIELT').exists())
+        # der Lauf bleibt als teilweise zurückgenommen erkennbar; ein weiteres --zurueck bietet genau diese Dateien erneut an
+        self.assertIn('ist nur teilweise zurückgenommen', self.gut('--pruefen'))
+        zeigen = self.gut('--zurueck', '--pruefen')
+        self.assertEqual(re.findall(r'würde zurücknehmen: (.+)', zeigen),
+                         ['datei /etc/fail2ban/jail.d/ju-haertung.local', 'datei /etc/sysctl.d/80-ju-haertung.conf'])
+        n = len(self.s.aufrufe())
+        r = self.s.lauf('--zurueck')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('schon teilweise zurückgenommen', r.stdout)
+        self.assertIn('NICHT VOLLSTÄNDIG zurückgenommen: 2 Dateien wurden', r.stdout)
+        self.assertEqual([a for a in self.s.aufrufe()[n:] if AENDERND.match(a)], [])     # was zurückgenommen ist, wird nicht noch einmal angefasst
+        # --trotzdem überschreibt; die von Hand geänderte Fassung bleibt in der Sicherung
+        out = self.gut('--zurueck', '--trotzdem')
+        self.assertIn('Fertig: Der Stand vor dem Lauf', out)
+        self.assertEqual(self.s.bild(NEBENBEI), vorher)
+        self.assertEqual(self.s.lies('etc/fail2ban/jail.d/ju-haertung.local'), '# früherer Stand\n')
+        self.assertFalse((self.s.w / 'etc/sysctl.d/80-ju-haertung.conf').exists())
+        for datei in ('etc/fail2ban/jail.d/ju-haertung.local', 'etc/sysctl.d/80-ju-haertung.conf'):
+            self.assertEqual((ordner / 'von-hand' / datei).read_text(encoding='utf-8'), '# von Hand\n')
+        self.assertNotIn('teilweise', self.gut('--pruefen'))
+        r = self.s.lauf('--trotzdem')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('--trotzdem gehört zu --zurueck', r.stderr)
+
+    def test_zurueck_nennt_eine_datei_nur_wiederhergestellt_wenn_es_gelang(self):
+        self.s.datei('etc/fail2ban/jail.d/ju-haertung.local', '# früherer Stand\n')
+        self.anwenden()
+        (self.s.lauf_ordner() / 'dateien/etc/fail2ban/jail.d/ju-haertung.local').unlink()     # das Kopieren scheitert
+        r = self.s.lauf('--zurueck')
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('FEHLER:   /etc/fail2ban/jail.d/ju-haertung.local ließ sich nicht wiederherstellen', r.stdout)
+        self.assertNotIn('/etc/fail2ban/jail.d/ju-haertung.local (wiederhergestellt)', r.stdout)
+        self.assertIn('NICHT VOLLSTÄNDIG zurückgenommen: Ein Schritt ist gescheitert', r.stdout)
+        self.assertNotIn('Fertig', r.stdout)
+        self.assertFalse((self.s.lauf_ordner() / 'ZURUECKGESPIELT').exists())
 
     # ---------------------------------------------------------------- einzelne Maßnahmen
 
@@ -673,8 +991,9 @@ class HaertenTests(unittest.TestCase):
         self.s.zustand('firewall-bricht', '')
         r = self.s.lauf()
         self.assertEqual(r.returncode, 1)
-        self.assertEqual(len([a for a in self.s.aufrufe() if a.startswith(PLAN)]), 1)
+        self.assertEqual(self.s.aufrufe().count(FRIST), 1)
         self.assertIn(STOPP, self.s.aufrufe())
+        self.assertIsNone(self.frist_ende())
         self.assertNotIn('ZWEITES Fenster', r.stdout)
         self.assertEqual(self.s.lies(f'{LIB}/ju_schutz.nft'), regeln)
         self.assertTrue((self.s.z / 'tabelle').exists())               # die bisherige Tabelle ist wieder geladen
@@ -696,9 +1015,21 @@ class HaertenTests(unittest.TestCase):
         self.s.zustand('ufw-regeln', 'ufw allow from 203.0.113.5 to any port 22 proto tcp\n')
         self.s.datei('etc/ufw/user.rules', 'ufw allow from 203.0.113.5 to any port 22 proto tcp\n')
         self.s.datei('etc/default/ufw', 'IPV6=yes\nDEFAULT_INPUT_POLICY="ACCEPT"\n')
+        self.s.datei('etc/ufw/ufw.conf', 'ENABLED=no\n')
         out = self.gut('--pruefen')
         self.assertIn('ufw AUS', out)
         self.assertIn('SSH-Port 22 offen lassen wie vorgefunden', out)
+        # mit geplanter Rücknahme: sie steht, bevor ufw zum ersten Mal angefasst wird; ohne Bestätigung ist ufw danach wieder aus
+        ohne = self.s.bild(NEBENBEI)
+        self.gut()
+        aufrufe = self.s.aufrufe()
+        self.assertEqual(self.vor_der_planung(aufrufe), PLAN[:2])
+        self.assertLess(aufrufe.index(NEUSTART), aufrufe.index('ufw allow 22/tcp'))
+        self.assertEqual(self.geplante_ruecknahme().returncode, 0)
+        self.assertEqual(self.s.bild(NEBENBEI), ohne)
+        self.assertTrue((self.s.z / 'ufw-aus').exists())
+        shutil.rmtree(self.s.w / 'var/backups/ju-haertung')
+        (self.s.w / 'aufrufe.log').unlink()
         self.anwenden()
         self.assertEqual(self.s.lies('zustand/ufw-regeln').splitlines()[1:], ['ufw allow 22/tcp', 'ufw allow in on tailscale0'])
         aufrufe = self.s.aufrufe()
@@ -715,10 +1046,12 @@ class HaertenTests(unittest.TestCase):
             f.write('net/ipv4/tcp_sack=0\n')
         self.s.datei('etc/ju-finanzen/haertung.conf', self.s.lies('etc/ju-finanzen/haertung.conf').replace('NIE_SPERREN=', 'NIE_SPERREN=203.0.113.7'))
         n = len(self.s.aufrufe())
-        out = self.gut('--zurueck')
+        r = self.s.lauf('--zurueck')
+        self.assertEqual(r.returncode, 1)                              # eine Datei blieb liegen – das sagt auch die Rückgabe
+        out = r.stdout
         self.assertEqual(self.s.lies('zustand/ufw-regeln').splitlines(), ['ufw allow from 203.0.113.5 to any port 22 proto tcp', 'ufw allow 443/tcp'])
         self.assertEqual(self.s.lies('etc/ufw/user.rules'), self.s.lies('zustand/ufw-regeln'))
-        self.assertEqual([a for a in self.s.aufrufe()[n:] if a.startswith('ufw')],
+        self.assertEqual([a for a in self.s.aufrufe()[n:] if UFW_AENDERND.match(a)],
                          ['ufw --force disable', 'ufw default allow incoming', 'ufw delete allow in on tailscale0', 'ufw delete allow 22/tcp'])
         self.assertTrue((self.s.z / 'ufw-aus').exists())
         self.assertIn('DEFAULT_INPUT_POLICY="ACCEPT"', self.s.lies('etc/default/ufw'))
@@ -753,6 +1086,14 @@ class HaertenTests(unittest.TestCase):
         self.assertEqual(self.s.kernwert('net.ipv4.conf.all.accept_redirects'), '0')
         self.assertEqual(self.s.kernwert('net.ipv4.conf.all.log_martians'), '1')
 
+    def test_zurueck_stellt_kernwerte_in_umgekehrter_reihenfolge(self):
+        # der Kern setzt accept_redirects zurück, sobald die Weiterleitung umgeschaltet wird: erst ip_forward, dann der Wert von vorher
+        self.s.kernwert('net.ipv4.conf.all.accept_redirects', '1')
+        self.anwenden()
+        self.assertEqual((self.s.kernwert('net.ipv4.ip_forward'), self.s.kernwert('net.ipv4.conf.all.accept_redirects')), ('0', '0'))
+        self.gut('--zurueck')
+        self.assertEqual((self.s.kernwert('net.ipv4.ip_forward'), self.s.kernwert('net.ipv4.conf.all.accept_redirects')), ('1', '1'))
+
     def test_sshd_braucht_run_sshd(self):
         # ssh.service lief seit dem Start nie (Socket-Aktivierung): /run/sshd fehlt, sshd -t und -T scheitern daran
         (self.s.w / 'run/sshd').rmdir()
@@ -760,6 +1101,10 @@ class HaertenTests(unittest.TestCase):
         out = self.gut('--pruefen')
         self.assertEqual(self.s.bild(), vorher)                       # der Prüflauf legt auch diesen Ordner nicht an
         self.assertIn('/run/sshd fehlt', out)
+        # ohne lesbare Werte keine Aussage zur Art der Anmeldung – hier ist die Passwort-Anmeldung an
+        self.assertIn('Befund:   SSH-Einstellungen nicht lesbar (ssh lief seit dem Start nicht) – „haerten“ liest sie beim Anwenden', out)
+        self.assertNotIn('Anmeldung nur mit Schlüssel', out)
+        self.assertNotIn('PasswordAuthentication', out)
         out = self.anwenden()
         self.assertTrue((self.s.w / 'run/sshd').is_dir())
         self.assertIn('Befund:   Passwort-Anmeldung für root offen', out)
@@ -777,8 +1122,8 @@ class HaertenTests(unittest.TestCase):
         vorbereiten = 'mount -t tmpfs none /opt && mkdir -p /opt/ju-finanzen/current && cp -r "$0" /opt/ju-finanzen/current/server && '
         if subprocess.run(['unshare', '-m', 'sh', '-c', vorbereiten + 'true', str(ROOT / 'server')], capture_output=True).returncode != 0:
             self.skipTest('Mount-Namensraum hier nicht möglich')
-        sauber = {k: v for k, v in os.environ.items() if k not in ('WURZEL', 'JU_PYTHON', 'JU_FRIST', 'JU_PAUSE')}
-        for name, wert in (('WURZEL', str(self.s.w)), ('JU_PYTHON', sys.executable), ('JU_FRIST', '1'), ('JU_PAUSE', '0')):
+        sauber = {k: v for k, v in os.environ.items() if k not in ('WURZEL', 'JU_PYTHON', 'JU_PAUSE')}
+        for name, wert in (('WURZEL', str(self.s.w)), ('JU_PYTHON', sys.executable), ('JU_PAUSE', '0')):
             with self.subTest(name):
                 r = subprocess.run(['unshare', '-m', 'sh', '-c', vorbereiten + 'bash /opt/ju-finanzen/current/server/haerten.sh --pruefen',
                                     str(ROOT / 'server')], env={**sauber, name: wert}, capture_output=True, text=True, timeout=60)
@@ -868,6 +1213,12 @@ class HaertenTests(unittest.TestCase):
         self.assertNotIn('add element', self.s.lies(f'{LIB}/ju_mengen.nft'))             # beim nächsten Start bleibt die Liste leer
         self.assertEqual(self.s.lies('zustand/ufw-regeln'), regeln)   # ufw bleibt, wie es ist
         self.assertIn('Alles war bereits umgesetzt', self.anwenden())
+        # zurück: erst liegen die Units wieder da, dann starten ihre Dienste – die Tabelle ist wieder geladen
+        self.s.datei('etc/ju-finanzen/haertung.conf', conf)
+        self.assertIn('Fertig: Der Stand vor dem Lauf', self.gut('--zurueck'))
+        self.assertTrue((self.s.z / 'tabelle').exists())
+        self.assertEqual(self.s.lies('zustand/active-ju-serverschutz-liste.timer').strip(), 'active')
+        self.assertTrue((self.s.w / 'etc/ssh/sshd_config.d/00-ju-haertung.conf').exists())
         self.s.datei('etc/ju-finanzen/haertung.conf', conf.replace('KERN=ja', 'KERN=vielleicht'))
         r = self.s.lauf('--pruefen')
         self.assertEqual(r.returncode, 1)
@@ -913,6 +1264,13 @@ class HaertenTests(unittest.TestCase):
         self.assertEqual(self.s.lies(f'{LIB}/ju_mengen.nft'), mengen)
         (self.s.w / 'stub/nft').unlink()
         (self.s.w / 'stub/nft').symlink_to(ROOT / 'tests' / 'haertung_stub.sh')
+        # scheitert der Abruf, lädt der Zeitgeber trotzdem die letzte gute Liste in eine Tabelle, deren Mengen leer sind
+        (self.s.z / 'mengen').unlink()
+        (self.s.z / 'drop.txt').unlink()
+        self.assertEqual(self.s.lauf('sperrliste').returncode, 1)
+        self.assertIn('Abruf von drop.txt gescheitert', self.s.lies(f'{LIB}/sperrliste.fehler'))
+        self.assertEqual(self.s.lies('zustand/mengen').count('/30,'), 124)             # die zuletzt angenommene Liste (125 Netze, ohne die eigene Adresse)
+        self.assertEqual(self.s.lies(f'{LIB}/ju_mengen.nft'), self.s.lies('zustand/mengen'))
         # Notaus bleibt Notaus: bei gestoppter Tabelle lädt der Zeitgeber nichts – die Liste gilt ab dem nächsten Start
         (self.s.z / 'tabelle').unlink()
         (self.s.z / 'mengen').unlink()
@@ -991,6 +1349,35 @@ class HaertenTests(unittest.TestCase):
         self.s.datei('etc/ju-finanzen/haertung.conf', self.s.lies('etc/ju-finanzen/haertung.conf').replace('FIREWALL=ja', 'FIREWALL=nein'))
         self.assertEqual(staende()['sperrliste'], ('hinweis', 'Liste vorhanden, wirkt aber nicht (FIREWALL=nein)'))
 
+    def test_bericht_kommt_in_der_anwendung_an(self):
+        # schutz.py (ab 0.39) liest die Datei, die serverschutz.py schreibt: jede Prüfung unverändert, die Zahlen, die Zeit
+        self.anwenden()
+        self.s.einheit('ju-keycloak.service', 'enabled', 'active')
+        self.s.datei('etc/systemd/system/ju-keycloak.service', '[Unit]\n')
+        self.gut('status-schreiben')
+        datei = self.s.w / LIB / 'status.json'
+        roh = json.loads(datei.read_text(encoding='utf-8'))
+        gelesen = schutz.serverschutz(datei)
+        self.assertEqual((gelesen['vorhanden'], gelesen['aktuell'], gelesen['hinweis']), (True, True, ''))
+        self.assertEqual(len(roh['pruefungen']), 17)
+        self.assertEqual(gelesen['pruefungen'], roh['pruefungen'])     # nichts fehlt, nichts gekürzt, kein Stand umgedeutet
+        self.assertEqual({p['stand'] for p in gelesen['pruefungen']}, {'ok', 'hinweis', 'kritisch'})   # dienste: ju-keycloak ohne postgresql
+        self.assertEqual(gelesen['zahlen'], roh['zahlen'])
+        self.assertEqual(set(gelesen['zahlen']), set(schutz.ZAHLEN))
+        geschrieben = datetime.fromisoformat(roh['zeit']).astimezone().replace(tzinfo=None)
+        self.assertEqual(gelesen['zeit'], geschrieben.isoformat(timespec='seconds'))
+        self.assertLess(abs((datetime.now() - geschrieben).total_seconds()), 60)
+        # älter als die Frist der Anwendung: nicht mehr aktuell – der Zeitgeber schreibt alle 15 Minuten
+        frist = timedelta(minutes=schutz.SERVERSCHUTZ_MINUTEN)
+        self.assertTrue(schutz.serverschutz(datei, geschrieben + frist)['aktuell'])
+        alt = schutz.serverschutz(datei, geschrieben + frist + timedelta(seconds=1))
+        self.assertEqual((alt['vorhanden'], alt['aktuell'], alt['hinweis']), (True, False, 'Kein aktueller Bericht vom Server.'))
+        self.assertGreater(schutz.SERVERSCHUTZ_MINUTEN, 2 * 15)
+        self.assertIn('OnUnitActiveSec=15min', (ROOT / 'server' / 'haertung' / 'ju-serverschutz-status.timer').read_text(encoding='utf-8'))
+        # die Anwendung nimmt höchstens 30 Prüfungen, Kennungen bis 40 und Texte bis 200 Zeichen – der Bericht bleibt darunter
+        self.assertLessEqual(len(roh['pruefungen']) + 1, 30)           # + „Rücknahme gescheitert“
+        self.assertEqual(roh['version'], 1)
+
     def test_abgewiesen_verlauf_vergisst_nach_24_stunden(self):
         with mock.patch.object(serverschutz, 'W', str(self.s.w)):
             jetzt = time.time()
@@ -1013,7 +1400,8 @@ class EinbindungTests(unittest.TestCase):
         for wort in ('haerten --bestaetigen', 'schutz-status', 'schutz-aus'):
             self.assertEqual(sum(wort in z for z in hilfe), 1, wort)
         for unit in ('ju-serverschutz.service', 'ju-serverschutz-liste.service', 'ju-serverschutz-liste.timer',
-                     'ju-serverschutz-status.service', 'ju-serverschutz-status.timer'):
+                     'ju-serverschutz-status.service', 'ju-serverschutz-status.timer', 'ju-haertung-ruecknahme.service',
+                     'ju-haertung-neustart.timer'):
             text = (ROOT / 'server' / 'haertung' / unit).read_text(encoding='utf-8')
             self.assertNotIn('flush ruleset\n', text.replace('„flush ruleset“', ''))
             for zeile in re.findall(r'^Exec\w+=-?(\S+)', text, re.M):
@@ -1022,6 +1410,19 @@ class EinbindungTests(unittest.TestCase):
         schutz = (ROOT / 'server' / 'haertung' / 'ju-serverschutz.service').read_text(encoding='utf-8')
         self.assertEqual(re.findall(r'^ExecStart=(.*)$', schutz, re.M), ['/usr/sbin/nft -f /var/lib/ju-serverschutz/ju_schutz.nft',
                                                                          '-/usr/sbin/nft -f /var/lib/ju-serverschutz/ju_mengen.nft'])
+        # geplante Rücknahme: läuft nur mit einem Lauf auf Probe, nach jedem Start des Servers, mit begrenzter Wiederholung
+        skript = HAERTEN.read_text(encoding='utf-8')
+        dienst = (ROOT / 'server' / 'haertung' / 'ju-haertung-ruecknahme.service').read_text(encoding='utf-8')
+        self.assertIn('\nConditionPathExistsGlob=/var/backups/ju-haertung/*/RUECKNAHME\n', dienst)
+        self.assertIn('SICHERUNGEN="$W/var/backups/ju-haertung"\n', skript)
+        self.assertIn('\nExecStart=/opt/ju-finanzen/current/server/haerten.sh --zurueck --ohne-rueckfrage\n', dienst)
+        for zeile in ('Type=oneshot', 'Restart=on-failure', 'RestartSec=60', 'StartLimitBurst=6', 'StartLimitIntervalSec=15min'):
+            self.assertIn(f'\n{zeile}\n', dienst)                    # erster Versuch + fünf weitere im Minutentakt
+        neustart = (ROOT / 'server' / 'haertung' / 'ju-haertung-neustart.timer').read_text(encoding='utf-8')
+        for zeile in ('OnBootSec=2min', 'Unit=ju-haertung-ruecknahme.service', 'WantedBy=timers.target'):
+            self.assertIn(f'\n{zeile}\n', neustart)
+        self.assertNotRegex(neustart, 'OnActiveSec|OnCalendar')       # sonst löste das Einschalten sofort aus
+        self.assertIn('\nFRIST=300 ', skript)
         # der Dienst des Programms darf die Datei lesen: ProtectSystem=strict macht nur schreibgeschützt, nichts unsichtbar
         dienst = (ROOT / 'server' / 'ju-finanzen.service').read_text(encoding='utf-8')
         self.assertNotRegex(dienst, r'(?m)^(InaccessiblePaths|TemporaryFileSystem|ProtectSystem=(?!strict))')

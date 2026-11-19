@@ -17,20 +17,36 @@ tabelle_an() { touch "$Z/tabelle"; rm -f "$Z/mengen"; if [ -f "$LIB/ju_mengen.nf
 
 case "$NAME" in
   systemctl)
-    args=(); for a in "$@"; do case "$a" in -q|--now|--no-pager) ;; *) args+=("$a") ;; esac; done
+    args=(); for a in "$@"; do case "$a" in -q|--now|--no-pager|--value|-p) ;; *) args+=("$a") ;; esac; done
     cmd="${args[0]:-}"; unit="${args[1]:-}"
-    da() { [ -e "$Z/unit-$unit" ] || [ -e "$W/etc/systemd/system/$unit" ]; }
+    da() { [ -e "$Z/unit-$unit" ] || [ -e "$W/etc/systemd/system/$unit" ] || [ -e "$W/run/systemd/system/$unit" ]; }
     case "$cmd" in
+      show)   # show UNIT -p EIGENSCHAFT --value; Zeiten wie systemd in der Zeitzone des Aufrufers
+        case "${args[2]:-}" in
+          SubState) cat "$Z/sub-$unit" 2>/dev/null || echo dead ;;
+          ActiveState) cat "$Z/active-$unit" 2>/dev/null || echo inactive ;;
+          NextElapseUSecRealtime) if [ -s "$Z/next-$unit" ]; then date -d "@$(cat "$Z/next-$unit")" '+%a %Y-%m-%d %H:%M:%S %Z'; else echo; fi ;;
+          *) exit 1 ;;
+        esac ;;
       is-enabled) if ! da; then echo not-found; exit 4; fi; cat "$Z/enabled-$unit" 2>/dev/null || echo disabled ;;
       is-active) cat "$Z/active-$unit" 2>/dev/null || echo inactive ;;
       enable) da || exit 1; echo enabled > "$Z/enabled-$unit"; case " $* " in *" --now "*) echo active > "$Z/active-$unit" ;; esac ;;
-      disable) da || exit 1; echo disabled > "$Z/enabled-$unit"; case " $* " in *" --now "*) echo inactive > "$Z/active-$unit" ;; esac ;;
+      disable) da || exit 1; echo disabled > "$Z/enabled-$unit"; case " $* " in *" --now "*) echo inactive > "$Z/active-$unit"; rm -f "$Z/sub-$unit" "$Z/next-$unit" ;; esac ;;
       start|restart|reload) da || exit 1; echo active > "$Z/active-$unit"
+        case "$unit" in *.timer)   # ein Timer wartet danach; steht in seiner Datei eine feste Uhrzeit (OnCalendar), ist sie der nächste Ablauf
+          if [ -e "$Z/timer-startet-nicht" ]; then echo inactive > "$Z/active-$unit"; exit 0; fi   # Test: systemd meldet Erfolg, der Timer wartet aber nicht
+          wann="$(sed -n 's/^OnCalendar=//p' "$W/run/systemd/system/$unit" "$W/etc/systemd/system/$unit" 2>/dev/null | head -n 1)"
+          if [ -n "$wann" ]; then date -d "$wann" +%s > "$Z/next-$unit"; fi
+          echo waiting > "$Z/sub-$unit" ;;
+        esac
         if [ "$unit" = ju-serverschutz.service ]; then
           [ -f "$LIB/ju_schutz.nft" ] || exit 1; tabelle_an
           if [ -e "$Z/firewall-bricht" ]; then touch "$Z/nicht-erreichbar"; fi   # Test: nach dem Laden ist der Dienst weg
         fi ;;
-      stop) echo inactive > "$Z/active-$unit"; if [ "$unit" = ju-serverschutz.service ]; then rm -f "$Z/tabelle" "$Z/mengen"; fi ;;
+      stop)
+        if [ -e "$Z/stopp-wirkt-nicht" ]; then exit 0; fi   # Test: systemd meldet Erfolg, die Unit läuft aber weiter
+        echo inactive > "$Z/active-$unit"; rm -f "$Z/sub-$unit" "$Z/next-$unit"
+        if [ "$unit" = ju-serverschutz.service ]; then rm -f "$Z/tabelle" "$Z/mengen"; fi ;;
       try-restart|daemon-reload) ;;
       *) exit 1 ;;
     esac ;;
@@ -116,10 +132,10 @@ case "$NAME" in
     esac ;;
   ss) cat "$Z/ss" 2>/dev/null ;;
   ip) case "$*" in "-j addr") cat "$Z/ip-addr" 2>/dev/null ;; *) echo '[]' ;; esac ;;
-  journalctl) cat "$Z/journal" 2>/dev/null ;;
+  journalctl)   # Zeilen mit „@<Unixzeit> “ davor tragen ihre Zeit, alle anderen sind alt; „--since @N“ zeigt nur Zeilen ab N
+    seit=0
+    while [ $# -gt 0 ]; do if [ "$1" = --since ]; then case "$2" in @*) seit="${2#@}" ;; esac; fi; shift; done
+    awk -v seit="$seit" '{ t = 0; if ($1 ~ /^@[0-9]+$/) { t = substr($1, 2) + 0; sub(/^@[0-9]+ /, "") } if (t >= seit) print }' "$Z/journal" 2>/dev/null ;;
   findmnt) ;;
-  systemd-run)   # transiente Timer-Unit: der Name ist vergeben, solange sie läuft; den Aufruf selbst hält aufrufe.log fest
-    [ "$(cat "$Z/active-ju-haertung-ruecknahme.timer" 2>/dev/null)" != active ] || exit 1
-    echo active > "$Z/active-ju-haertung-ruecknahme.timer" ;;
   *) exit 127 ;;
 esac

@@ -12,6 +12,7 @@ WURZEL (nur Tests): nachgestelltes Wurzelverzeichnis; Systembefehle kommen dann 
 Der Statusbericht enthält nie Adressen, Namen oder Geheimnisse – nur feste Texte, Anzahlen und Portnummern.
 """
 import ast
+import glob
 import ipaddress
 import json
 import os
@@ -26,6 +27,7 @@ W = os.environ.get('WURZEL', '').rstrip('/')
 LIB = '/var/lib/ju-serverschutz'
 CONF = '/etc/ju-finanzen/haertung.conf'
 SYSCTL = '/etc/sysctl.d/80-ju-haertung.conf'
+LAEUFE = '/var/backups/ju-haertung'
 VERSION = 1
 
 MAX_BYTES = 2_000_000
@@ -580,6 +582,11 @@ def bericht():
         pruefung('platz', 'Plattenplatz', 'ok' if frei >= 15 else 'hinweis' if frei >= 5 else 'kritisch', f'{frei} % frei')
     except OSError:
         pruefung('platz', 'Plattenplatz', 'hinweis', 'nicht prüfbar')
+
+    # ein unbestätigter Lauf, dessen automatische Rücknahme scheiterte (haerten.sh legt dann TEILWEISE neben RUECKNAHME)
+    if any(os.path.exists(os.path.join(os.path.dirname(marke), 'TEILWEISE')) for marke in glob.glob(pfad(f'{LAEUFE}/*/RUECKNAHME'))):
+        pruefung('ruecknahme', 'Rücknahme der Härtung', 'kritisch',
+                 'Rücknahme gescheitert: Ein unbestätigter Lauf ist nur teilweise zurückgenommen (sudo ju-finanzen haerten --zurueck)')
 
     summe = None
     if tabelle:

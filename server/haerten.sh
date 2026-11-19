@@ -5,15 +5,17 @@
 #   sudo ju-finanzen haerten --pruefen     nur berichten: je Maßnahme Stand → Änderung → Risiko (ändert nichts)
 #   sudo ju-finanzen haerten               anwenden: sichert jede geänderte Datei vorher, beliebig oft wiederholbar
 #   sudo ju-finanzen haerten --bestaetigen aus einem ZWEITEN Fenster: Änderungen an Firewall/SSH-Zugang behalten
-#   sudo ju-finanzen haerten --zurueck     Stand vor dem letzten Lauf wiederherstellen (mit --pruefen: nur zeigen)
+#   sudo ju-finanzen haerten --zurueck     Stand vor dem letzten Lauf wiederherstellen (mit --pruefen: nur zeigen;
+#                                          mit --trotzdem: auch Dateien, die seither von Hand geändert wurden)
 #   sudo ju-finanzen schutz-status         Statusbericht des Serverschutzes auf der Konsole
 # Riskante Schalter – werden nur angenommen, wenn der Nachweis gelingt (sonst Abbruch, bevor etwas geändert wird):
 #   --ssh-nur-schluessel   SSH-Anmeldung per Passwort abschalten (nur wenn ein Schlüssel hinterlegt und benutzt wurde)
 #   --ssh-nur-tailscale    neue SSH-Verbindungen nur noch aus dem Tailnet (nur wenn Tailscale läuft und SSH dort geht)
 #
-# Ändert ein Lauf die Firewall oder einen der beiden SSH-Schalter, plant er VORHER mit systemd-run eine Rücknahme, die
-# nicht an der Sitzung hängt (Unit ju-haertung-ruecknahme, Vorgabe 5 Minuten). Nur „haerten --bestaetigen“ aus einer
-# anderen Anmeldesitzung sagt sie ab – das beweist, dass eine neue Anmeldung noch gelingt.
+# Ändert ein Lauf die Firewall oder einen der beiden SSH-Schalter, plant er VORHER eine Rücknahme, die weder an der
+# Sitzung noch am laufenden System hängt: ein Timer für die Frist (5 Minuten) und einer, der nach jedem Start des
+# Servers auslöst (ju-haertung-ruecknahme.timer, ju-haertung-neustart.timer → ju-haertung-ruecknahme.service). Nur
+# „haerten --bestaetigen“ aus einer anderen Anmeldesitzung sagt sie ab – das beweist, dass eine neue Anmeldung noch gelingt.
 # --ohne-rueckfrage: keine Bestätigung nötig, es wird keine Rücknahme geplant (nur für Tests und die Rücknahme-Unit, die
 # „--zurueck --ohne-rueckfrage“ aufruft und damit ausschließlich einen noch unbestätigten Lauf zurücknimmt).
 #
@@ -41,14 +43,16 @@ SICHERUNGEN="$W/var/backups/ju-haertung"
 UNITS=/etc/systemd/system
 NFT_DATEI=$LIB/ju_schutz.nft        # Regeln: ändert nur ein haerten-Lauf (steht im MANIFEST)
 MENGEN_DATEI=$LIB/ju_mengen.nft     # Sperrliste: tauscht auch der tägliche Zeitgeber aus (Arbeitsdatei, nie im MANIFEST)
-RUECK_UNIT=ju-haertung-ruecknahme
+RUECK_UNIT=ju-haertung-ruecknahme                    # .service (fest, in $UNITS) und .timer (Frist, nur in /run)
+RUECK_TIMER=/run/systemd/system/$RUECK_UNIT.timer
+NEUSTART_TIMER=ju-haertung-neustart.timer            # fest, in $UNITS: löst nach jedem Start des Servers aus
 SSH_DATEI=/etc/ssh/sshd_config.d/00-ju-haertung.conf
 KERN_DATEI=/etc/sysctl.d/80-ju-haertung.conf
 PY="${JU_PYTHON:-/usr/bin/python3}"
 PAUSE="${JU_PAUSE:-3}"            # Sekunden bis zur Nachprüfung der Firewall (Tests: 0)
-FRIST="${JU_FRIST:-300}"          # Sekunden bis zur geplanten Rücknahme (Tests: kürzer)
+FRIST=300                         # Sekunden bis zur geplanten Rücknahme
 LOG=""; MANIFEST=""; SICHERUNG=""; TMP=""
-PRUEFEN=0; ZURUECK=0; BESTAETIGEN=0; RUECKFRAGE=1; OPT_SCHLUESSEL=0; OPT_TAILSCALE=0; BEFEHL=haerten
+PRUEFEN=0; ZURUECK=0; BESTAETIGEN=0; RUECKFRAGE=1; TROTZDEM=0; OPT_SCHLUESSEL=0; OPT_TAILSCALE=0; BEFEHL=haerten
 APT_AKTUELL=0; GEAENDERT=0; GETAN=0; RISKANT=0; LAUFEND=""; MARKE=0
 
 # „|| true“: ein abgerissenes Terminal darf weder Lauf noch Rücknahme mitten im Schritt beenden – das Protokoll bekommt die Zeile
@@ -57,7 +61,7 @@ say()     { aus ""; aus "==> $*"; }
 info()    { aus "    $*"; }
 stand()   { aus "    Stand:    $*"; }
 hinweis() { aus "    Hinweis:  $*"; }
-risiko()  { aus "    Risiko:   $*"; }
+risiko()  { printf '%s' "$*" > "$TMP/risiko"; }   # steht am Ende der Maßnahme, nach den Änderungen (massnahme)
 die() {
   printf '\nFEHLER: %s\n' "$*" >&2 || true
   if [ -n "$LOG" ]; then printf 'FEHLER: %s\n' "$*" >> "$LOG"; fi
@@ -66,8 +70,8 @@ die() {
 }
 
 # Test-Schalter gelten nie für die installierte Version: sonst ließe sich root ein fremdes Wurzelverzeichnis oder Python unterschieben
-if [ "$(id -u)" -eq 0 ] && [[ "$(readlink -f "$HIER")" == /opt/ju-finanzen/* ]] && [ -n "${WURZEL:-}${JU_PYTHON:-}${JU_FRIST:-}${JU_PAUSE:-}" ]; then
-  die "WURZEL, JU_PYTHON, JU_FRIST und JU_PAUSE sind Test-Schalter und für die installierte Version gesperrt (unset WURZEL JU_PYTHON JU_FRIST JU_PAUSE)."
+if [ "$(id -u)" -eq 0 ] && [[ "$(readlink -f "$HIER")" == /opt/ju-finanzen/* ]] && [ -n "${WURZEL:-}${JU_PYTHON:-}${JU_PAUSE:-}" ]; then
+  die "WURZEL, JU_PYTHON und JU_PAUSE sind Test-Schalter und für die installierte Version gesperrt (unset WURZEL JU_PYTHON JU_PAUSE)."
 fi
 
 # Systembefehle: im Test nur aus $WURZEL/stub – so fasst ein Test nie das echte System an
@@ -104,7 +108,7 @@ tu() {
   "$@"
 }
 
-gemerkt() { awk -F'\t' -v a="$1" -v b="$2" '$1 == a && $2 == b { f = 1 } END { exit !f }' "$MANIFEST"; }
+gemerkt() { awk -F'\t' -v a="$1" -v b="$2" '$1 == a && $2 == b { f = 1 } END { exit !f }' "${3:-$MANIFEST}"; }
 
 merke_datei() {   # Datei vor der ersten Änderung dieses Laufs in die Sicherung legen
   local p="$1"
@@ -201,39 +205,50 @@ conf_setzen() {   # NAME WERT – Schalter in haertung.conf eintragen (Datei ent
   datei_setzen "$ETC/haertung.conf" 644 < "$tmp"
 }
 
-# Manifest eines Laufs ab Zeile MARKE rückwärts zurücknehmen: erst Dienste (solange ihre Units noch da sind), dann
-# Dateien, Rechte, Kern-Werte und die eigenen Änderungen an ufw; zuletzt lesen die betroffenen Dienste den alten Stand ein.
+# Manifest eines Laufs ab Zeile MARKE rückwärts zurücknehmen: erst Dienste stoppen, die der Lauf gestartet hat (solange
+# ihre Units noch da sind), dann Dateien, Rechte, Kern-Werte und die eigenen Änderungen an ufw, dann Dienste starten, die
+# der Lauf gestoppt hat (ihre Units liegen jetzt wieder da); zuletzt lesen die betroffenen Dienste den alten Stand ein.
+# Wiederholbar: was schon zurückgenommen ist, bleibt so. Rückgabe 1 = ein Schritt scheiterte; 2 = nur Dateien blieben
+# liegen, die seit dem Lauf von Hand geändert wurden (ihre Pfade stehen in $TMP/geblieben; --trotzdem überschreibt sie).
 zurueck_ab() {
   local sich="$1" marke="$2" teil art a b c soll fehler=0
   local ssh=0 journald=0 units=0 f2b=0 nft=0
+  : > "$TMP/geblieben"
   teil="$(mktemp "$TMP/zurueck.XXXXXX")"
   tail -n "+$((marke + 1))" "$sich/MANIFEST" | tac > "$teil"
   while IFS=$'\t' read -r art a b c; do
     if [ "$art" != dienst ] || [ "$a" = nftables.service ]; then continue; fi   # nftables.service nie: ExecStop ist „flush ruleset“
-    case "$b" in
-      enabled) x systemctl enable -q "$a" || fehler=1 ;;
-      disabled|not-found|unbekannt) x systemctl disable -q "$a" 2>/dev/null || true ;;
-    esac
-    case "$c" in
-      active) x systemctl start "$a" || fehler=1 ;;
-      inactive|failed|not-found) x systemctl stop "$a" 2>/dev/null || true ;;
-    esac
-    aus "    Zurück:   Dienst $a (war: ${b}, ${c})"
+    case "$b" in disabled|not-found|unbekannt) x systemctl disable -q "$a" 2>/dev/null || true ;; esac
+    case "$c" in inactive|failed|not-found) x systemctl stop "$a" 2>/dev/null || true ;; esac
   done < "$teil"
   while IFS=$'\t' read -r art a b c; do
     case "$art" in
       datei)
         soll="$(awk -F'\t' -v p="$a" '$1 == "summe" && $2 == p { s = $3 } END { print s }' "$sich/MANIFEST")"
-        if [ -n "$soll" ] && [ "$(summe "$a")" != "$soll" ]; then
-          aus "    HINWEIS:  $a wurde seit dem Lauf von Hand geändert – bleibt, wie es ist$(if [ "$b" = vorhanden ]; then echo " (Fassung vor dem Lauf: ${sich#"$W"}/dateien$a)"; fi)"
-          continue
-        fi
-        if [ "$b" = vorhanden ]; then
-          if ! { cp -a "$sich/dateien$a" "$W$a.ju-zurueck" && mv -f "$W$a.ju-zurueck" "$W$a"; }; then fehler=1; fi
+        if [ "$b" = vorhanden ] && cmp -s "$sich/dateien$a" "$W$a"; then :     # schon wiederhergestellt (früherer Versuch)
+        elif [ "$b" = neu ] && [ ! -e "$W$a" ]; then :                          # schon entfernt
         else
-          rm -f -- "$W$a"
+          if [ -n "$soll" ] && [ "$(summe "$a")" != "$soll" ]; then
+            if [ "$TROTZDEM" -eq 0 ]; then
+              aus "    HINWEIS:  $a wurde seit dem Lauf von Hand geändert – bleibt, wie es ist$(if [ "$b" = vorhanden ]; then echo " (Fassung vor dem Lauf: ${sich#"$W"}/dateien$a)"; fi)"
+              printf '%s\n' "$a" >> "$TMP/geblieben"
+              continue
+            fi
+            if [ -e "$W$a" ]; then   # --trotzdem: die von Hand geänderte Fassung geht nicht verloren
+              install -d -m 700 "$sich/von-hand$(dirname "$a")"; cp -a "$W$a" "$sich/von-hand$a"
+              aus "    Hinweis:  $a war von Hand geändert – diese Fassung liegt jetzt in ${sich#"$W"}/von-hand$a"
+            fi
+          fi
+          if [ "$b" = vorhanden ]; then
+            if ! { cp -a "$sich/dateien$a" "$W$a.ju-zurueck" && mv -f "$W$a.ju-zurueck" "$W$a"; }; then
+              fehler=1; aus "    FEHLER:   $a ließ sich nicht wiederherstellen (Fassung vor dem Lauf: ${sich#"$W"}/dateien$a)"
+              continue
+            fi
+          else
+            rm -f -- "$W$a"
+          fi
+          aus "    Zurück:   $a ($(if [ "$b" = vorhanden ]; then echo wiederhergestellt; else echo entfernt; fi))"
         fi
-        aus "    Zurück:   $a ($(if [ "$b" = vorhanden ]; then echo wiederhergestellt; else echo entfernt; fi))"
         case "$a" in
           /etc/ssh/*) ssh=1 ;;
           /etc/systemd/journald.conf.d/*) journald=1 ;;
@@ -258,6 +273,12 @@ zurueck_ab() {
     esac
   done < "$teil"
   if [ "$units" -eq 1 ]; then x systemctl daemon-reload || fehler=1; fi
+  while IFS=$'\t' read -r art a b c; do
+    if [ "$art" != dienst ] || [ "$a" = nftables.service ]; then continue; fi
+    if [ "$b" = enabled ]; then x systemctl enable -q "$a" || fehler=1; fi
+    if [ "$c" = active ]; then x systemctl start "$a" || fehler=1; fi
+    aus "    Zurück:   Dienst $a (war: ${b}, ${c})"
+  done < "$teil"
   if [ "$nft" -eq 1 ]; then
     if [ -f "$W$NFT_DATEI" ] && [ "$(sys_wert is-active ju-serverschutz.service)" = active ]; then
       x systemctl restart ju-serverschutz.service || fehler=1
@@ -271,6 +292,7 @@ zurueck_ab() {
   if [ "$journald" -eq 1 ]; then x systemctl try-restart systemd-journald.service || fehler=1; fi
   if [ "$f2b" -eq 1 ] && [ "$(sys_wert is-active fail2ban.service)" = active ]; then x systemctl restart fail2ban.service || fehler=1; fi
   rm -f "$teil"
+  if [ "$fehler" -eq 0 ] && [ -s "$TMP/geblieben" ]; then return 2; fi
   return "$fehler"
 }
 
@@ -281,7 +303,7 @@ massnahme() {
   say "$1. $2"
   vorher="$(wc -l < "$ZAEHLER")"
   if [ "$PRUEFEN" -eq 0 ]; then MARKE="$(wc -l < "$MANIFEST")"; fi
-  : > "$TMP/grund"
+  : > "$TMP/grund"; : > "$TMP/risiko"
   LAUFEND="$2"
   set +e
   ( set -e; GEAENDERT=0; GETAN=0; RISKANT=0; "$3" )
@@ -298,6 +320,7 @@ massnahme() {
   elif [ "$(wc -l < "$ZAEHLER")" = "$vorher" ]; then
     if [ "$PRUEFEN" -eq 1 ]; then aus "    Änderung: keine"; else info "bereits umgesetzt – nichts geändert"; fi
   fi
+  if [ "$rc" -eq 0 ] && [ -s "$TMP/risiko" ]; then aus "    Risiko:   $(cat "$TMP/risiko")"; fi
   LAUFEND=""
 }
 massnahme_zurueck() {
@@ -332,48 +355,122 @@ abbruch() {
   exit 130
 }
 
-# ---------------------------------------------------------------- Rücknahme, die nicht an der Sitzung hängt
+# ---------------------------------------------------------------- Rücknahme, die nicht an Sitzung oder Systemstart hängt
+#
+# Zustand eines Laufs = Marken in seinem Ordner $SICHERUNGEN/<Zeit>/:
+#   MANIFEST          was der Lauf geändert hat (leer: nichts)
+#   RUECKNAHME        der Lauf gilt auf Probe: ende= (Unixzeit der Frist), sitzung=, beginn=, konto=
+#   TEILWEISE         eine Rücknahme blieb unvollständig – eine Zeile je Versuch: Zeit, offene Dateien, Fehler, Auslöser
+#   ZURUECKGESPIELT   vollständig zurückgenommen: Zeit, „automatisch“ oder „von Hand“
+# Solange RUECKNAHME liegt, nimmt ju-haertung-ruecknahme.service den Lauf zurück: nach der Frist (Timer in /run) und nach
+# jedem Start des Servers (ju-haertung-neustart.timer). Die festen Units gehören zur Härtung als Ganzes (kein MANIFEST).
 
-# Kennung der Anmeldesitzung: Audit-Sitzung (vergibt die Anmeldung, alle Kinder erben sie), ersatzweise SSH-Verbindung bzw. Terminal
+# Kennung der Anmeldesitzung: Start des Systems + Audit-Sitzung (vergibt die Anmeldung, alle Kinder erben sie; nach einem
+# Neustart beginnen die Nummern wieder bei 1). Ohne Audit-Sitzung: unbekannt – damit lässt sich nichts bestätigen.
 sitzung() {
   local s
   s="$(cat "$W/proc/self/sessionid" 2>/dev/null || true)"
-  case "$s" in ""|4294967295) s="${SSH_CONNECTION:-$(if tty -s; then tty; fi)}" ;; esac
-  printf '%s' "${s:-unbekannt}"
+  case "$s" in ""|4294967295) echo unbekannt ;; *) echo "$(cat "$W/proc/sys/kernel/random/boot_id" 2>/dev/null || echo 0)/$s" ;; esac
 }
-# Ordner des Laufs, dessen Rücknahme noch aussteht (leer: keiner). Datei RUECKNAHME: Zeile 1 Ende der Frist, Zeile 2 Sitzung.
+# Ordner des Laufs, der noch auf Probe gilt (leer: keiner)
 ausstehend() { local f; for f in "$SICHERUNGEN"/*/RUECKNAHME; do if [ -f "$f" ]; then dirname "$f"; fi; done | tail -n 1; }
+marke() { sed -n "s/^$2=//p" "$1/RUECKNAHME" 2>/dev/null | head -n 1; }   # ORDNER NAME
 dauer() { if [ "$1" -ge 120 ]; then echo "$((($1 + 59) / 60)) Minuten"; else echo "$1 Sekunden"; fi; }
-frist_text() {   # $1 = Ordner des Laufs
-  local ende rest
-  ende="$(sed -n 1p "$1/RUECKNAHME")"; rest=$((ende - $(date +%s)))
-  if [ "$rest" -gt 0 ]; then echo "In $(dauer "$rest") (um $(date -d "@$ende" +%H:%M:%S) Uhr) werden die Änderungen von selbst zurückgenommen."
-  else echo "Die Frist ist abgelaufen: Die Rücknahme läuft gerade – oder sie fand nicht statt (z. B. nach einem Neustart des Servers)."; fi
+# TZ=UTC: systemd nennt Zeiten in der Zeitzone des Aufrufers – so liest date sie sicher zurück
+unit_zeigt() { local v; v="$(TZ=UTC x systemctl show "$1" -p "$2" --value 2>/dev/null | head -n 1 || true)"; printf '%s' "$v"; }
+ruecknahme_laeuft() { [ "$(unit_zeigt "$RUECK_UNIT.service" ActiveState)" = activating ]; }   # auch: wartet auf den nächsten Versuch
+
+# Was mit dem Lauf $1 geschehen wird – gefragt wird systemd selbst, nicht die eigene Notiz
+frist_text() {
+  local ende="" rest n naechster
+  if [ -e "$1/TEILWEISE" ]; then
+    n="$(wc -l < "$1/TEILWEISE")"
+    echo "$(if [ "$n" -eq 1 ]; then echo "Ein Versuch"; else echo "$n Versuche"; fi), zuletzt um $(date -d "$(tail -n 1 "$1/TEILWEISE" | cut -f1)" +%H:%M:%S) Uhr$(if ruecknahme_laeuft; then echo "; der nächste folgt in einer Minute von selbst"; fi)."
+  elif ruecknahme_laeuft; then
+    echo "Die Rücknahme läuft gerade."
+  elif [ "$(unit_zeigt "$RUECK_UNIT.timer" SubState)" = waiting ]; then
+    naechster="$(unit_zeigt "$RUECK_UNIT.timer" NextElapseUSecRealtime)"
+    if [ -n "$naechster" ]; then ende="$(date -d "$naechster" +%s 2>/dev/null || true)"; fi
+    ende="${ende:-$(marke "$1" ende)}"
+    rest=$((ende - $(date +%s))); if [ "$rest" -lt 1 ]; then rest=1; fi
+    echo "In $(dauer "$rest") (um $(date -d "@$ende" +%H:%M:%S) Uhr) werden die Änderungen von selbst zurückgenommen."
+  elif [ "$(unit_zeigt "$NEUSTART_TIMER" SubState)" = waiting ]; then
+    echo "Der Server wurde seit dem Lauf neu gestartet: Etwa zwei Minuten nach dem Start werden die Änderungen von selbst zurückgenommen."
+  else
+    echo "ACHTUNG: Es wartet keine automatische Rücknahme mehr (kein Timer läuft). Bitte jetzt selbst entscheiden."
+  fi
 }
 ausstehend_zeigen() {   # --pruefen und schutz-status
-  local a
+  local a d
   a="$(ausstehend)"
-  if [ -z "$a" ]; then return 0; fi
-  say "ACHTUNG: Der Lauf $(basename "$a") ist noch nicht bestätigt."
-  info "$(frist_text "$a")"
-  info "Behalten: ein ZWEITES Fenster öffnen, dort neu anmelden und ausführen:  sudo ju-finanzen haerten --bestaetigen"
-  info "Sofort zurücknehmen:  sudo ju-finanzen haerten --zurueck"
+  if [ -n "$a" ] && [ -e "$a/TEILWEISE" ]; then
+    say "ACHTUNG – RÜCKNAHME GESCHEITERT: Der Lauf $(basename "$a") wurde nicht bestätigt, ließ sich aber nicht vollständig zurücknehmen."
+    info "$(frist_text "$a")"
+    info "Jetzt von Hand (notfalls im Browser-Terminal des Anbieters):  sudo ju-finanzen haerten --zurueck"
+    info "Protokoll: ${a#"$W"}/protokoll.log"
+  elif [ -n "$a" ]; then
+    say "ACHTUNG: Der Lauf $(basename "$a") ist noch nicht bestätigt."
+    info "$(frist_text "$a")"
+    info "Behalten: ein ZWEITES Fenster öffnen, dort neu anmelden und ausführen:  sudo ju-finanzen haerten --bestaetigen"
+    info "Sofort zurücknehmen:  sudo ju-finanzen haerten --zurueck"
+  fi
+  for d in "$SICHERUNGEN"/*/; do
+    if [ -e "$d/TEILWEISE" ] && [ ! -e "$d/RUECKNAHME" ]; then
+      say "Hinweis: Der Lauf $(basename "$d") ist nur teilweise zurückgenommen."
+      info "Ansehen: sudo ju-finanzen haerten --zurueck --pruefen        Abschließen: sudo ju-finanzen haerten --zurueck"
+    fi
+  done
 }
-# Vor der ersten Änderung an Firewall oder SSH-Zugang (aus tu): Rücknahme als eigene Timer-Unit planen. Sie überlebt das
-# Ende der Sitzung. Lässt sie sich nicht planen, scheitert die Maßnahme hier – bevor sie etwas geändert hat.
+
+# Timer der Frist auf jetzt + FRIST stellen – als feste Uhrzeit: ein daemon-reload verschiebt sie nicht. Die Datei liegt in
+# /run: nach einem Neustart gibt es sie nicht mehr, dann löst ju-haertung-neustart.timer aus. Ausgabe: Ende (Unixzeit).
+frist_stellen() {
+  local ende
+  ende=$(($(date +%s) + FRIST))
+  mkdir -p "$W/run/systemd/system"
+  cat > "$W$RUECK_TIMER" <<EOF
+# JU Hamburg Finanzen – Frist der geplanten Rücknahme (geschrieben von server/haerten.sh, startet $RUECK_UNIT.service)
+[Unit]
+Description=JU Hamburg Finanzen – Härtung zurücknehmen, falls sie nicht bestätigt wird
+
+[Timer]
+OnCalendar=$(date -u -d "@$ende" '+%Y-%m-%d %H:%M:%S') UTC
+AccuracySec=1s
+EOF
+  x systemctl daemon-reload && x systemctl restart "$RUECK_UNIT.timer" && [ "$(unit_zeigt "$RUECK_UNIT.timer" SubState)" = waiting ] || return 1
+  printf '%s' "$ende"
+}
+# Timer der Frist stoppen und entfernen. Rückgabe 1: er wartet danach immer noch.
+frist_loeschen() {
+  if [ ! -e "$W$RUECK_TIMER" ]; then return 0; fi
+  x systemctl stop "$RUECK_UNIT.timer" 2>/dev/null || true
+  if [ "$(unit_zeigt "$RUECK_UNIT.timer" SubState)" = waiting ]; then return 1; fi
+  rm -f "$W$RUECK_TIMER"
+  x systemctl daemon-reload 2>/dev/null || true
+}
+# Vor der ersten Änderung an Firewall oder SSH-Zugang (aus tu): feste Units installieren, Frist stellen, den Timer für den
+# Neustart einschalten – erst dann die Marke schreiben. Gelingt ein Schritt nicht, scheitert die Maßnahme hier, bevor sie
+# etwas geändert hat.
 ruecknahme_planen() {
+  local ende u
   if [ "$RUECKFRAGE" -eq 0 ] || [ -e "$SICHERUNG/RUECKNAHME" ]; then return 0; fi
-  hat systemd-run || die "nicht angewendet, weil sich die automatische Rücknahme nicht planen lässt (systemd-run fehlt)"
-  x systemd-run --quiet --collect --unit="$RUECK_UNIT" --on-active="$FRIST" --timer-property=AccuracySec=1s \
-      --description="JU Hamburg Finanzen – Härtung zurücknehmen, falls sie nicht bestätigt wird" \
-      "$HIER/haerten.sh" --zurueck --ohne-rueckfrage \
-    || die "nicht angewendet, weil sich die automatische Rücknahme nicht planen ließ (systemd-run meldet einen Fehler)"
-  printf '%s\n%s\n' "$(($(date +%s) + FRIST))" "$SITZUNG" > "$SICHERUNG/RUECKNAHME"
+  hat systemctl || die "nicht angewendet, weil sich die automatische Rücknahme nicht planen lässt (systemctl fehlt)"
+  for u in "$RUECK_UNIT.service" "$NEUSTART_TIMER"; do
+    if ! cmp -s "$HIER/haertung/$u" "$W$UNITS/$u"; then install -D -m 644 "$HIER/haertung/$u" "$W$UNITS/$u"; fi
+  done
+  ende="$(frist_stellen)" && x systemctl enable -q "$NEUSTART_TIMER" && [ "$(sys_wert is-enabled "$NEUSTART_TIMER")" = enabled ] \
+    || die "nicht angewendet, weil sich die automatische Rücknahme nicht planen ließ (systemd meldet einen Fehler)"
+  printf 'ende=%s\nsitzung=%s\nbeginn=%s\nkonto=%s\n' "$ende" "$SITZUNG" "$BEGINN" "${SUDO_USER:-root}" > "$SICHERUNG/RUECKNAHME"
   aus "    Geplant:  automatische Rücknahme in $(dauer "$FRIST"), falls dieser Lauf nicht aus einem zweiten Fenster bestätigt wird"
 }
-ruecknahme_absagen() {
-  x systemctl stop "$RUECK_UNIT.timer" 2>/dev/null || true   # schon abgelaufen oder nach einem Neustart: nichts zu stoppen
-  [ "$(sys_wert is-active "$RUECK_UNIT.timer")" != active ] || die "Die geplante Rücknahme ließ sich nicht absagen (sudo systemctl stop $RUECK_UNIT.timer)."
+# Die festen Units wieder entfernen, sobald kein angewendeter Lauf mehr übrig ist (letzter Lauf zurückgenommen, leerer Lauf)
+units_aufraeumen() {
+  local d
+  for d in "$SICHERUNGEN"/*/; do if [ -s "$d/MANIFEST" ] && [ ! -e "$d/ZURUECKGESPIELT" ]; then return 0; fi; done
+  if [ ! -e "$W$UNITS/$RUECK_UNIT.service" ] && [ ! -e "$W$UNITS/$NEUSTART_TIMER" ]; then return 0; fi
+  x systemctl disable --now -q "$NEUSTART_TIMER" 2>/dev/null || true
+  rm -f "$W$UNITS/$RUECK_UNIT.service" "$W$UNITS/$NEUSTART_TIMER"
+  x systemctl daemon-reload 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------- Lage: SSH und ufw
@@ -417,6 +514,14 @@ ssh_lage_text() {
   esac
 }
 
+# Hat sich das Konto $1 seit $2 (Zeitangabe für journalctl) per SSH mit einem Schlüssel angemeldet?
+schluessel_anmeldung() { hat journalctl && x journalctl -t sshd --since "$2" --no-pager -o cat 2>/dev/null | enthaelt "^Accepted publickey for $1 "; }
+# Hat der Lauf im Ordner $1 die Passwort-Anmeldung abgeschaltet? Aus dem Stand abgeleitet, nicht gemerkt: nimmt der Lauf
+# die Maßnahme zurück, gilt es nicht mehr.
+schluessel_lauf() {
+  grep -qs '^PasswordAuthentication no' "$W$SSH_DATEI" && gemerkt datei "$SSH_DATEI" "$1/MANIFEST" \
+    && ! grep -qs '^PasswordAuthentication no' "$1/dateien$SSH_DATEI"
+}
 # Nachweise für die riskanten Schalter: leere Ausgabe = erfüllt, sonst der Grund der Ablehnung
 schluessel_nachweis() {
   local konto="${SUDO_USER:-root}" heim n
@@ -425,7 +530,7 @@ schluessel_nachweis() {
   if [ "${n:-0}" -lt 1 ]; then echo "für das Konto $konto ist kein SSH-Schlüssel hinterlegt (~/.ssh/authorized_keys)"; return 0; fi
   if [ "$(eff pubkeyauthentication)" != yes ]; then echo "der SSH-Dienst nimmt keine Schlüssel an (PubkeyAuthentication)"; return 0; fi
   if [ "$konto" = root ] && [ "$(eff permitrootlogin)" = no ]; then echo "root darf sich nicht per SSH anmelden (PermitRootLogin no)"; return 0; fi
-  if ! hat journalctl || ! x journalctl -t sshd --since "-30 days" --no-pager -o cat 2>/dev/null | enthaelt "^Accepted publickey for $konto "; then
+  if ! schluessel_anmeldung "$konto" "-30 days"; then
     echo "für $konto ist ein Schlüssel hinterlegt, aber in den letzten 30 Tagen keine Anmeldung damit gelungen – erst einmal mit dem Schlüssel anmelden, dann erneut aufrufen"
   fi
 }
@@ -574,7 +679,7 @@ m_firewall() {
 
 fehler_merken() { mkdir -p "$W$LIB"; printf '%s %s\n' "$(date -Is)" "$1" > "$W$LIB/sperrliste.fehler"; aus "    Sperrliste: $1 – die letzte gute Liste bleibt."; }
 # Listen laden und prüfen; nur zwei gute Listen ersetzen die bisherigen. Rückgabe 1 = letzte gute Liste bleibt.
-sperrliste_holen() {
+sperrliste_abrufen() {
   local tmp f
   tmp="$(mktemp -d "$TMP/liste.XXXXXX")"
   if ! hat curl; then fehler_merken "curl fehlt"; return 1; fi
@@ -584,8 +689,15 @@ sperrliste_holen() {
       fehler_merken "Abruf von $f.txt gescheitert"; return 1
     fi
   done
-  py liste "$tmp/drop.txt" "$tmp/dropv6.txt" || return 1
-  mengen_laden
+  py liste "$tmp/drop.txt" "$tmp/dropv6.txt"
+}
+# In jedem Fall laden, was als letzte gute Liste vorliegt: auch nach einem gescheiterten Abruf – sonst bliebe eine neu
+# geladene Tabelle bis zum nächsten gelungenen Abruf ohne Sperrliste.
+sperrliste_holen() {
+  local rc=0
+  sperrliste_abrufen || rc=1
+  mengen_laden || rc=1
+  return "$rc"
 }
 # Nur die Mengen drop4/drop6 austauschen (flush + add in einem nft-Schritt, vorher nft -c) – nie die Regeln: Der Zeitgeber
 # kann so den SSH-Zustand der Tabelle nicht ändern; das tut allein ein haerten-Lauf mit Nachweis.
@@ -856,16 +968,22 @@ ssh_anwenden() {
 m_ssh() {
   local konten
   if ! hat sshd; then stand "kein SSH-Dienst gefunden – nichts zu tun"; return 0; fi
-  if [ ! -d "$W/run/sshd" ]; then hinweis "/run/sshd fehlt (der SSH-Dienst lief seit dem Start des Servers noch nicht): Der Prüflauf kann die geltenden SSH-Werte deshalb nicht lesen und legt nichts an; „haerten“ legt den Ordner an."; fi
+  if [ ! -d "$W/run/sshd" ]; then hinweis "/run/sshd fehlt (der SSH-Dienst lief seit dem Start des Servers noch nicht): Der Prüflauf legt den Ordner nicht an; „haerten“ legt ihn an."; fi
   # Konten mit Anmelde-Shell und gesetztem Passwort (gesperrte Konten wie postgres zählen nicht)
   konten="$(awk -F: 'NR == FNR { if ($2 ~ /^\$/) pw[$1] = 1; next }
     ($1 in pw) && $7 !~ /(nologin|false|sync|shutdown|halt)$/ { printf "%s%s", (n++ ? ", " : ""), $1 }' "$W/etc/shadow" "$W/etc/passwd" 2>/dev/null || true)"
-  stand "MaxAuthTries $(eff maxauthtries), LoginGraceTime $(eff logingracetime), X11Forwarding $(eff x11forwarding), AllowTcpForwarding $(eff allowtcpforwarding), PermitRootLogin $(eff permitrootlogin), PasswordAuthentication $(eff passwordauthentication)"
-  if [ "$(eff passwordauthentication)" = yes ]; then
-    aus "    Befund:   Passwort-Anmeldung für ${konten:-(kein Konto mit Passwort gefunden)} offen, $(ssh_lage_text)"
-  else
-    aus "    Befund:   Anmeldung nur mit Schlüssel; SSH ist $(ssh_lage_text)"
-  fi
+  case "$(eff passwordauthentication)" in
+    yes|no)
+      stand "MaxAuthTries $(eff maxauthtries), LoginGraceTime $(eff logingracetime), X11Forwarding $(eff x11forwarding), AllowTcpForwarding $(eff allowtcpforwarding), PermitRootLogin $(eff permitrootlogin), PasswordAuthentication $(eff passwordauthentication)"
+      if [ "$(eff passwordauthentication)" = yes ]; then
+        aus "    Befund:   Passwort-Anmeldung für ${konten:-(kein Konto mit Passwort gefunden)} offen, $(ssh_lage_text)"
+      else
+        aus "    Befund:   Anmeldung nur mit Schlüssel; SSH ist $(ssh_lage_text)"
+      fi ;;
+    *)   # nichts raten: ohne lesbare Werte gibt es keine Aussage zur Art der Anmeldung
+      stand "geltende SSH-Werte unbekannt; SSH ist $(ssh_lage_text)"
+      aus "    Befund:   SSH-Einstellungen nicht lesbar ($(if [ -d "$W/run/sshd" ]; then echo "sshd -T meldet einen Fehler"; else echo "ssh lief seit dem Start nicht"; fi)) – „haerten“ liest sie beim Anwenden" ;;
+  esac
   if ! an SSH ja; then
     stand "abgeschaltet (SSH=nein)"
     if [ -e "$W$SSH_DATEI" ]; then datei_entfernen "$SSH_DATEI"; tu "SSH-Einstellungen prüfen (sshd -t) und neu laden" ssh_anwenden; fi
@@ -971,7 +1089,8 @@ m_status() {
   if [ -f "$W$LIB/status.json" ]; then stand "letzter Bericht vom $(date -r "$W$LIB/status.json" '+%d.%m.%Y %H:%M')"; else stand "noch kein Bericht"; fi
   unit_setzen ju-serverschutz-status.service; unit_setzen ju-serverschutz-status.timer; units_neu
   dienst_an ju-serverschutz-status.timer
-  if [ ! -d "$W$LIB" ] || [ "$(stat -c %a "$W$LIB")" != 755 ]; then tu "$LIB für das Programm lesbar machen (root, 755)" install -d -m 755 "$W$LIB"; fi
+  # fehlt der Ordner noch, legen ihn die Maßnahmen davor bzw. der Statusbericht selbst lesbar an – zu ändern ist nur ein falsches Recht
+  if [ -d "$W$LIB" ] && [ "$(stat -c %a "$W$LIB")" != 755 ]; then tu "$LIB für das Programm lesbar machen (root, 755)" chmod 755 "$W$LIB"; fi
   risiko "keines. Der Bericht enthält nur Zustände und Anzahlen – keine Adressen, Namen oder Geheimnisse; das Programm kann ihn nur lesen."
 }
 
@@ -981,12 +1100,13 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --pruefen) PRUEFEN=1 ;;
     --zurueck) ZURUECK=1 ;;
+    --trotzdem) TROTZDEM=1 ;;
     --bestaetigen) BESTAETIGEN=1 ;;
     --ssh-nur-schluessel) OPT_SCHLUESSEL=1 ;;
     --ssh-nur-tailscale) OPT_TAILSCALE=1 ;;
     --ohne-rueckfrage) RUECKFRAGE=0 ;;
     sperrliste|status|status-schreiben) BEFEHL="$1" ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) die "Unbekannte Option: $1 (Hilfe: sudo ju-finanzen haerten --help)" ;;
   esac
   shift
@@ -994,11 +1114,12 @@ done
 
 [ "$(id -u)" -eq 0 ] || [ -n "$W" ] || die "Bitte mit sudo ausführen: sudo ju-finanzen haerten"
 [ -x "$PY" ] || die "python3 fehlt ($PY)."
+[ "$TROTZDEM" -eq 0 ] || [ "$ZURUECK" -eq 1 ] || die "--trotzdem gehört zu --zurueck: sudo ju-finanzen haerten --zurueck --trotzdem"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 trap 'abbruch INT' INT; trap 'abbruch TERM' TERM; trap 'abbruch HUP' HUP
 ZAEHLER="$TMP/aenderungen"; : > "$ZAEHLER"
-SITZUNG="$(sitzung)"   # jetzt bestimmen: später ist die Eingabe mancher Schritte eine Datei und kein Terminal mehr
+SITZUNG="$(sitzung)"; BEGINN="$(date +%s)"
 
 case "$BEFEHL" in
   status) sshd_bereit; py status --zeigen; ausstehend_zeigen; exit 0 ;;
@@ -1010,8 +1131,12 @@ esac
 if [ "$PRUEFEN" -eq 0 ]; then
   exec 9> "$W/run/ju-haertung.lock"
   if [ "$ZURUECK" -eq 1 ] && [ "$RUECKFRAGE" -eq 0 ]; then
-    # Die geplante Rücknahme wartet auf einen noch laufenden Lauf – und findet danach in jedem Fall statt, auch wenn er hängt.
-    flock -w "$FRIST" 9 || aus "Die Sperre wurde nicht frei – die geplante Rücknahme läuft trotzdem."
+    # Die geplante Rücknahme wartet, bis ein noch laufender Lauf fertig ist – ohne Zeitgrenze: Die Sperre endet mit dessen
+    # Prozess (Kinder erben sie nicht), und zwei Läufe zugleich nähmen einander die Dateien weg. Beendet der Lauf die
+    # wartende Rücknahme, weil er die Frist neu stellt, ist das kein Fehler (sonst gälte der Dienst als gescheitert).
+    trap 'exit 0' TERM
+    flock 9
+    trap 'abbruch TERM' TERM
   elif ! flock -n 9; then
     if [ "$BEFEHL" = sperrliste ]; then exit 0; fi
     die "Die Härtung läuft gerade schon (oder der Zeitgeber der Sperrliste) – bitte in einer Minute erneut."
@@ -1027,12 +1152,29 @@ AUSSTEHEND="$(ausstehend)"
 
 if [ "$BESTAETIGEN" -eq 1 ]; then
   [ "$PRUEFEN$ZURUECK" = 00 ] || die "--bestaetigen steht für sich allein: sudo ju-finanzen haerten --bestaetigen"
-  if [ -z "$AUSSTEHEND" ]; then say "Es steht keine Rücknahme aus – nichts zu bestätigen."; exit 0; fi
-  LOG="$AUSSTEHEND/protokoll.log"
-  if [ "$SITZUNG" = unbekannt ] || [ "$(sed -n 2p "$AUSSTEHEND/RUECKNAHME")" = "$SITZUNG" ]; then
-    die "Nicht bestätigt: Dieser Aufruf kommt aus derselben Anmeldung, die den Lauf gestartet hat (oder die Anmeldung lässt sich nicht erkennen) – das beweist nicht, dass eine NEUE Anmeldung noch gelingt. Bitte ein zweites Fenster öffnen (Browser-Terminal des Anbieters oder SSH), dort neu anmelden und den Befehl dort ausführen. $(frist_text "$AUSSTEHEND")"
+  if [ -z "$AUSSTEHEND" ]; then
+    LETZTE="$(find "$SICHERUNGEN" -mindepth 2 -maxdepth 2 -name MANIFEST 2>/dev/null | sort | tail -n 1)"; LETZTE="${LETZTE%/MANIFEST}"
+    if [ -n "$LETZTE" ] && [ "$(sed -n 2p "$LETZTE/ZURUECKGESPIELT" 2>/dev/null)" = automatisch ]; then
+      die "Nichts mehr zu bestätigen: Der letzte Lauf ($(basename "$LETZTE")) wurde am $(date -d "$(sed -n 1p "$LETZTE/ZURUECKGESPIELT")" '+%d.%m.%Y um %H:%M:%S Uhr') von selbst zurückgenommen, weil er bis dahin nicht bestätigt war – es gilt wieder der Stand davor. Jetzt: „sudo ju-finanzen haerten“ erneut starten und danach innerhalb von $(dauer "$FRIST") aus einem zweiten Fenster bestätigen."
+    fi
+    say "Es steht keine Rücknahme aus – nichts zu bestätigen."; exit 0
   fi
-  ruecknahme_absagen
+  LOG="$AUSSTEHEND/protokoll.log"
+  if [ -e "$AUSSTEHEND/TEILWEISE" ]; then
+    die "Nicht bestätigt: Die automatische Rücknahme dieses Laufs hat schon begonnen und ist gescheitert – er ist teilweise zurückgenommen und lässt sich nicht mehr bestätigen. Jetzt: sudo ju-finanzen haerten --zurueck"
+  fi
+  if [ "$SITZUNG" = unbekannt ]; then
+    die "Nicht bestätigt: Die Anmeldung dieses Fensters lässt sich nicht erkennen – das beweist nicht, dass eine NEUE Anmeldung noch gelingt. Bitte in einem neuen Fenster interaktiv neu anmelden (Browser-Terminal des Anbieters oder „tailscale ssh“ ohne Befehl) und den Befehl dort ausführen. $(frist_text "$AUSSTEHEND")"
+  fi
+  if [ "$(marke "$AUSSTEHEND" sitzung)" = "$SITZUNG" ]; then
+    die "Nicht bestätigt: Dieser Aufruf kommt aus derselben Anmeldung, die den Lauf gestartet hat – das beweist nicht, dass eine NEUE Anmeldung noch gelingt. Bitte ein zweites Fenster öffnen (Browser-Terminal des Anbieters oder SSH), dort neu anmelden und den Befehl dort ausführen. $(frist_text "$AUSSTEHEND")"
+  fi
+  if schluessel_lauf "$AUSSTEHEND"; then
+    KONTO="$(marke "$AUSSTEHEND" konto)"
+    schluessel_anmeldung "${KONTO:-root}" "@$(marke "$AUSSTEHEND" beginn)" \
+      || die "Nicht bestätigt: Dieser Lauf hat die Passwort-Anmeldung abgeschaltet, aber seit seinem Beginn hat sich ${KONTO:-root} nicht per SSH mit dem Schlüssel angemeldet. Melde dich im zweiten Fenster per SSH mit dem Schlüssel an, nicht über Tailscale-SSH oder die Konsole – nur das beweist, dass der Schlüssel noch hineinführt – und führe den Befehl dort aus. $(frist_text "$AUSSTEHEND")"
+  fi
+  frist_loeschen || die "Nicht bestätigt: Die geplante Rücknahme ließ sich nicht absagen (sudo systemctl stop $RUECK_UNIT.timer, dann erneut bestätigen)."
   rm -f "$AUSSTEHEND/RUECKNAHME"
   aus "--- $(date -Is) bestätigt aus einer zweiten Anmeldung – die geplante Rücknahme ist abgesagt"
   say "Bestätigt: Die Änderungen des Laufs $(basename "$AUSSTEHEND") bleiben. Die geplante Rücknahme ist abgesagt."
@@ -1050,6 +1192,7 @@ if [ "$ZURUECK" -eq 1 ]; then
   fi
   [ -n "$LETZTE" ] || die "Es gibt keinen Lauf, der sich zurücknehmen lässt ($SICHERUNGEN)."
   say "Stand vor dem Lauf $(basename "$LETZTE") wiederherstellen"
+  if [ -e "$LETZTE/TEILWEISE" ]; then info "Dieser Lauf ist schon teilweise zurückgenommen – offen ist nur noch das Folgende."; fi
   if [ "$PRUEFEN" -eq 1 ]; then
     awk -F'\t' '$1 != "summe" { printf "    würde zurücknehmen: %s %s\n", $1, $2 }' "$LETZTE/MANIFEST"
     info "Nur Prüfung (--pruefen): nichts geändert."
@@ -1058,23 +1201,47 @@ if [ "$ZURUECK" -eq 1 ]; then
   trap '' INT TERM HUP   # eine begonnene Rücknahme läuft zu Ende – auch wenn das Fenster zugeht
   LOG="$LETZTE/protokoll.log"
   aus "--- $(date -Is) Zurücknehmen$(if [ "$RUECKFRAGE" -eq 0 ]; then echo " (geplante Rücknahme: der Lauf wurde nicht bestätigt)"; fi)"
-  if zurueck_ab "$LETZTE" 0; then
-    date -Is > "$LETZTE/ZURUECKGESPIELT"
-    rm -f "$LETZTE/RUECKNAHME"
-    if hat systemctl; then x systemctl stop "$RUECK_UNIT.timer" 2>/dev/null || true; fi
+  RC=0
+  zurueck_ab "$LETZTE" 0 || RC=$?
+  if [ "$RC" -eq 0 ]; then
+    printf '%s\n%s\n' "$(date -Is)" "$(if [ "$RUECKFRAGE" -eq 0 ]; then echo automatisch; else echo "von Hand"; fi)" > "$LETZTE/ZURUECKGESPIELT"
+    rm -f "$LETZTE/RUECKNAHME" "$LETZTE/TEILWEISE"
+    frist_loeschen || true
+    units_aufraeumen
     say "Fertig: Der Stand vor dem Lauf $(basename "$LETZTE") gilt wieder."
     info "Ein weiteres --zurueck nimmt den Lauf davor zurück. Neu härten: sudo ju-finanzen haerten"
   else
-    die "Das Zurücknehmen war unvollständig – bitte die Meldungen oben prüfen. Sicherung: $LETZTE"
+    # Der Lauf bleibt erkennbar unvollständig: RUECKNAHME (falls vorhanden) und die Timer bleiben, ein weiteres --zurueck
+    # setzt hier fort. Blieben nur von Hand geänderte Dateien, stehen im MANIFEST danach nur noch sie.
+    OFFEN="$(wc -l < "$TMP/geblieben")"
+    printf '%s\t%s\t%s\t%s\n' "$(date -Is)" "$OFFEN" "$((RC == 1))" "$(if [ "$RUECKFRAGE" -eq 0 ]; then echo automatisch; else echo "von Hand"; fi)" >> "$LETZTE/TEILWEISE"
+    if [ "$RC" -eq 2 ]; then
+      if [ ! -e "$LETZTE/MANIFEST.voll" ]; then cp -p "$LETZTE/MANIFEST" "$LETZTE/MANIFEST.voll"; fi
+      awk -F'\t' 'NR == FNR { offen[$0] = 1; next } ($1 == "datei" || $1 == "summe") && ($2 in offen)' "$TMP/geblieben" "$LETZTE/MANIFEST.voll" > "$LETZTE/MANIFEST.neu"
+      mv -f "$LETZTE/MANIFEST.neu" "$LETZTE/MANIFEST"
+      say "NICHT VOLLSTÄNDIG zurückgenommen: $OFFEN $(if [ "$OFFEN" -eq 1 ]; then echo "Datei wurde"; else echo "Dateien wurden"; fi) seit dem Lauf $(basename "$LETZTE") von Hand geändert und deshalb nicht zurückgespielt:"
+      while IFS= read -r d; do aus "    - $d"; done < "$TMP/geblieben"
+      info "Alles Übrige ist zurückgenommen. Auch diese Dateien auf den Stand vor dem Lauf bringen:"
+      info "    sudo ju-finanzen haerten --zurueck --trotzdem        (die von Hand geänderte Fassung bleibt in ${LETZTE#"$W"}/von-hand/)"
+    else
+      say "NICHT VOLLSTÄNDIG zurückgenommen: Ein Schritt ist gescheitert – bitte die Meldungen oben prüfen."
+      info "Erneut versuchen: sudo ju-finanzen haerten --zurueck        Sicherung und Protokoll: ${LETZTE#"$W"}"
+    fi
+    RC=1
   fi
   # Arbeitsdaten des Serverschutzes stehen in keiner Sicherung: ohne Zeitgeber bzw. Tabelle wären sie nur ein veralteter
   # Stand, den das Programm weiter als „ok“ zeigte. Installierte Pakete bleiben.
-  if [ -f "$W$UNITS/ju-serverschutz-status.timer" ]; then py status >/dev/null || true; else rm -f "$W$LIB/status.json"; fi
+  # Eine gescheiterte Rücknahme soll das Programm in jedem Fall sehen – auch wenn der Zeitgeber des Berichts schon entfernt ist.
+  if [ -f "$W$UNITS/ju-serverschutz-status.timer" ] || { [ "$RC" -ne 0 ] && [ "$(wert STATUS ja)" = ja ]; }; then py status >/dev/null || true
+  else rm -f "$W$LIB/status.json"; fi
   if [ ! -f "$W$NFT_DATEI" ]; then rm -f "$W$LIB/drop4.txt" "$W$LIB/drop6.txt" "$W$MENGEN_DATEI" "$W$LIB/zaehler.json" "$W$LIB/sperrliste.fehler"; fi
-  exit 0
+  exit "$RC"
 fi
 
 if [ "$PRUEFEN" -eq 0 ] && [ -n "$AUSSTEHEND" ]; then
+  if [ -e "$AUSSTEHEND/TEILWEISE" ]; then
+    die "Der Lauf $(basename "$AUSSTEHEND") wurde nicht bestätigt und ist erst teilweise zurückgenommen. Erst abschließen: sudo ju-finanzen haerten --zurueck"
+  fi
   die "Der Lauf $(basename "$AUSSTEHEND") ist noch nicht bestätigt. Erst entscheiden: behalten mit „sudo ju-finanzen haerten --bestaetigen“ (aus einem zweiten Fenster, dort neu angemeldet) oder zurücknehmen mit „sudo ju-finanzen haerten --zurueck“."
 fi
 lage_ermitteln
@@ -1126,22 +1293,35 @@ if [ "$PRUEFEN" -eq 1 ]; then
 fi
 if an STATUS ja; then py status >/dev/null || info "Hinweis: Der Statusbericht ließ sich nicht schreiben."; fi
 if [ ! -s "$MANIFEST" ]; then
-  if [ -e "$SICHERUNG/RUECKNAHME" ]; then x systemctl stop "$RUECK_UNIT.timer" 2>/dev/null || true; fi   # nichts geblieben, was sie zurücknähme
+  # nichts geblieben, was eine Rücknahme zurücknähme: Frist, Ordner und – ohne früheren Lauf – die festen Units wieder weg
+  frist_loeschen || true
   rm -rf -- "$SICHERUNG"; LOG=""
+  units_aufraeumen
   if [ -s "$TMP/nicht" ]; then say "Fertig: nichts geändert."; else say "Fertig: Alles war bereits umgesetzt – nichts geändert."; fi
 else
+  if [ ! -e "$SICHERUNG/RUECKNAHME" ]; then frist_loeschen || true; fi   # die Planung selbst scheiterte auf halbem Weg
   say "Fertig: $N Änderungen."
   info "Zurück auf den Stand vor diesem Lauf:  sudo ju-finanzen haerten --zurueck"
 fi
 nicht_melden "NICHT ANGEWENDET (zurückgenommen; die übrigen Maßnahmen gelten) – nach dem Beheben erneut: sudo ju-finanzen haerten" || RC=1
 info "Bericht: sudo ju-finanzen schutz-status"
 if [ -n "$SICHERUNG" ] && [ -e "$SICHERUNG/RUECKNAHME" ]; then
+  # Die Frist zählt ab dieser Aufforderung, nicht ab der ersten Änderung. Lief sie während des Laufs schon ab, wartet die
+  # Rücknahme auf die Sperre dieses Laufs und hat nichts begonnen – sie wird durch die neue Frist ersetzt.
+  if ENDE="$(frist_stellen)"; then
+    sed -i "s/^ende=.*/ende=$ENDE/" "$SICHERUNG/RUECKNAHME"
+    if ruecknahme_laeuft; then x systemctl stop "$RUECK_UNIT.service" 2>/dev/null || true; fi
+  fi
   say "WICHTIG – noch ein Schritt: Die Änderungen gelten erst auf Probe."
   info "$(frist_text "$SICHERUNG")"
   info "Öffne jetzt ein ZWEITES Fenster, melde dich dort neu an und führe aus:"
   info ""
   info "    sudo ju-finanzen haerten --bestaetigen"
   info ""
-  info "Dieses Fenster so lange offen lassen. Gelingt die neue Anmeldung nicht: nichts tun – der alte Stand kommt von selbst zurück."
+  if schluessel_lauf "$SICHERUNG"; then
+    info "Im zweiten Fenster per SSH mit dem Schlüssel anmelden (nicht über Tailscale-SSH oder die Konsole): Nur das wird als Nachweis angenommen."
+  fi
+  info "Dieses Fenster so lange offen lassen. Gelingt die neue Anmeldung nicht: nichts tun – der alte Stand kommt von selbst"
+  info "zurück, auch wenn dieses Fenster zugeht oder der Server neu startet (dann etwa zwei Minuten nach dem Start)."
 fi
 exit "$RC"
