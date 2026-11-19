@@ -27,6 +27,7 @@ import gliederung
 import sepadatei
 import auswertung
 import opliste
+import wahlrecht
 import beitraege
 import mitgliederkonto
 import kasse
@@ -38,7 +39,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.36'
+VERSION='0.37'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -614,9 +615,18 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/member-dues': return self.send(200,beitraege.by_member(store,int(query['id'][0])))
                 if path=='/api/member-account':
                     account={**mitgliederkonto.account(store,int(query['id'][0])),'sepa_refs':sepadatei.learned_for(store,int(query['id'][0]))}
+                    # Hinweise für „Austritt eintragen“ (0.37): nur Ja/Nein, keine Beträge – auch ohne Buchhaltung sichtbar
+                    account['austritt']={'offen':account['arrears']>0,'mandat':bool(lastschrift.active_mandate(store,int(query['id'][0]))),
+                                         'festgelegt':[y['year'] for y in account['years'] if y['source'] in ('set','invoice') and y['soll'] is not None]}   # Jahre mit festem Soll (Dialog warnt sonst vor „Soll zu klären“)
                     if not rollen.can(rights,'buchhaltung'):   # Mitgliederverwaltung ohne Buchhaltung: Stammdaten ja, Beitragskonto und Beträge nein
-                        account={k:(v if k in ('member','first','today') else rollen.blank(v)) for k,v in account.items()}
+                        account={k:(v if k in ('member','first','today','austritt') else rollen.blank(v)) for k,v in account.items()}
                     return self.send(200,account)
+                if path in ('/api/wahlrecht','/api/wahlrecht.pdf','/api/wahlrecht.csv'):   # Wahlberechtigung (wahlrecht.py); ohne Stichtag = laufender Status
+                    day=query.get('stichtag',[''])[0] or None
+                    if path=='/api/wahlrecht': return self.send(200,wahlrecht.auswertung(store,day))
+                    name='Wahlberechtigung-'+re.sub(r'[^0-9-]','',day or date.today().isoformat())[:10]
+                    if path=='/api/wahlrecht.pdf': return self.send(200,wahlrecht.pdf(store,day),'application/pdf',inline=name+'.pdf')
+                    return self.send(200,wahlrecht.csv(store,day),'text/csv; charset=utf-8',attachment=name+'.csv')
                 if path in ('/api/auswertung','/api/auswertung.pdf','/api/auswertung.csv'):
                     q=lambda k:query.get(k,[''])[0] or None
                     args=(q('stichtag'),q('kv'),q('ov'))
@@ -956,6 +966,7 @@ class Handler(BaseHTTPRequestHandler):
                 saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-kv-abgleich')
                 result={'counts':kvabgleich.execute(store,p['raw'],actor),'backup':saved.name};del PREVIEWS[str(data['token'])]
             elif path=='/api/member-update': result={'id':store.update_member(int(data['id']),data,actor)}
+            elif path=='/api/member-austritt': result={'id':mitglieder.austritt(store,data.get('id'),data.get('left_on'),data.get('reason'),actor)}
             elif path=='/api/member-delete':
                 mid=int(data['id']);ok=data.get('arrears_ok') is True
                 mitglieder.check_delete(store,mid,ok)   # erst prüfen, dann sichern, dann löschen (erneut geprüft)

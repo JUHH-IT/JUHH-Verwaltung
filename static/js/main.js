@@ -12,6 +12,7 @@ import { rpj } from './views/rpj.js';
 import { members } from './views/members.js';
 import { cases } from './views/klaerfaelle.js';
 import { karte, leaveMap } from './views/karte.js';
+import { wahlrecht } from './views/wahlrecht.js';
 import { dues } from './views/dues.js';
 import { auswertung } from './views/auswertung.js';
 import { invoices } from './views/invoices.js';
@@ -35,6 +36,7 @@ const PAGES = [
   { id: 'members', label: 'Mitglieder', icon: 'users', view: members, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'cases', label: 'Klärfälle', icon: 'alert', view: cases, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'map', label: 'Karte', icon: 'map', view: karte, group: 'Mitgliederverwaltung', area: 'mitglieder' },
+  { id: 'wahl', label: 'Wahlberechtigung', icon: 'check', view: wahlrecht, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'bank', label: 'Kontoauszüge', icon: 'bank', view: bank, group: 'Buchhaltung', area: 'buchhaltung' },
   { id: 'dues', label: 'Beitragseingänge', icon: 'coins', view: dues, group: 'Buchhaltung', area: 'buchhaltung' },
   { id: 'cash', label: 'Kasse', icon: 'cash', view: cash, group: 'Buchhaltung', area: 'buchhaltung' },

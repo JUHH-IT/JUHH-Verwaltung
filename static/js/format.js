@@ -25,6 +25,9 @@ export const dateTime = (stamp) => {
   return time ? `${date(day)} · ${time.slice(0, 5)}` : date(day);
 };
 
+/** „2027-01-30“ → „Sa., 30.01.2027“ (Stichtage: der Wochentag gehört zur Prüfung) */
+export const weekdayDate = (iso) => (iso ? new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : '—');
+
 /** „2026-10-28“ → „28.10.“ */
 export const shortDate = (iso) => (iso ? new Date(iso + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : '—');
 

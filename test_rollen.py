@@ -107,7 +107,7 @@ class RollenTests(unittest.TestCase):
         self.assertEqual(set(nothing), set(snapshot))
         real = self.store.snapshot(2026)                                               # jeder Schlüssel der echten Gesamtdaten ist eingeordnet oder bewusst frei
         free = set(real) - set(rollen.SNAPSHOT)
-        self.assertEqual(free, {'kv', 'accounts', 'invoice_accounts', 'settings', 'year', 'data_start'})
+        self.assertEqual(free, {'kv', 'accounts', 'invoice_accounts', 'settings', 'year', 'data_start', 'wahl'})   # wahl: nur die Stichtage (0.37)
 
     def test_roles_can_be_changed_but_one_admin_remains(self):
         zugang.set_password(self.db, 'Erste', PASSWORT, create=True)
@@ -327,7 +327,8 @@ class RollenHttpTests(unittest.TestCase):
         status, account = self.get(who, f'/api/member-account?id={member}')
         self.assertEqual(status, 200)
         self.assertEqual(account['member']['name'], 'Erika Muster')
-        self.assertFalse(any(account[k] for k in account if k not in ('member', 'first', 'today')))   # Beitragskonto leer
+        self.assertFalse(any(account[k] for k in account if k not in ('member', 'first', 'today', 'austritt')))   # Beitragskonto leer
+        self.assertEqual(account['austritt'], {'offen': True, 'mandat': False, 'festgelegt': []})     # Hinweise zum Austritt: nur Ja/Nein, Jahre mit festem Soll (0.37)
         for path in ('/api/kasse?year=2026', '/api/konten?year=2026', '/api/journal.csv?year=2026', '/api/op-liste?kv=', '/api/rpj?year=2026',
                      '/api/benutzer', '/api/backup', f'/api/member-dues?id={member}', '/api/monatsbericht.pdf?year=2026&month=1'):
             self.assertEqual(self.get(who, path)[0], 403, path)

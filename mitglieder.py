@@ -27,7 +27,7 @@ from formate import email_address, iso, money
 # Mitgliederverwaltung folgen wird“). Alter und Jubiläumsjahre der Datei werden nicht gespeichert – sie ergeben sich aus Geburt und Eintritt.
 # Ortsverband ab 0.27 über ov_id (Stammdaten gliederung.py); die Textspalten ov_number/ov_name aus 0.24 bleiben nur in der Datenbank.
 TEXTS = ('salutation', 'letter_salutation', 'letter_salutation2', 'title', 'name_prefix', 'name_suffix', 'gender', 'nationality', 'clubs',
-         'club', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method', 'address_extra2')
+         'club', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method', 'address_extra2', 'left_reason')   # left_reason ab 0.37
 EXTRA = TEXTS + ('kv_joined', 'external_balance', 'dues_free', 'guest', 'no_mail', 'email_work', 'ov_id')
 FIELDS = ('number', 'first_name', 'last_name', 'address_extra', 'street', 'zip', 'city', 'country', 'email', 'birth', 'joined', 'left_on', 'kv',
           'dues') + EXTRA
@@ -35,7 +35,7 @@ LEGACY = ('ov_number', 'ov_name')
 STORED = FIELDS + ('name', 'address')
 LABELS = {'number': 'Mitgliedsnummer', 'first_name': 'Vorname', 'last_name': 'Nachname', 'address_extra': 'Adresszusatz (Name 2)',
           'street': 'Straße', 'zip': 'PLZ', 'city': 'Ort', 'country': 'Land', 'email': 'E-Mail privat', 'birth': 'Geburtsdatum', 'joined': 'Eintritt',
-          'left_on': 'Austritt', 'kv': 'Kreisverband', 'dues': 'Jahresbeitrag',
+          'left_on': 'Austritt', 'left_reason': 'Austrittsgrund', 'kv': 'Kreisverband', 'dues': 'Jahresbeitrag',
           'salutation': 'Anrede', 'letter_salutation': 'Briefanrede 1', 'letter_salutation2': 'Briefanrede 2', 'title': 'Titel',
           'name_prefix': 'Adelsname/Namenszusatz', 'name_suffix': 'Zusatzname', 'gender': 'Geschlecht', 'nationality': 'Nationalität',
           'clubs': 'Vereinigungen', 'club': 'Verein', 'phone': 'Telefon privat', 'phone_work': 'Telefon dienstlich', 'mobile': 'Handy privat',
@@ -46,7 +46,7 @@ LABELS = {'number': 'Mitgliedsnummer', 'first_name': 'Vorname', 'last_name': 'Na
           'kv_number': 'Kreisverband (Nr.)', 'ov_number': 'Ortsverband (Nr.)', 'ov_name': 'Ortsbezeichnung'}
 MAX_TEXT = 200
 PRIVATE = ('gender', 'nationality', 'phone', 'phone_work', 'mobile', 'mobile_work', 'email_work', 'letter_salutation', 'letter_salutation2',
-           'payment_method', 'external_balance') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
+           'payment_method', 'external_balance', 'left_reason') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
 PARTICLES = {'von', 'van', 'de', 'der', 'den', 'zu', 'vom', 'zum', 'zur', 'ten', 'ter', 'du', 'da', 'di', 'del', 'la', 'le', 'dos'}
 MAX_ROWS = 5000
 
@@ -163,6 +163,43 @@ def _date(value, label, required=True):
         raise ValueError(f'{label}: Datum nicht erkannt („{text[:20]}“).') from None
 
 
+def left_day(value, joined):
+    """Austrittsdatum prüfen (auch künftig erlaubt, nie vor dem Eintritt) – eine Prüfung für Formular, Import und „Austritt eintragen“."""
+    left = _date(value, 'Austritt', required=False)
+    if left and left < joined:
+        raise ValueError('Austritt kann nicht vor dem Eintritt liegen.')
+    return left
+
+
+def austritt(store, member_id, left_on, reason, actor):
+    """Austritt eintragen bzw. ändern (left_on = Datum, Grund optional) oder zurücknehmen (left_on leer) – ab 0.37.
+    Ändert nur Austritt und Grund; der Status (wahlrecht.py) ergibt sich daraus. Das Protokoll nennt die Daten, nicht den Grund."""
+    if type(member_id) is not int:                                  # kein true, kein 1.9 – nur die Nummer aus der Mitgliederliste
+        raise ValueError('Bitte ein Mitglied angeben.')
+    if reason is not None and not isinstance(reason, str):
+        raise ValueError('Austrittsgrund: bitte als Text angeben.')
+    m = store.db.execute('SELECT id,number,joined,left_on,left_reason FROM members WHERE id=?', (member_id,)).fetchone()
+    if not m:
+        raise ValueError('Mitglied nicht gefunden.')
+    left = left_day(left_on, m['joined'])
+    # Obergrenze nur hier (Tippfehler wie „2207“ fallen so auf) – Formular und Import nehmen weiter auch ferne Daten aus dem Bestand an
+    if left and left > f'{date.today().year + 2}-12-31':
+        raise ValueError(f'Austritt {left} liegt zu weit in der Zukunft (höchstens Ende {date.today().year + 2}) – Datum prüfen.')
+    reason = (_clean(reason) or None) if left else None
+    if reason and len(reason) > MAX_TEXT:
+        raise ValueError(f'Austrittsgrund: höchstens {MAX_TEXT} Zeichen.')
+    if not left and not m['left_on']:
+        raise ValueError('Für dieses Mitglied ist kein Austritt eingetragen.')
+    if (left, reason) == (m['left_on'], m['left_reason']):
+        return m['id']                                              # nichts geändert: kein Protokolleintrag
+    with store.db:
+        store.db.execute('UPDATE members SET left_on=?,left_reason=? WHERE id=?', (left, reason, m['id']))
+        store.audit(actor, 'Austritt eingetragen' if left else 'Austritt zurückgenommen',
+                    {'id': m['id'], 'number': m['number'], 'vorher': {'austritt': m['left_on'], 'grund': bool(m['left_reason'])},
+                     'nachher': {'austritt': left, 'grund': bool(reason)}})
+    return m['id']
+
+
 def record_dues(db, member_id, old, new, year=None):
     """Individuellen Jahresbeitrag ab einem Jahr festhalten (Tabelle dues_rates): ändert er sich – z. B. durch einen neuen Import der
     Mitgliederliste –, gilt der neue Wert ab dem laufenden Jahr; frühere Jahre behalten ihren Beitrag (Staffel bzw. bisheriger Wert).
@@ -222,9 +259,7 @@ def values(data, kvs, ovs=None, inactive=None):
         raise ValueError(f"Eintritt {v['joined']} liegt zu weit in der Zukunft – Datum prüfen.")
     if v['birth'] >= v['joined']:
         raise ValueError('Geburtsdatum muss vor dem Eintritt liegen.')
-    v['left_on'] = _date(data.get('left_on'), 'Austritt', required=False)
-    if v['left_on'] and v['left_on'] < v['joined']:
-        raise ValueError('Austritt kann nicht vor dem Eintritt liegen.')
+    v['left_on'] = left_day(data.get('left_on'), v['joined'])
     if data.get('kv') not in kvs or data['kv'] == 'LV':
         raise ValueError('Bitte einen Kreisverband auswählen.')
     v['kv'] = data['kv']
@@ -256,6 +291,8 @@ def values(data, kvs, ovs=None, inactive=None):
         v[k] = _clean(data.get(k)) or None
         if v[k] and len(v[k]) > MAX_TEXT:
             raise ValueError(f'{LABELS[k]}: höchstens {MAX_TEXT} Zeichen.')
+    if not v['left_on']:
+        v['left_reason'] = None                   # ohne Austritt kein Austrittsgrund (Feld „Austritt“ im Formular geleert)
     v['kv_joined'] = _date(data.get('kv_joined'), 'Eintritt Kreisverband', required=False)
     if v['kv_joined'] and v['kv_joined'] > latest:
         raise ValueError(f"Eintritt Kreisverband {v['kv_joined']} liegt zu weit in der Zukunft – Datum prüfen.")

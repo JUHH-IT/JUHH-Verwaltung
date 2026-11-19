@@ -816,6 +816,54 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check(await page.locator('main tbody tr').count() >= 1, 'Filter „mit Rückstand“');
   await page.selectOption('#member-state', '');
 
+  // 0.37: Mitgliederstatus – Austritt eintragen und zurücknehmen, Seite Wahlberechtigung (auch im Mac-Betrieb)
+  await page.locator('main [data-member]').first().click();
+  await page.waitForSelector('#modal [data-leave]');
+  check(/aktiv|wahlberechtigt/.test(await page.locator('#modal [data-status]').textContent()), 'Geöffnetes Mitglied zeigt den Status');
+  await page.click('#modal [data-leave]');
+  await page.waitForSelector('#preview[open] #leave-form');
+  const heute = await page.evaluate(() => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); });
+  check(await page.inputValue('#leave-form [name=left_on]') === heute && await page.locator('#leave-form [data-undo]').count() === 0, 'Austritt eintragen: Vorgabe heute');
+  await page.fill('#leave-form [name=reason]', 'Umzug');
+  await shot('47-austritt');
+  await page.click('#leave-form button[type=submit]');
+  check((await toast()).includes('Austritt eingetragen'), 'Austritt eingetragen');
+  check(await page.waitForFunction(() => document.querySelector('#modal [data-status]')?.textContent.includes('ausgetreten')
+    && document.querySelector('#modal [data-contact]')?.textContent.includes('Austrittsgrund: Umzug'), null, { timeout: 5000 }).then(() => true, () => false),
+  'Mitglied danach: Status ausgetreten mit Grund');
+  await page.click('#modal [data-leave]');
+  await page.waitForSelector('#preview[open] #leave-form [data-undo]');
+  await page.click('#leave-form [data-undo]');
+  check((await toast()).includes('zurückgenommen'), 'Austritt zurückgenommen');
+  check(await page.waitForFunction(() => /aktiv|wahlberechtigt/.test(document.querySelector('#modal [data-status]')?.textContent || '')
+    && !document.querySelector('#modal [data-status]').textContent.includes('ausgetreten'), null, { timeout: 5000 }).then(() => true, () => false), 'Mitglied wieder aktiv');
+  await dialogClose();
+  await page.click('[data-page=wahl]');
+  await page.waitForSelector('.wr-page .cards');
+  check((await page.locator('.wr-page .cards').textContent()).includes('Nicht wahlberechtigt') && await page.locator('.wr-page #wr-day option').count() >= 2,
+    'Wahlberechtigung: Kennzahlen und Stichtag-Auswahl');
+  check(await page.locator('.wr-page [data-member]').count() >= 1 && (await page.locator('.wr-page').textContent()).includes('Beitrittsstichtag'), 'Wahlberechtigung: Mitglieder mit Status und Grund');
+  const wrPdf = await page.evaluate(async () => (await fetch(document.querySelector('.wr-page a[href^="/api/wahlrecht.pdf"]').href)).headers.get('content-type'));
+  check(wrPdf === 'application/pdf', 'Wahlberechtigung als PDF');
+  await shot('48-wahlberechtigung');
+  await page.selectOption('#wr-day', '');
+  check(await page.waitForFunction(() => document.querySelector('.wr-page #wr-day')?.value === '' && document.querySelector('.wr-page .toolbar')?.textContent.includes('Beitrittsstichtag'),
+    null, { timeout: 5000 }).then(() => true, () => false), 'Wahlberechtigung: laufender Status heute');
+  await page.selectOption('#wr-day', 'custom');
+  await page.waitForSelector('#wr-custom');
+  await page.fill('#wr-custom', '2026-03-15');
+  await page.dispatchEvent('#wr-custom', 'change');
+  check(await page.waitForFunction(() => document.querySelector('.wr-page .cards')?.textContent.includes('15.3.2026') && document.querySelector('#wr-day')?.value === 'custom'
+    && document.querySelector('.wr-page [data-preview]')?.textContent.includes('erst ab 2027'), null, { timeout: 5000 }).then(() => true, () => false),
+  'Wahlberechtigung: anderes Datum frei wählbar (2026 nur als Vorschau)');
+  await page.selectOption('#wr-status', 'ausgetreten');
+  check(await page.locator('.wr-page [data-member]').count() === await page.locator('.wr-page [data-member] .badge:text-is("ausgetreten")').count(), 'Wahlberechtigung: Filter nach Status');
+  await page.selectOption('#wr-status', '');
+  await page.locator('.wr-page [data-member]').first().click();
+  await page.waitForSelector('#modal [data-leave]');
+  check(true, 'Wahlberechtigung: Klick öffnet das Mitglied');
+  await dialogClose();
+
   // 0.29: Auswertung der Mitgliederdaten
   await page.click('[data-page=auswertung]');
   await page.waitForSelector('.aw-page .cards');
