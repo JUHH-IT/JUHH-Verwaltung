@@ -48,6 +48,7 @@ aufbauen() {
   [[ "$db_pw" =~ ^[0-9a-f]{48}$ ]] || db_pw="$(zufall)"
   datenbank_einrichten "$db_pw"
   kc_konfiguration "$KC_HOME/conf/keycloak.conf" "$ADRESSE" "$db_pw"   # hostname ist eine Laufzeit-Option
+  theme_installieren "$KC_HOME" "$REPO/server"
   if [ ! -f "$P/.gebaut-$KC_VERSION" ]; then
     say "kc.sh build"
     kc_bauen "$KC_HOME" "$KC_DATA"
@@ -100,10 +101,13 @@ pruefen() {
   kc get "roles/default-roles-$KC_REALM/composites" -r "$KC_REALM" > "$WORK/default-roles.json"
   kc get authentication/required-actions -r "$KC_REALM" > "$WORK/required-actions.json"
   kc get clients -r "$KC_REALM" --fields clientId,directAccessGrantsEnabled > "$WORK/clients.json"
+  # Theme gehört root und ist nur für root schreibbar (leere Ausgabe = in Ordnung)
+  find "$KC_HOME/themes/$KC_THEME" \( ! -user root -o -perm /022 \) -print > "$WORK/theme-rechte"
   # seit dem Start nichts außerhalb von data/ geschrieben
   find -L "$KC_HOME" -path "$KC_HOME/data" -prune -o -newer "$P/.start" -print > "$WORK/geschrieben"
+  grep -c 'full-scope-allowed' "$LOG" > "$WORK/full-scope" || true
   python3 -I - "$ADRESSE" "$P/client-secret" "$WORK" <<'PY'
-import base64, json, pathlib, secrets, sys, urllib.error, urllib.parse, urllib.request
+import base64, json, pathlib, re, secrets, sys, urllib.error, urllib.parse, urllib.request
 
 adresse, secret_file, work = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
 intern = 'http://127.0.0.1:8180/auth'
@@ -158,6 +162,10 @@ check('Client-Credentials-Token', bool(token), f'Status {s}')
 claims = json.loads(base64.urlsafe_b64decode(token.split('.')[1] + '==')) if token else {}
 check('Token: iss = öffentliche Adresse', claims.get('iss') == issuer, str(claims.get('iss')))
 check('Token: azp = ju-verwaltung', claims.get('azp') == 'ju-verwaltung')
+rollen = {k: sorted(v.get('roles', [])) for k, v in claims.get('resource_access', {}).items()}
+# query-groups steckt in view-users (zusammengesetzte Rolle) und kommt deshalb mit
+check('Token: nur die Rollen der Nutzerverwaltung (Full scope allowed aus)', not claims.get('realm_access')
+      and rollen == {'realm-management': ['manage-users', 'query-groups', 'query-users', 'view-users']}, f"{claims.get('realm_access')} {rollen}")
 s, _, body = call('POST', d['token_endpoint'], {'grant_type': 'password', 'username': 'x', 'password': 'y'}, form=True,
                   auth=f'ju-verwaltung:{secret}')
 check('Passwort-Grant (Direct Access) abgelehnt', s in (400, 401) and b'unauthorized_client' in body, f'Status {s}')
@@ -209,14 +217,33 @@ check('ohne PKCE: Fehler an die Rückkehr-Adresse', s == 302 and loc.startswith(
 s, _, _ = call('GET', f'{realm}/protocol/openid-connect/auth?' + urllib.parse.urlencode({**q, 'redirect_uri': rueckkehr + 'x',
                'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', 'code_challenge_method': 'S256'}))
 check('fremde Redirect-URI abgelehnt', s == 400, f'Status {s}')
-s, _, body = call('GET', f'{realm}/protocol/openid-connect/auth?' + urllib.parse.urlencode({**q,
+s, h, body = call('GET', f'{realm}/protocol/openid-connect/auth?' + urllib.parse.urlencode({**q,
                   'code_challenge': 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', 'code_challenge_method': 'S256'}))
 html = body.decode('utf-8', 'replace')
 check('mit PKCE: Anmeldeseite', s == 200 and 'kc-form-login' in html, f'Status {s}')
-check('Anmeldeseite deutsch, Titel JU Hamburg', 'lang="de"' in html and 'JU Hamburg' in html)
+check('Anmeldeseite deutsch, Titel JU Hamburg Verwaltung', 'lang="de"' in html and '<title>JU Hamburg Verwaltung</title>' in html)
 check('Anmeldeseite ohne „Passwort vergessen“, Registrierung, Angemeldet bleiben',
       'login-actions/reset-credentials' not in html and 'registrations' not in html and 'rememberMe' not in html)
 check('Ressourcen unter /auth/resources', '/auth/resources/' in html)
+
+# 4a. Aussehen der Anwendung (Theme ju-hamburg): eigenes CSS und Logo, nur freigegebene Pfade, CSP wie von Keycloak
+pfade = {p.removeprefix(adresse) for p in re.findall(r'(?:href|src|action)="([^"#][^"]*)"', html) + re.findall(r'"(/auth/[^"]+)"', html)}
+fremd = sorted(p for p in pfade if not p.startswith(('/auth/resources/', '/auth/realms/ju-hamburg/')))
+check('Anmeldeseite braucht nur /auth/resources und /auth/realms/ju-hamburg (Tailscale Serve)', bool(pfade) and not fremd, ', '.join(fremd)[:200])
+check('Content-Security-Policy unverändert (Standard von Keycloak)',
+      h.get('Content-Security-Policy') == "frame-src 'self'; frame-ancestors 'self'; object-src 'none';", str(h.get('Content-Security-Policy')))
+css = re.search(r'href="(/auth/resources/[^"/]+/login/ju-hamburg)/(css/ju-hamburg\.css\?v=[0-9a-f]{8})"', html)
+check('Theme: CSS der Anwendung eingebunden (mit Prüfsumme gegen alte Browser-Kopien)', bool(css))
+if css:
+    basis = 'http://127.0.0.1:8180' + css.group(1)
+    s, h2, body = call('GET', f'{basis}/{css.group(2)}')
+    check('Theme: CSS unter /auth/resources abrufbar', s == 200 and h2.get('Content-Type', '').startswith('text/css') and b'--ju-teal' in body, f'Status {s}')
+    logo = re.search(rb"--keycloak-logo-url: url\('\.\./(img/logo\.svg\?v=[0-9a-f]{8})'\)", body)
+    check('Theme: eigenes Logo statt Keycloak-Logo', bool(logo) and 'keycloak-logo' not in html)
+    for datei in ((logo.group(1).decode() if logo else 'img/logo.svg'), 'img/favicon.svg'):
+        s, h2, body = call('GET', f'{basis}/{datei}')
+        check(f'Theme: {datei.split("?")[0]} unter /auth/resources abrufbar', s == 200 and h2.get('Content-Type', '').startswith('image/svg')
+              and body.lstrip().startswith(b'<svg'), f'Status {s}')
 
 s, _, body = call('GET', f'{intern}/admin/master/console/')
 konsole = body.decode('utf-8', 'replace')
@@ -225,7 +252,7 @@ check('Admin-Konsole meldet an und verwaltet über 127.0.0.1 (hostname-admin, SS
 
 # 5. Einstellungen (über kcadm gelesen)
 r = json.loads((work / 'realm.json').read_text())
-want = {'displayName': 'JU Hamburg', 'internationalizationEnabled': True, 'defaultLocale': 'de', 'registrationAllowed': False,
+want = {'displayName': 'JU Hamburg', 'loginTheme': 'ju-hamburg', 'internationalizationEnabled': True, 'defaultLocale': 'de', 'registrationAllowed': False,
         'resetPasswordAllowed': False, 'rememberMe': False, 'bruteForceProtected': True, 'failureFactor': 5,
         'passwordPolicy': 'length(12) and notUsername and passwordHistory(3)', 'otpPolicyType': 'totp',
         'otpPolicyAlgorithm': 'HmacSHA1', 'otpPolicyDigits': 6, 'otpPolicyPeriod': 30, 'ssoSessionIdleTimeout': 1800,
@@ -241,10 +268,11 @@ roles = {x['name'] for x in json.loads((work / 'default-roles.json').read_text()
 check('Default-Roles ohne manage-account/view-profile', not roles & {'manage-account', 'view-profile'}, ', '.join(sorted(roles)))
 c = json.loads((work / 'client.json').read_text())[0]
 for k, v in {'publicClient': False, 'standardFlowEnabled': True, 'directAccessGrantsEnabled': False, 'implicitFlowEnabled': False,
-             'serviceAccountsEnabled': True, 'redirectUris': [rueckkehr], 'webOrigins': []}.items():
+             'serviceAccountsEnabled': True, 'fullScopeAllowed': False, 'redirectUris': [rueckkehr], 'webOrigins': []}.items():
     check(f'Client {k} = {v}', c.get(k) == v, repr(c.get(k)))
 check('Client PKCE S256 Pflicht', c['attributes'].get('pkce.code.challenge.method') == 'S256')
 check('Client Logout-Rückkehr', c['attributes'].get('post.logout.redirect.uris') == adresse + '/')
+check('Client baseUrl („Zurück zur Anwendung“ auf Fehlerseiten)', c.get('baseUrl') == adresse + '/')
 
 # 6. Betrieb: nur 127.0.0.1, kein Cluster-Port (JGroups 7800), nichts außerhalb von data/ geschrieben
 def lauschend():
@@ -261,6 +289,10 @@ offen = sorted({p for p in lauschend() if p.rsplit(':', 1)[1] in ('8180', '9000'
 check('8180 und 9000 nur auf 127.0.0.1, kein Cluster-Port', offen == ['127.0.0.1:8180', '127.0.0.1:9000'], ', '.join(offen))
 geschrieben = (work / 'geschrieben').read_text().split()
 check('nichts außerhalb von data/ geschrieben', geschrieben == [], ', '.join(geschrieben[:5]))
+warnung = (work / 'full-scope').read_text().strip()
+check('Protokoll ohne Warnung „Full scope allowed“', warnung == '0', f'{warnung} Zeilen')
+rechte = (work / 'theme-rechte').read_text().split()
+check('Theme gehört root, für andere nur lesbar', rechte == [], ', '.join(rechte[:5]))
 
 print(f"\n    {'Alle Prüfungen bestanden.' if not fehler else str(len(fehler)) + ' Prüfung(en) fehlgeschlagen.'}")
 sys.exit(1 if fehler else 0)
