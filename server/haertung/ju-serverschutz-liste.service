@@ -1,0 +1,12 @@
+# JU Hamburg Finanzen – Sperrliste (Spamhaus DROP) laden, prüfen, übernehmen (installiert von server/haerten.sh)
+[Unit]
+Description=JU Hamburg Finanzen – Sperrliste aktualisieren
+Documentation=file:/opt/ju-finanzen/current/SERVER.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ju-finanzen/current/server/haerten.sh sperrliste
+ProtectHome=yes
+PrivateTmp=yes

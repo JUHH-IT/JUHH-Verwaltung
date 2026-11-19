@@ -1,0 +1,10 @@
+# JU Hamburg Finanzen – Statusbericht des Serverschutzes für das Programm (installiert von server/haerten.sh)
+[Unit]
+Description=JU Hamburg Finanzen – Statusbericht des Serverschutzes
+Documentation=file:/opt/ju-finanzen/current/SERVER.md
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ju-finanzen/current/server/haerten.sh status-schreiben
+ProtectHome=yes
+PrivateTmp=yes
