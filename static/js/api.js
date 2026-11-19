@@ -2,6 +2,8 @@
 
 let csrf = '';
 let unauthorized = null;
+let confirmer = null;
+let locked = null;
 
 export function setCsrf(token) {
   csrf = token || '';
@@ -12,8 +14,30 @@ export function onUnauthorized(fn) {
   unauthorized = fn;
 }
 
+/** Rückruf für kritische Aktionen (Serverbetrieb, ab 0.35): der Server verlangt das Passwort erneut (428 `confirm`).
+ *  fn fragt es ab und löst auf (bestätigt) oder wirft „Abgebrochen.“; danach wird die Anfrage genau einmal wiederholt. */
+export function onConfirm(fn) {
+  confirmer = fn;
+}
+
+/** Rückruf, wenn der Server wegen Notfallmodus oder Wartung sperrt (503 mit `sperre`). */
+export function onLocked(fn) {
+  locked = fn;
+}
+
 function expired(url, response) {
   if (response.status === 401 && unauthorized && !url.startsWith('/api/login') && !url.startsWith('/api/status')) unauthorized();
+}
+
+/** Fehlerantwort auswerten. true = Passwort bestätigt, Anfrage einmal wiederholen. */
+async function failed(url, response, json, confirmed) {
+  if (response.status === 428 && json.confirm && confirmer && !confirmed) {
+    await confirmer();
+    return true;
+  }
+  expired(url, response);
+  if (response.status === 503 && json.sperre && locked && !url.startsWith('/api/login')) locked(json.sperre);
+  return false;
 }
 
 const OFFLINE = 'Keine Verbindung zum Server. Bitte Internet- bzw. Tailscale-Verbindung prüfen und erneut versuchen.';
@@ -29,11 +53,12 @@ function busy(delta) {
   else document.body.classList.remove('busy');
 }
 
-async function request(url, data) {
+async function request(url, data, confirmed = false) {
   const post = data !== undefined;
+  let response;
+  let json = {};
   busy(1);
   try {
-    let response;
     try {
       response = await fetch(url, {
         method: post ? 'POST' : 'GET',
@@ -43,22 +68,19 @@ async function request(url, data) {
     } catch {
       throw new Error(OFFLINE);
     }
-    let json = {};
     try {
       json = await response.json();
     } catch {
       // keine JSON-Antwort
     }
-    if (!response.ok) {
-      expired(url, response);
-      const error = new Error(json.error || (response.status >= 502 ? OFFLINE : 'Aktion fehlgeschlagen.'));
-      if (json.password) error.password = json.password;   // geschützte Datei: 'required' oder 'wrong' (Kennwort abfragen)
-      throw error;
-    }
-    return json;
   } finally {
-    busy(-1);
+    busy(-1);   // vor einer Passwortabfrage: keine Ladeanzeige, solange der Dialog offen ist
   }
+  if (response.ok) return json;
+  if (await failed(url, response, json, confirmed)) return request(url, data, true);
+  const error = new Error(json.error || (response.status >= 502 ? OFFLINE : 'Aktion fehlgeschlagen.'));
+  if (json.password) error.password = json.password;   // geschützte Datei: 'required' oder 'wrong' (Kennwort abfragen)
+  throw error;
 }
 
 export function api(url, data) {
@@ -83,7 +105,7 @@ export async function fileToBase64(file) {
  *  Im Programmfenster lädt macOS die Datei direkt (Sichern-Dialog, Fehlermeldung des Servers als Hinweis); der Umweg
  *  über eine Blob-Adresse entfällt dort, weil WebKit ihn nicht zuverlässig als Download behandelt.
  *  Rückgabe: true = Datei liegt vor (Browser), false = Programmfenster übernimmt (Ergebnis zeigt macOS). */
-export async function download(url, filename) {
+export async function download(url, filename, confirmed = false) {
   if (window.webkit?.messageHandlers?.ju) {
     const link = document.createElement('a');
     link.href = url;
@@ -100,13 +122,13 @@ export async function download(url, filename) {
     throw new Error(OFFLINE);
   }
   if (!response.ok) {
-    expired(url, response);
     let json = {};
     try {
       json = await response.json();
     } catch {
       // keine JSON-Antwort
     }
+    if (await failed(url, response, json, confirmed)) return download(url, filename, true);
     throw new Error(json.error || 'Download fehlgeschlagen.');
   }
   const link = document.createElement('a');

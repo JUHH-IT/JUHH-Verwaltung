@@ -164,6 +164,18 @@ def report(store, stichtag=None, kv=None, ov=None, today=None):
             'lists': lists, 'kv_names': names}
 
 
+def redact(r, amounts=True, names=True):
+    """Auswertung für eine Rolle (rollen.py, ab 0.34): ohne Buchhaltung keine Beitragsbeträge, ohne Mitgliederverwaltung
+    keine Listen mit Namen. `amounts` in der Antwort sagt der Oberfläche, ob Beträge enthalten sind."""
+    r = {**r, 'amounts': bool(amounts)}
+    if not amounts:
+        r['kv_rows'] = [{**k, 'soll': 0, 'paid': 0, 'paid_share': None, 'arrears': 0, 'arrears_count': 0} for k in r['kv_rows']]
+    if not names:
+        import rollen
+        r['lists'] = rollen.blank(r['lists'])
+    return r
+
+
 def _lists(active, pool, ages, tenure, day, mandates):
     """Listen zum Handeln (je höchstens LIST_LIMIT Einträge, sortiert nach Dringlichkeit)."""
     limit_rows, jubilees, birthdays, new = [], [], [], []
@@ -224,8 +236,8 @@ def _few(count):
 
 
 @exclusive
-def pdf(store, stichtag=None, kv=None, ov=None):
-    """Mitgliederstatistik als PDF – nur Zahlen, keine Namen (für Vorstand und Gremien)."""
+def pdf(store, stichtag=None, kv=None, ov=None, amounts=True):
+    """Mitgliederstatistik als PDF – nur Zahlen, keine Namen (für Vorstand und Gremien); `amounts=False`: ohne Beitragsbeträge."""
     import berichte
     r = report(store, stichtag, kv, ov)
     st, cfg, c = berichte._styles(), store.config(), r['cards']
@@ -243,7 +255,7 @@ def pdf(store, stichtag=None, kv=None, ov=None):
         story += [p(f"Kreisverbände · Beiträge {r['year']}", 'h2'),
                   berichte._table([['Kreisverband', 'Mitglieder', 'Anteil', 'Ø Alter', 'Eintritte', 'Austritte', 'Beitrag Soll', 'gezahlt', 'Quote']] +
                                   [[k['name'], k['active'], _pct(k['share']), num(_age(k['active'], k['avg_age'])), k['joined_year'], k['left_year'],
-                                    *((euro(k['soll']), euro(k['paid']), _pct(k['paid_share'])) if k['active'] >= SMALL else ('—', '—', '—'))]
+                                    *((euro(k['soll']), euro(k['paid']), _pct(k['paid_share'])) if k['active'] >= SMALL and amounts else ('—', '—', '—'))]
                                    for k in r['kv_rows']],
                                   [92, 50, 40, 40, 44, 46, 62, 62, 40], st, numeric=(1, 2, 3, 4, 5, 6, 7, 8), pad=3)]
     if r['ov_rows']:
@@ -272,12 +284,12 @@ def pdf(store, stichtag=None, kv=None, ov=None):
     return berichte._pdf(story, 'Mitgliederstatistik')
 
 
-def csv(store, stichtag=None, kv=None, ov=None):
-    """Kennzahlen je Kreis- und Ortsverband als CSV (nur Zahlen)."""
+def csv(store, stichtag=None, kv=None, ov=None, amounts=True):
+    """Kennzahlen je Kreis- und Ortsverband als CSV (nur Zahlen); `amounts=False`: ohne Beitragsbeträge."""
     import berichte
     r = report(store, stichtag, kv, ov)
     rows = [['Kreisverband', k['name'], '', k['active'], _age(k['active'], k['avg_age']), k['joined_year'], k['left_year'], k['guests'], k['mandates'],
-             *((berichte._eur(k['soll']), berichte._eur(k['paid']), berichte._eur(k['arrears'])) if k['active'] >= SMALL else ('', '', ''))] for k in r['kv_rows']]
+             *((berichte._eur(k['soll']), berichte._eur(k['paid']), berichte._eur(k['arrears'])) if k['active'] >= SMALL and amounts else ('', '', ''))] for k in r['kv_rows']]
     rows += [['Ortsverband', r['kv_names'].get(o['kv'], o['kv']), o['label'], o['active'], _age(o['active'], o['avg_age']), '', '', '', '', '', '', ''] for o in r['ov_rows']]
     return berichte._csv(rows, ['Ebene', 'Kreisverband', 'Ortsverband', f"Mitglieder am {german_date(r['stichtag'])}", 'Ø Alter', f"Eintritte {r['year']}",
                                 f"Austritte {r['year']}", 'Gäste', 'SEPA-Mandate', f"Beitrag Soll {r['year']}", f"gezahlt {r['year']}", 'Rückstand'])

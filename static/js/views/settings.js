@@ -3,14 +3,15 @@
 import { api, download } from '../api.js';
 import { html, mount, raw } from '../html.js';
 import { toInput } from '../format.js';
-import { store, refresh } from '../store.js';
+import { store, refresh, can } from '../store.js';
 import { pageHead, safe, toast, icon, mailPreview, dialog, table, badge, empty, confirmAction, uploadProtected } from '../ui.js';
 import { ovLabel } from '../gliederung.js';
 import { accountField, bindAccountPickers } from '../account-picker.js';
 import { addressState, addressSummary, addressCredit, loadAddressData, loadedText } from '../adressdaten.js';
 
 const TABS = [['schalter', 'Schalter'], ['verein', 'Verein & Bank'], ['beitraege', 'Beiträge'], ['gliederung', 'Gliederung'], ['versand', 'E-Mail-Versand'], ['vorlagen', 'Vorlagen'], ['sicherung', 'Sicherung']];
-const tabs = () => (store.mode === 'server' ? [...TABS, ['zugang', 'Anmeldung']] : TABS);
+// ohne das Recht „Einstellungen“ bleibt im Serverbetrieb nur die eigene Anmeldung (Passwort ändern)
+const tabs = () => (store.mode !== 'server' ? TABS : can('einstellungen') ? [...TABS, ['zugang', 'Anmeldung']] : [['zugang', 'Anmeldung']]);
 const PLACEHOLDERS = [['vorname', 'Vorname'], ['name', 'Name'], ['nummer', 'Rechnungsnummer'], ['betrag', 'Betrag'], ['faellig', 'Fällig am'],
   ['datum', 'Rechnungsdatum'], ['jahr', 'Beitragsjahr'], ['leistung', 'Leistungen'], ['mitgliedsnummer', 'Mitgliedsnummer'], ['iban', 'IBAN'], ['absender', 'Absendername'],
   ['offen', 'offener Betrag'], ['neue_frist', 'neue Frist (Erinnerung)'], ['stufe', 'Nummer der Erinnerung'],
@@ -349,6 +350,7 @@ function collect(form) {
 export async function settings(main) {
   const s = store.data.settings;
   if (store.settingsTab) { tab = store.settingsTab; store.settingsTab = null; }   // Sprung vom Start
+  if (!tabs().some(([id]) => id === tab)) tab = tabs()[0][0];   // Reiter ohne Recht: auf den ersten erlaubten
   const status = tab === 'versand' ? await safe(() => api('/api/mail-status')) : null;
   if (!tabs().some(([id]) => id === tab)) tab = 'schalter';
   const views = { schalter, verein, beitraege, gliederung, versand: (x) => versand(x, status), vorlagen, sicherung, zugang };

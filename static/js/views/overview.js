@@ -3,7 +3,7 @@
 import { download } from '../api.js';
 import { html, mount } from '../html.js';
 import { eur, date, shortDate, todayIso } from '../format.js';
-import { store, go, yearBank, openBills, daysOverdue } from '../store.js';
+import { store, go, can, yearBank, openBills, daysOverdue } from '../store.js';
 import { pageHead, icon, safe, toast, dialog } from '../ui.js';
 import { reviewDialog } from './bills.js';
 import { reminderDialog } from './mailing.js';
@@ -155,31 +155,34 @@ export function overview(main) {
         : html`<p class="task-none">${icon('check', 16)} Nichts offen.</p>`}
     </section>`;
   };
-  const area = (id) => card(AREAS.find((a) => a.id === id));
+  // mit Rollen (ab 0.34) sieht jede Person nur die Bereiche, für die sie ein Recht hat
+  const SHOWN = { mv: can('mitglieder'), bh: can('buchhaltung'), vb: can('verband'), vw: can('einstellungen') || can('sicherung') || can('verwaltung') };
+  const area = (id) => (SHOWN[id] ? card(AREAS.find((a) => a.id === id)) : '');
 
   mount(main, html`<div class="page">
-    ${pageHead(`Haushaltsjahr ${store.year} · Stand ${date(iso(today))}`, 'Start', html`
+    ${pageHead(`Haushaltsjahr ${store.year} · Stand ${date(iso(today))}`, 'Start', can('buchhaltung') ? html`
       <button type="button" class="btn" data-monthly>${icon('file', 16)} Monatsbericht</button>
-      <button type="button" class="btn" data-audit-package>Kassenprüfer-Paket ${store.year}</button>`)}
+      <button type="button" class="btn" data-audit-package>Kassenprüfer-Paket ${store.year}</button>` : '')}
 
-    <section class="cards" aria-label="Haushalt ${store.year}">
+    ${can('buchhaltung') ? html`<section class="cards" aria-label="Haushalt ${store.year}">
       ${kpi(`Einnahmen ${store.year}`, incomeIst === null || incomeIst === undefined ? '—' : eur(incomeIst),
         incomePlan ? `von ${eur(incomePlan)} Plan · ${Math.round((incomeIst || 0) / incomePlan * 100)} %` : 'Plan unvollständig', incomePlan ? (incomeIst || 0) / incomePlan : null)}
       ${kpi(`Ausgaben ${store.year}`, expenseIst === null ? '—' : eur(expenseIst),
         expensePlan ? `von ${eur(expensePlan)} Plan · ${Math.round((expenseIst || 0) / expensePlan * 100)} %` : 'Plan unvollständig', expensePlan ? (expenseIst || 0) / expensePlan : null, true)}
       ${kpi('Offene Forderungen', eur(dueSum), dues.length === 1 ? '1 Rechnung offen' : `${dues.length} Rechnungen offen`, null)}
       ${kpi('Offene Verbindlichkeiten', eur(payableSum), payables.length === 1 ? '1 Eingangsrechnung offen' : `${payables.length} Eingangsrechnungen offen`, null)}
-    </section>
+    </section>` : ''}
 
     <section class="task-section" aria-labelledby="tasks-title">
       <div class="task-title"><h2 id="tasks-title">Aufgaben</h2><span class="small muted">nach Bereich – jede Zeile führt in die Liste dazu</span></div>
-      <div class="task-grid">
+      ${Object.values(SHOWN).some(Boolean) ? html`<div class="task-grid">
         <div class="task-col">${area('mv')}${area('vb')}</div>
         <div class="task-col">${area('bh')}${area('vw')}</div>
-      </div>
+      </div>` : html`<p class="notice">Für dich ist noch keine Rolle eingetragen. Rollen vergibt die Verwaltung (Benutzer und Rollen).</p>`}
     </section>
   </div>`);
 
+  if (!can('buchhaltung')) return bindTasks(main, all);
   main.querySelector('[data-monthly]').onclick = monthlyDialog;
   main.querySelector('[data-audit-package]').onclick = (e) => safe(async () => {
     e.target.disabled = true;
@@ -189,6 +192,10 @@ export function overview(main) {
         : `Kassenprüfer-Paket ${store.year} wird erstellt – gleich erscheint „Sichern unter“. Enthält personenbezogene Daten, nur an die Rechnungsprüfer weitergeben.`);
     } finally { e.target.disabled = false; }
   });
+  bindTasks(main, all);
+}
+
+function bindTasks(main, all) {
   main.querySelectorAll('[data-task]').forEach((b) => (b.onclick = () => {
     const x = all[Number(b.dataset.task)];
     go(...x.go);

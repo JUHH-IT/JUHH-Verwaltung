@@ -63,6 +63,7 @@ export function auswertung(main) {
 
 /** Seite zeichnen; Reiterwechsel ohne neue Anfrage. */
 function draw(main, r, q) {
+  const money = (value) => (r.amounts === false ? '—' : eur(value));   // ohne Buchhaltungsrecht liefert der Server keine Beträge
   const c = r.cards;
   const kvs = store.data.kv.filter((k) => k.code !== 'LV' && store.data.members.some((m) => m.kv === k.code));
   const ovChoices = kvFilter ? (store.data.ovs || []).filter((o) => o.kv === kvFilter && (o.members || o.active)) : [];
@@ -101,9 +102,9 @@ function draw(main, r, q) {
         { label: 'Beitrag Soll', className: 'num' }, { label: 'Gezahlt', className: 'num' }, { label: 'Rückstand', className: 'num' }, ''],
         r.kv_rows.map((k) => html`<tr><td>${k.name}</td><td class="num">${k.active}</td>
           <td><span class="aw-inline"><span class="aw-track"><span style="width:${Math.round(k.share * 100)}%"></span></span><span class="aw-value">${pct(k.share)}</span></span></td>
-          <td class="num">${num(k.avg_age)}</td><td class="num">+${k.joined_year} / −${k.left_year}</td><td class="num">${eur(k.soll)}</td>
-          <td class="num">${eur(k.paid)}${k.paid_share !== null ? html`<span class="sub">${pct(k.paid_share)}</span>` : ''}</td>
-          <td class="num ${k.arrears ? 'over' : ''}">${eur(k.arrears)}${k.arrears_count ? html`<span class="sub">${k.arrears_count} Mitglieder</span>` : ''}</td>
+          <td class="num">${num(k.avg_age)}</td><td class="num">+${k.joined_year} / −${k.left_year}</td><td class="num">${money(k.soll)}</td>
+          <td class="num">${money(k.paid)}${k.paid_share !== null ? html`<span class="sub">${pct(k.paid_share)}</span>` : ''}</td>
+          <td class="num ${k.arrears ? 'over' : ''}">${money(k.arrears)}${k.arrears_count ? html`<span class="sub">${k.arrears_count} Mitglieder</span>` : ''}</td>
           <td><button type="button" class="btn small" data-op-kv="${k.code}">OP-Liste</button></td></tr>`), { className: 'kv-table' })
         : empty('Keine Mitglieder', 'Für die Auswahl gibt es keine Mitglieder.')}</section>
     ${r.ov_rows.length ? html`<section class="panel"><h2>Ortsverbände</h2>${table(['Ortsverband', 'Kreisverband', { label: 'Mitglieder', className: 'num' }, { label: 'Ø Alter', className: 'num' }],

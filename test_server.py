@@ -280,7 +280,9 @@ class ServerHttpTests(unittest.TestCase):
 
     def test_backup_zip(self):
         self.user()
-        _, _, sid, _ = self.login()
+        _, body, sid, _ = self.login()
+        self.assertEqual(self.call('/api/backup', cookie=sid)[0], 428)                     # Sicherung nur mit Passwortbestätigung (0.35)
+        self.assertEqual(self.call('/api/bestaetigen', {'password': PASSWORT}, cookie=sid, csrf=body['csrf'])[0], 200)
         (app.DATA / 'Belege').mkdir(exist_ok=True)
         (app.DATA / 'Belege' / 'ER-2026-001.pdf').write_bytes(b'%PDF-1.4 erfunden')
         req = urllib.request.Request(self.url + '/api/backup', headers={'Host': 'ju-finanzen.beispiel.ts.net', 'Cookie': f'__Host-ju_session={sid}'})

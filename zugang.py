@@ -94,7 +94,8 @@ def check_login(db, name, password):
     """Name des Benutzers bei richtigem Passwort, sonst None – in jedem Fall mit einer vollen scrypt-Prüfung."""
     user = find_user(db, name)
     usable = isinstance(password, str) and 0 < len(password) <= MAX_LENGTH
-    if not user or not is_set(user['password']) or not usable:
+    active = bool(user) and ('active' not in user.keys() or user['active'])   # deaktivierte Personen (rollen.py) melden sich nicht an
+    if not user or not active or not is_set(user['password']) or not usable:
         burn_time(password)
         return None
     return user['name'] if verify(password, user['password']) else None
@@ -119,12 +120,15 @@ def set_password(db, name, password, actor=None, create=False):
             clean = user['name']
             what = 'Passwort geändert'
         elif create:
-            db.execute('INSERT INTO users(name,password) VALUES(?,?)', (clean, hashed))
+            created = db.execute('INSERT INTO users(name,password) VALUES(?,?)', (clean, hashed)).lastrowid
             what = 'Benutzer angelegt (Serverbetrieb)'
         else:
             raise ValueError('Benutzer nicht gefunden.')
         db.execute('INSERT INTO audit(time,actor,action,detail) VALUES(?,?,?,?)',
                    (datetime.now().isoformat(timespec='seconds'), actor or clean, what, json.dumps({'benutzer': clean}, ensure_ascii=False)))
+        if create:   # nur über den Verwaltungsbefehl auf dem Server: die erste Person, die sich anmelden kann, bekommt alle Rechte
+            import rollen
+            rollen.on_user_created(db, user['id'] if user else created)   # in derselben Transaktion wie das Anlegen
     return clean
 
 
@@ -186,6 +190,24 @@ class Throttle:
             now = self.clock()
             self._prune(now)
             return max([self._pause(self.all, GLOBAL_ATTEMPTS, now)] + [self._pause(self.keys.get(k, []), FREE_ATTEMPTS, now) for k in keys])
+
+    def gesperrt(self):
+        """Gerade gesperrte Schlüssel als (Schlüssel, Versuche, Wartezeit in Sekunden); '*' = alle Geräte zusammen."""
+        with self.lock:
+            now = self.clock()
+            self._prune(now)
+            result = [(k, len(t), self._pause(t, FREE_ATTEMPTS, now)) for k, t in self.keys.items()]
+            result.append(('*', len(self.all), self._pause(self.all, GLOBAL_ATTEMPTS, now)))
+            return [r for r in result if r[2]]
+
+    def freigeben(self, key):
+        """Fehlversuche eines Schlüssels löschen ('*' = die Obergrenze für alle)."""
+        with self.lock:
+            if key == '*':
+                self.all = []
+            else:
+                self.keys.pop(key, None)
+            self._save()
 
     def attempt(self, keys=('*',)):
         with self.lock:

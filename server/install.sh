@@ -153,6 +153,9 @@ fi
 "$RELEASE/venv/bin/python" -m compileall -q "$RELEASE/venv" >/dev/null 2>&1 || true
 ( cd "$RELEASE" && "$RELEASE/venv/bin/python" -c 'import reportlab, openpyxl, xlrd, certifi, msoffcrypto, cryptography.hazmat.primitives.ciphers, app, verwaltung; print("    Selbsttest: Module geladen, Version", app.VERSION)' ) \
   || { rm -rf "$RELEASE"; die "Selbsttest fehlgeschlagen – nichts umgestellt."; }
+# Prüfliste aller Programmdateien samt venv und __pycache__ für die Dateiprüfung (sicherheit.py) – zuletzt, nach venv,
+# compileall und Selbsttest; danach schreibt niemand mehr in den Ordner (gehört root, der Dienst darf nur lesen)
+( cd "$RELEASE" && find . -type f ! -path './server/PRUEFLISTE' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum ) > "$RELEASE/server/PRUEFLISTE"
 chown -R root:root "$RELEASE"
 chmod -R go-w "$RELEASE"
 trap - ERR INT TERM HUP

@@ -109,6 +109,10 @@ class Store:
         sepadatei.init(self.db)   # Belege zu aufgeteilten SEPA-Sammelbuchungen (0.29)
         import klaerfaelle
         klaerfaelle.init(self.db) # Klärfälle der Mitgliederverwaltung (0.31; nach beitraege und sepadatei: liest deren Tabellen)
+        import rollen
+        rollen.init(self.db)      # Rollen und Rechte im Serverbetrieb (0.34)
+        import sicherheit
+        sicherheit.init(self.db)  # Sicherheitsereignisse, Notfall/Wartung, Dateiprüfung (0.35)
         if self.db.execute("SELECT 1 FROM settings WHERE key='age_basis' AND value=''").fetchone() and \
                 not self.db.execute("SELECT 1 FROM settings WHERE key='age_basis_decided'").fetchone():
             with self.db:   # einmalig: „noch ungeklärt“ → 01.01. (Entscheidung Lennert Gust 08.11.2026), danach in den Stammdaten änderbar
