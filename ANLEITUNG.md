@@ -72,21 +72,56 @@ Verwaltung stehen in `SERVER.md`.
   - In der Mac-App gibt es weiter nur eine Person mit allen Rechten.
 - **Sicherheit (ab 0.35, nur Server):** Unter **Verwaltung → Sicherheit**.
   - **Lagebild:** Notfall/Wartung, Fehlanmeldungen, verweigerte Zugriffe, Sitzungen, gesperrte und ungenutzte Konten
-    (über 90 Tage ohne Anmeldung), Konten mit Verwaltungsrechten, letzte Sicherung, Dateiprüfung.
+    (über 90 Tage ohne Anmeldung), Konten mit Verwaltungsrechten, letzte Sicherung, Dateiprüfung. Ab 0.39 dazu
+    **Abwehr der letzten 24 Stunden** (Treffer nach Art, abgewiesene Anfragen, automatische Sperren, Verlauf je Stunde –
+    auch als Tabelle) und die **Konfigurationsprüfung**: eine Liste „in Ordnung / Hinweis / kritisch“ (Keycloak,
+    Authenticator-Pflicht, Notzugang, Firewall, Bedrohungsliste, Dateiprüfung, Sicherung, HTTPS, ungenutzte Zugänge,
+    mehr als eine Person für die Verwaltung, Serverschutz) mit „Öffnen“ zur passenden Stelle.
   - **Ereignisse:** Anmeldungen, Fehlanmeldungen (unbekannte Namen ohne den eingegebenen Text), verweigerte Zugriffe,
     falsche Passwortbestätigungen, beendete Sitzungen, aufgehobene Sperren, Notfall, Wartung, Sicherungen, Dateiprüfung
     und alle Änderungen an Personen und Rollen – mit Filter und als CSV. Aufbewahrung 400 Tage.
   - **Notfall:** Wer „Sicherheit lesen“ hat, kann ihn auslösen (mit Grund). Dann werden alle ohne „Sicherheit ändern“
     abgemeldet und gesperrt (sie sehen nur einen Hinweis), auf Wunsch auch alle anderen; der E-Mail-Versand hält an.
     Daten bleiben unverändert. Beenden nur mit „Sicherheit ändern“ und Passwort – oder auf dem Server mit
-    `sudo ju-finanzen notfall-aus`.
+    `sudo ju-finanzen notfall-aus`. Ab 0.39 stellt der Notfall auch die Firewall scharf (abweisen, Sperre ab dem ersten
+    Treffer für 7 Tage, Fehlerbremse 10, Bedrohungsliste an); beim Beenden gelten wieder die vorherigen Einstellungen –
+    außer denen, die während des Notfalls von Hand geändert wurden. „Nie sperren“ bleibt immer unverändert.
   - **Wartung:** sperrt wie der Notfall, ohne Abmelden und ohne den Versand anzuhalten, mit optionalem Hinweistext.
+  - **Firewall & Sperren (ab 0.39):** Das Programm prüft jede Anfrage, bevor es sie bearbeitet.
+    - **Was als Treffer zählt:** Aufrufe typischer Scanner-Adressen, die es hier nie gibt (z. B. `/wp-login.php`,
+      `/.env`, `/phpmyadmin`) – sie bekommen dieselbe Antwort wie jede unbekannte Adresse; bekannte Angriffswerkzeuge;
+      Angriffsmuster in der Adresse (und im Anmeldeformular); zu viele Fehlerantworten einer Adresse ohne Anmeldung
+      (Fehlerbremse, Vorgabe 30 in 5 Minuten). Was angemeldete Personen eintippen – Verwendungszwecke, Notizen,
+      Suchtexte –, wird nie geprüft; Passwörter auch nicht.
+    - **Sperre:** Nach 5 Treffern in 10 Minuten ist die Adresse 60 Minuten gesperrt (einstellbar: 10 Minuten bis
+      7 Tage). Eine gesperrte Adresse bekommt nur „Zugriff verweigert“. Wer gültig angemeldet ist, kommt trotz
+      automatischer Sperre und Bedrohungsliste durch und kann die Sperre freigeben; eine Sperre **von Hand** gilt
+      für alle. Treffer, die eine fremde Webseite auslöst, werden abgewiesen, aber nie gezählt: sonst
+      könnte jede Webseite mit ein paar unsichtbaren Bildern ihre Besucher vom Server aussperren.
+      Im Tailnet zählt jedes Gerät für sich.
+    - **Einstellungen** (Dialog, mit Passwortbestätigung): Firewall „abweisen“, „nur protokollieren“ (weist nie ab –
+      zum Ausprobieren) oder „aus“ – beim Zurückschalten auf „abweisen“ werden die automatischen Sperren aus der Zeit
+      davor aufgehoben, Sperren von Hand bleiben; automatisch sperren, Treffer bis zur Sperre, Sperrdauer, Fehlerbremse,
+      Bedrohungsliste, **nie sperren** (Adressen oder Netze, z. B. die eigene feste Adresse).
+    - **Sperrliste:** Adresse oder Netz von Hand sperren (Grund, Dauer oder unbefristet), einzeln freigeben oder alle
+      automatischen auf einmal.
+    - **Bedrohungsliste:** Spamhaus DROP – Netze, die von Kriminellen betrieben werden. Der Server lädt sie täglich;
+      „Jetzt laden“ holt sie sofort. Angezeigt werden Stand und Anzahl. Scheitert der Abruf oder ist die Datei
+      unplausibel, bleibt die alte Liste.
+    - **Live-Verkehr:** die letzten auffälligen Anfragen (Zeit, Adresse, Methode, Pfad, Status, Art). „Mitschnitt
+      starten“ zeigt 15 Minuten lang alle Anfragen (mit Passwortbestätigung). Nie Inhalte, nie Personen; die Liste liegt nur im Arbeitsspeicher
+      und ist nach einem Neustart leer.
+    - **Nicht aussperrbar:** der Server selbst (127.0.0.1), „nie sperren“ und – beim Sperren von Hand – die eigene
+      aktuelle Adresse (Meldung statt Sperre). **Notausgang auf dem Server:** `sudo ju-finanzen schutz-aus` löscht alle
+      Sperren und stellt die Firewall auf „nur protokollieren“ (wirkt nach spätestens 10 Sekunden).
   - **Passwortbestätigung:** Sicherung herunterladen, Personen und Rollen ändern, Mitglieder löschen, E-Mail-Passwort
     speichern, Notfall beenden, Sitzungen beenden und Sperren aufheben verlangen das eigene Passwort noch einmal (gilt
-    dann 5 Minuten).
+    dann 5 Minuten). Ab 0.39 auch: Firewall-Einstellungen ändern, Adresse sperren oder freigeben, Bedrohungsliste laden, Mitschnitt.
   - **Sitzungen & Konten, System** (nur „Sicherheit ändern“): Sitzungen anderer beenden, Sperren nach Fehlversuchen
     aufheben, Konten im Überblick, Version, Speicher, Sicherungen, Dateiprüfung der Programmdateien („Jetzt prüfen“;
-    sonst einmal am Tag beim Öffnen).
+    sonst einmal am Tag beim Öffnen). Ab 0.39 unter System auch der **Serverschutz**: der Bericht, den der Server über
+    seine eigene Härtung ablegt (Firewall des Betriebssystems, Sperrlisten, Updates). Das Programm zeigt ihn nur an;
+    fehlt er oder ist er älter als 60 Minuten, steht dort „Kein aktueller Bericht vom Server“.
   - Anfangsrechte: Administrator ändern; Schatzmeister, Landesgeschäftsführer, Landesvorsitzender lesen.
 - **Bedienung wie am Mac.** Unterschiede: Es gibt kein „Programm beenden“, der Server läuft ständig. Esc schließt Dialoge.
 - **Bis 1100 px Breite** (Tablet, Handy) öffnet ☰ oben links die Seitenleiste. Dialoge füllen auf dem Handy den

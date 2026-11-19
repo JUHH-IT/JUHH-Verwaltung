@@ -12,7 +12,14 @@ def last_daily(backup_dir):
         days = [p.name[len(PREFIX):-len('.sqlite3')] for p in Path(backup_dir).glob(f'{PREFIX}*.sqlite3')]
     except OSError:
         return ''
-    return max((d for d in days if len(d) == 10), default='')
+    return max((d for d in days if _datum(d)), default='')   # fremde Dateien (ohne gültiges Datum im Namen) zählen nicht
+
+
+def _datum(text):
+    try:
+        return date.fromisoformat(text).isoformat() == text
+    except ValueError:
+        return False
 
 
 def daily_backup(db_path, backup_dir, keep=30, today=None):
