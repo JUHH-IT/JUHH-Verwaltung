@@ -8,8 +8,11 @@ Alleiniger Entwickler ist Claude (seit 28.10.2026, Übernahme vom Codex-Pilot 0.
 - Die App (`JU Hamburg Finanzen.app`) wird ausschließlich aus diesem Repository gebaut: `python3 mac/build_app.py --install ..`
 - Daten liegen getrennt in `../Daten`, Sicherungen in `../Sicherungen`. Code darf nie in `Daten/` schreiben, außer über den Server (Ausnahme: Starter und Programmfenster ergänzen `Daten/programm.log`).
 
+Funktionen, Wege und Tests je Modul: `INHALT.md` (erzeugt). Die Tabelle hier nennt Zweck und Regeln.
+
 | Datei | Zweck |
 | --- | --- |
+| `werkzeuge/inhalt.py` + `INHALT.md` / `werkzeuge/tests.py` | Inhaltsverzeichnis erzeugen bzw. prüfen / betroffene Tests parallel laufen lassen (ab 0.37, siehe „Schnell arbeiten“) |
 | `app.py` | lokaler HTTP-Server, Sitzungen, PDF, Start (`--data`, `--backups`) |
 | `core.py` | Datenbank, Buchungslogik, Rechnungen, Bankumsätze |
 | `formate.py` | Geld-/Datums-/IBAN-/E-Mail-Formate (einzige Stelle für Betragslogik) |
@@ -71,6 +74,31 @@ Alleiniger Entwickler ist Claude (seit 28.10.2026, Übernahme vom Codex-Pilot 0.
 - Der Server liefert nur Dateien aus `static/` mit erlaubter Endung aus (`app.static_file`, geprüft in `test_static.py`); CSP erlaubt nur eigene Skripte.
 - Karte (ab 0.32, `views/karte.js`, `adressdaten.js`): Leaflet 1.9.4 liegt unverändert unter `static/vendor/leaflet` (Prüfsumme in `test_karte.py`; die Dateien haben Windows-Zeilenenden – `.gitattributes` schützt sie, Patches deshalb immer mit `git am --keep-cr` einspielen und den Baum-Hash vergleichen) und wird erst beim Öffnen der Karte geladen. Einzige Ausnahme in der CSP: Bilder von `https://tile.openstreetmap.org` (Kartenhintergrund, per Schalter `map_tiles` abschaltbar). Texte auf der Karte (Hinweise, Namen) nur als DOM-Knoten mit `textContent`, nie als HTML-Zeichenkette an Leaflet geben. Es gibt immer höchstens eine Leaflet-Karte: `leaveMap()` gibt sie frei – `main.js` ruft das bei jedem Neuaufbau der Seite. Suchtexte und Anschriften nur per POST an den Server (`/api/strassen-suche`, `/api/adresse-pruefen`), nie in der Adresszeile. Farben der Kreisverbände `--kv-5100` … `--kv-5700` (benachbarte Bezirke unterscheidbar, Namen stehen zusätzlich auf der Karte), Dichte `--map-seq-1…5`. Die Adressprüfung im Mitgliedsdialog (`bindAddressCheck`) ist nur ein Hinweis und darf das Speichern nie verhindern.
 
+## Schnell arbeiten (ab 0.37)
+
+Ziel: kurze Wege für Entwickler und parallel arbeitende Agenten, ohne Qualität zu verlieren (Wunsch Lennert Gust 19.11.2026).
+
+1. **Erst nachschlagen, dann suchen:** `INHALT.md` ist das Inhaltsverzeichnis des Programms nach Teilbereichen – jedes Modul
+   mit Zweck, Tabellen, Tests und allen Funktionen (eine Zeile je Funktion), alle Wege `/api/…` mit dem nötigen Recht, alle
+   Dateien der Oberfläche mit den Wegen, die sie aufrufen. Vor einer neuen Funktion dort prüfen, ob es sie schon gibt.
+   Automatisch erzeugt: nach Änderungen `python3 werkzeuge/inhalt.py` (`test_inhalt.py` und die CI lehnen ein veraltetes
+   Verzeichnis ab). Jede öffentliche Funktion bekommt eine erste Docstring-Zeile – sie ist ihr Eintrag im Verzeichnis.
+   Neue Module in `werkzeuge/inhalt.py` (`BEREICHE`) einem Teilbereich zuordnen.
+2. **Während der Arbeit nur betroffene Tests:** `python3 werkzeuge/tests.py` (Tests, die ein geändertes Modul importieren,
+   parallel; `--zeigen`, `--tief`, `--alle`). Die volle Suite und die Browser-Durchläufe laufen in der CI bei jedem Pull
+   Request; fertig ist ein Pull Request erst mit grüner CI. Die volle Suite lokal nur zur Fehlersuche.
+3. **Quelle ist das GitHub-Repository** (`JUHH-IT/JUHH-Verwaltung`). Je Aufgabe ein eigener Arbeitsordner und Branch vom
+   neuesten `main`: `git fetch origin && git worktree add ../jv-<thema> -b <thema> origin/main`. Nie zwei Aufgaben im selben
+   Ordner, nie zwei Testläufe gleichzeitig im selben Ordner. Ein Branch = ein Thema = ein Pull Request; früh hochladen.
+4. **Sammelstellen** – hier treffen sich parallele Änderungen: `app.py` (`do_GET`/`do_POST`), `rollen.py` (`GET`/`POST`),
+   `static/js/main.js` (Seitenliste), `AGENTS.md`, `ANLEITUNG.md`, `INHALT.md`. Dort nur das Nötigste eintragen (eine Zeile
+   je Weg/Seite), Fachlogik gehört ins Fachmodul. `INHALT.md` nach einem Konflikt nicht von Hand zusammenführen, sondern neu erzeugen.
+5. **Aufträge an Agenten** nennen: Ziel, Teilbereich und Dateien laut `INHALT.md`, was nicht angefasst wird, welche Prüfungen
+   laufen. Unabhängige Prüfung je Version bleibt; ihr Umfang richtet sich nach dem Risiko (Anmeldung, Rechte, Geld,
+   Datenabfluss: voll mit eigenen Läufen; reine Anzeige: Durchsicht der Änderung).
+6. **Freigabe:** nach dem Merge legt GitHub den Release-Entwurf an; Lennert gibt frei (Releases → „Publish release“ oder
+   Actions → „Release“ → „Run workflow“). Agenten starten diesen Lauf nie selbst.
+
 ## Arbeitsweise
 
 - Änderungen auf eigenem Branch, Merge nach `main` und Neubau der installierten App nur nach Freigabe durch Lennert.
@@ -80,7 +108,7 @@ Alleiniger Entwickler ist Claude (seit 28.10.2026, Übernahme vom Codex-Pilot 0.
   - Die Datenregel gilt überall bei GitHub: Quellcode, Commit-Texte, Pull Requests, Issues, Kommentare, Protokolle der Tests – nur Anzahlen und Ja/Nein aus echten Daten, keine Bildschirmfotos mit echten Daten. Daten, Sicherungen, Belege, Kennwörter und Schlüssel werden nie übertragen; `test_repo.py` muss grün sein.
   - Neue Beispielwerte (IBAN, E-Mail) nur aus den in `test_repo.py` erlaubten nehmen; die Liste nicht um echte Werte erweitern.
   - Zugangsschlüssel (Deploy key des Servers, Tokens) liegen nur auf dem jeweiligen Gerät, nie im Repository oder im Chat.
-- Vor jedem Commit: `python3 -m unittest discover` (alle `test_*.py`, alle grün).
+- Vor jedem Commit: `python3 werkzeuge/tests.py` (betroffene Tests, alle grün); vor dem Zusammenführen muss die CI grün sein (volle Suite `python3 -m unittest discover` auf Python 3.12 und 3.13, Browser-Durchläufe).
 - Bei Änderungen an der Oberfläche zusätzlich `node tests/html_escape.mjs` (Maskierung) und der Browser-Durchlauf mit erfundenen Daten: `NODE_PATH=$(npm root -g) node tests/ui_smoke.mjs <Ordner für Bildschirmfotos>` (benötigt Node, Playwright mit Chromium und die Python-Abhängigkeiten; startet einen eigenen Server in einem temporären Ordner).
 - Neue Funktionen bekommen Tests. Geld immer in ganzen Cent; Beträge nur über `formate.money` lesen.
 - Keine echten Bank-, Mitglieder- oder Finanzdaten in Repository, Tests oder Protokollen. Testdaten sind erfunden (`tests/make_fixtures.py`).

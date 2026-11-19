@@ -1,38 +1,48 @@
-# Nach jedem Merge auf main mit grünen Tests: Release-Entwurf „v<Programmversion>“ vorbereiten.
-# Veröffentlicht wird nie automatisch – Lennert prüft den Entwurf und klickt „Publish release“; erst dann entsteht
-# der Tag, den `ju-finanzen aktualisieren` auf dem Server installiert.
-name: Release-Entwurf
+# Release „v<Programmversion>“ vorbereiten und freigeben.
+# 1. Nach jedem Merge auf main mit grünen Tests entsteht von selbst ein Release-ENTWURF auf genau diesem Stand.
+# 2. Freigeben kann nur ein Mensch – auf einem von zwei Wegen:
+#    a) Actions → „Release“ → „Run workflow“ (Branch main) – dieser Lauf prüft noch einmal und veröffentlicht, oder
+#    b) Releases → Entwurf öffnen → „Publish release“.
+# Erst mit der Freigabe entsteht der Tag, den `ju-finanzen aktualisieren` auf dem Server installiert.
+# Agenten starten diesen Lauf nie selbst (AGENTS.md).
+name: Release
 
 on:
   workflow_run:
     workflows: [Tests]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # Release und Tag anlegen
+  actions: read     # Ergebnis der Tests lesen
 
 concurrency:
-  group: release-entwurf
+  group: release
   cancel-in-progress: false
 
 jobs:
-  entwurf:
-    name: Release-Entwurf vorbereiten
-    # nur nach erfolgreichen Tests eines Pushs auf main (Merge), nie für Pull Requests oder Tags
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
+  release:
+    name: ${{ github.event_name == 'workflow_dispatch' && 'Release freigeben' || 'Release-Entwurf vorbereiten' }}
+    # von Hand: nur von main; automatisch: nur nach erfolgreichen Tests eines Pushs auf main (Merge), nie für Pull Requests oder Tags
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           persist-credentials: false
-      - name: Entwurf anlegen oder auf den neuesten Stand von main setzen
+      - name: Entwurf anlegen bzw. Release freigeben
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          FREIGEBEN: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           version="$(sed -n "s/^VERSION='\(.*\)'.*/\1/p" app.py | head -n 1)"
           [[ "$version" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "::error::Programmversion in app.py nicht lesbar"; exit 1; }
@@ -44,11 +54,19 @@ jobs:
             echo "::notice::Version $version ist schon freigegeben (Tag $tag). Für einen neuen Release die Version in app.py erhöhen."
             exit 0
           fi
+          if [ "$FREIGEBEN" = true ]; then   # Freigabe nur für einen Stand, dessen Tests auf main grün waren
+            ergebnis="$(gh run list --repo "$REPO" --workflow tests.yml --commit "$SHA" --event push --json conclusion --jq '.[0].conclusion')"
+            [ "$ergebnis" = success ] || { echo "::error::Die Tests für diesen Stand von main sind nicht grün (Ergebnis: ${ergebnis:-noch keins}). Bitte warten bzw. Actions → Tests ansehen."; exit 1; }
+          fi
           draft="$(gh api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name==\"$tag\" and .draft) | .id" | head -n 1)"
-          if [ -n "$draft" ]; then
-            gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" >/dev/null
-            echo "::notice::Release-Entwurf $tag zeigt jetzt auf ${SHA:0:7}."
-          else
+          if [ -z "$draft" ]; then
             gh release create "$tag" --repo "$REPO" --draft --target "$SHA" --title "$version" --generate-notes
-            echo "::notice::Release-Entwurf $tag angelegt – unter Releases prüfen und „Publish release“ klicken."
+            draft="$(gh api "repos/$REPO/releases" --paginate --jq ".[] | select(.tag_name==\"$tag\" and .draft) | .id" | head -n 1)"
+          fi
+          if [ "$FREIGEBEN" = true ]; then
+            gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" -F draft=false >/dev/null
+            echo "::notice::Version $version ist freigegeben (Tag $tag auf ${SHA:0:7}). Auf dem Server: sudo ju-finanzen aktualisieren"
+          else
+            gh api -X PATCH "repos/$REPO/releases/$draft" -f target_commitish="$SHA" >/dev/null
+            echo "::notice::Release-Entwurf $tag steht auf ${SHA:0:7}. Freigeben: Actions → Release → Run workflow (oder Releases → Publish release)."
           fi
