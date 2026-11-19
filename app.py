@@ -503,10 +503,13 @@ class Handler(BaseHTTPRequestHandler):
         (Schutz vor Seiten auf anderen Rechnern im Tailnet, die als „same-site“ gelten)."""
         return self.headers.get('Sec-Fetch-Site','') in ('','same-origin','none')
     def andere_methode(self):
-        """HEAD, OPTIONS, PUT, DELETE, PATCH: auch hier zuerst die Abwehr (Sperren, Fallen, Zählung), sonst 405."""
+        """Jede Methode außer GET und POST: auch hier zuerst die Abwehr (Sperren, Fallen, Zählung), sonst 405."""
         if self.abwehr(): return
         self.send(405,{'error':'Methode nicht erlaubt.'})
-    do_HEAD=do_OPTIONS=do_PUT=do_DELETE=do_PATCH=andere_methode
+    def __getattr__(self,name):
+        # http.server sucht do_<Methode>; ohne diesen Haken beantwortete es Unbekanntes (PROPFIND, TRACE …) selbst mit 501 – an der Abwehr vorbei
+        if name.startswith('do_'): return self.andere_methode
+        raise AttributeError(name)
     def do_GET(self):
         if self.abwehr(): return
         if not self.valid_host(): return self.send(403,{'error':'Ungültiger Host.'})

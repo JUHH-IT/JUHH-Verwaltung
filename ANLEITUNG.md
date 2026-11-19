@@ -96,8 +96,8 @@ Verwaltung stehen in `SERVER.md`.
     - **Sperre:** Nach 5 Treffern in 10 Minuten ist die Adresse 60 Minuten gesperrt (einstellbar: 10 Minuten bis
       7 Tage). Eine gesperrte Adresse bekommt nur „Zugriff verweigert“. Wer gültig angemeldet ist, kommt trotz
       automatischer Sperre und Bedrohungsliste durch und kann die Sperre freigeben; eine Sperre **von Hand** gilt
-      für alle. Treffer, die eine fremde Webseite auslöst, zählen erst ab der zehnfachen Schwelle (Vorgabe 50): eine
-      fremde Seite soll niemanden mit ein paar Bildern aussperren, ein Scanner aber auch nicht unbegrenzt durchkommen.
+      für alle. Treffer, die eine fremde Webseite auslöst, werden abgewiesen, aber nie gezählt: sonst
+      könnte jede Webseite mit ein paar unsichtbaren Bildern ihre Besucher vom Server aussperren.
       Im Tailnet zählt jedes Gerät für sich.
     - **Einstellungen** (Dialog, mit Passwortbestätigung): Firewall „abweisen“, „nur protokollieren“ (weist nie ab –
       zum Ausprobieren) oder „aus“ – beim Zurückschalten auf „abweisen“ werden die automatischen Sperren aus der Zeit

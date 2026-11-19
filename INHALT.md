@@ -153,7 +153,7 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
   - `Handler.send_response(code, message=…)` – Jede Antwort – auch Fehler der Basisklasse – läuft hier durch: Fehlerbremse und Live-Verkehr (schutz.nachher).
   - `Handler.who()` – Herkunft für das Protokoll (keine Inhalte).
   - `Handler.same_site()` – Browser melden mit Sec-Fetch-Site, woher eine Anfrage kommt: nur eigene Seite oder direkte Eingabe zulassen
-  - `Handler.andere_methode()` – HEAD, OPTIONS, PUT, DELETE, PATCH: auch hier zuerst die Abwehr (Sperren, Fallen, Zählung), sonst 405.
+  - `Handler.andere_methode()` – Jede Methode außer GET und POST: auch hier zuerst die Abwehr (Sperren, Fallen, Zählung), sonst 405.
   - `Handler.do_GET()`
   - `Handler.do_POST()`
 - `new_login_code()` – Einmaliger Anmeldecode (60 Sekunden gültig) – nur nach Prüfung durch macOS bzw. beim Start im Terminal.

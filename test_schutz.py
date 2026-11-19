@@ -1,6 +1,7 @@
 """Abwehr in der Anwendung (schutz.py, ab 0.39): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Serverschutz-Bericht.
 Nur erfundene Daten, nie ins Netz – Adressen ausschließlich aus den Dokumentationsbereichen (192.0.2.0/24, 198.51.100.0/24,
 203.0.113.0/24, 2001:db8::/32)."""
+import socket
 import os
 os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import io
@@ -132,6 +133,11 @@ class AufruferTests(unittest.TestCase):
             for kopf in ('unknown', '198.51.100.70:x:y', '[kaputt]:443'):
                 self.assertEqual(schutz.aufrufer('127.0.0.1', kopf), IP('127.0.0.1'))                    # wie lokal – kein Aussperren
             self.assertEqual(schutz._MERKER['unlesbar'], 1_000_000.0)                                    # aber vermerkt (Konfigurationsprüfung)
+            schutz.vergessen(alles=True)
+            for kopf in ('127.0.0.1', '198.51.100.70, ::1'):                                             # Proxy reicht den Kopf des Aufrufers nur durch
+                self.assertEqual(schutz.aufrufer('127.0.0.1', kopf), IP('127.0.0.1'))
+                self.assertEqual(schutz._MERKER['unlesbar'], 1_000_000.0, kopf)
+                schutz._MERKER['unlesbar'] = 0.0
 
 
 class MusterTests(unittest.TestCase):
@@ -289,22 +295,16 @@ class FirewallTests(Basis):
         self.anfrage(ip=IP('198.51.100.9'), ziel='/.env')
         self.assertEqual(sicherheit.ereignisse(self.db, art='schutz_sperre')[0]['detail']['weitere'], 4)
 
-    def test_angemeldet_zaehlt_nicht_fremde_seite_erst_ab_zehnfacher_schwelle(self):
+    def test_angemeldet_und_fremde_seite_zaehlen_nicht(self):
         for _ in range(20):
             self.assertEqual(self.anfrage(ziel='/wp-login.php', angemeldet=True)[0], 404)   # abgewiesen, aber kein Treffer
-        for _ in range(49):
+        for _ in range(200):
             self.assertEqual(self.anfrage(ziel='/wp-login.php', fremd=True)[0], 404)        # <img src=…/wp-login.php> auf fremder Seite
-        self.assertEqual(self.anfrage(), (None, ''))                                        # 49 < 10 × 5: noch frei
-        self.assertEqual(self.db.execute('SELECT count(*) FROM schutz_sperren').fetchone()[0], 0)
-        self.anfrage(ziel='/wp-login.php', fremd=True)                                      # 50.: wer Sec-Fetch-Site fälscht, kommt nicht unbegrenzt durch
-        self.assertEqual(self.anfrage(), (403, 'gesperrt (automatisch)'))
-        self.assertEqual(self.anfrage(ip=IP('203.0.113.51'), ziel='/', fremd=True), (None, ''))
-        self.weiter(schutz.FENSTER + 1)
-        schutz.freigeben(self.db, 'auto', 'Erste')
-        for _ in range(49):
-            self.anfrage(ziel='/.env', fremd=True)
-        self.anfrage(ziel='/.env')                                                          # eigene Zähler: ein normaler Treffer macht keine 50
+        self.assertEqual(self.anfrage(), (None, ''))                                        # keine Webseite sperrt ihre Besucher aus
+        schutz.notfall(self.db, True)                                                       # auch nicht mit der Schwelle 1 des Notfalls
+        self.anfrage(ziel='/.env', fremd=True)
         self.assertEqual(self.anfrage(), (None, ''))
+        self.assertEqual(self.db.execute('SELECT count(*) FROM schutz_sperren').fetchone()[0], 0)
 
     def test_angemeldete_suchen_frei_der_pfad_wird_weiter_geprueft(self):
         for _ in range(10):
@@ -701,6 +701,27 @@ class NotfallUndVerwaltungTests(Basis):
         with redirect_stdout(io.StringIO()):                                                # wiederholbar
             self.assertEqual(verwaltung.main(['--data', self.tmp.name, 'schutz-aus']), 0)
 
+    def test_scharfstellen_vergisst_vorgemerkte_sperren_und_zaehler(self):
+        self.setze(modus='protokollieren')
+        for _ in range(5):
+            self.anfrage(ziel='/.env')                                                      # vorgemerkt: Sperre und vier Treffer im Zähler
+        for _ in range(4):
+            self.anfrage(ip=IP('198.51.100.8'), ziel='/.env')
+        self.assertEqual(self.db.execute('SELECT count(*) FROM schutz_sperren').fetchone()[0], 1)
+        schutz.notfall(self.db, True)                                                       # stellt auf „abweisen“
+        self.assertEqual(self.db.execute('SELECT count(*) FROM schutz_sperren').fetchone()[0], 0)
+        self.assertEqual(self.anfrage(), (None, ''))                                        # wer nur vorgemerkt war, ist nicht ausgesperrt
+        schutz.notfall(self.db, False)
+        self.setze(modus='abweisen')
+        self.anfrage(ip=IP('198.51.100.8'), ziel='/.env')                                   # die vier alten Treffer zählen nicht mehr mit
+        self.assertEqual(self.anfrage(ip=IP('198.51.100.8')), (None, ''))
+        self.setze(schwelle=6)                                                              # andere Einstellung, gleicher Modus: nichts wird gelöscht
+        for _ in range(5):
+            self.anfrage(ip=IP('198.51.100.8'), ziel='/.env')
+        self.assertEqual(self.anfrage(ip=IP('198.51.100.8'))[0], 403)
+        self.setze(schwelle=7)
+        self.assertEqual(self.anfrage(ip=IP('198.51.100.8'))[0], 403)
+
     def test_notfall_aus_auf_dem_server_bringt_die_firewall_zurueck(self):
         self.setze(schwelle=9)
         sicherheit.notfall_an(self.db, 'Erste', 'Übung mit erfundenem Verdacht')
@@ -809,7 +830,7 @@ class PruefungTests(Basis):
         self.assertEqual(schutz.aufrufer('127.0.0.1', 'unknown'), IP('127.0.0.1'))
         a = self.pruefung()['aufrufer']
         self.assertEqual((a['stand'], a['ziel']), ('kritisch', 'firewall'))
-        self.assertIn('Aufruferadresse nicht lesbar – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen)', a['detail'])
+        self.assertIn('Aufruferadresse nicht lesbar oder lokal – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen)', a['detail'])
         self.weiter(86401)
         self.assertEqual(self.pruefung()['aufrufer']['stand'], 'ok')                       # nur, wenn es in den letzten 24 Stunden vorkam
 
@@ -903,6 +924,24 @@ class SchutzHttpTests(unittest.TestCase):
         self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', '203.0.113.61'))[0], 403)
         self.assertEqual(self.zeilen('HEAD', '/', ('X-Forwarded-For', '203.0.113.61')), (403, b''))   # gesperrt auch für HEAD
         self.assertEqual(self.zeilen('DELETE', '/api/status', ('X-Forwarded-For', '203.0.113.61'))[0], 403)
+        for methode in ('PROPFIND', 'TRACE', 'get'):                                         # auch was http.server sonst selbst mit 501 beantwortete
+            self.assertEqual(self.zeilen(methode, '/', ('X-Forwarded-For', '203.0.113.61'))[0], 403, methode)
+            self.assertEqual(self.zeilen(methode, '/', ('X-Forwarded-For', '203.0.113.62'))[0], 405, methode)
+        for _ in range(5):
+            self.zeilen('PROPFIND', '/.env', ('X-Forwarded-For', '203.0.113.63'))
+        self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', '203.0.113.63'))[0], 403)
+
+    def test_head_ohne_koerper_und_ohne_fehlerbremse(self):
+        with socket.create_connection(('127.0.0.1', self.port), timeout=10) as s:   # http.client verschluckt den Körper einer HEAD-Antwort
+            s.sendall(b'HEAD / HTTP/1.0\r\nHost: ju-finanzen.beispiel.ts.net\r\nX-Forwarded-For: 203.0.113.64\r\n\r\n')
+            antwort = b''
+            while teil := s.recv(65536):
+                antwort += teil
+        kopf, _, koerper = antwort.partition(b'\r\n\r\n')
+        self.assertEqual((kopf.split(b'\r\n')[0].split()[1], koerper), (b'405', b''))
+        for _ in range(60):                                                                  # Verfügbarkeitsprüfung mit HEAD: nie gesperrt
+            self.assertEqual(self.zeilen('HEAD', '/', ('X-Forwarded-For', '203.0.113.64'))[0], 405)
+        self.assertEqual(self.zeilen('GET', '/', ('X-Forwarded-For', '203.0.113.64'))[0], 200)
 
     def test_protokollieren_dann_abweisen_sperrt_niemanden_nachtraeglich(self):
         store = Store(app.DB)

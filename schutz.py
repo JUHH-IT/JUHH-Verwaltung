@@ -38,14 +38,13 @@ FENSTER = 600            # Treffer zählen 10 Minuten
 FEHLERFENSTER = 300      # Fehlerbremse: 5 Minuten
 # Fehlerbremse zählt nur diese Antworten und nur ohne Anmeldung. Bewusst nicht: 401 (abgelaufene Sitzung, falsches Passwort –
 # dafür gibt es zugang.Throttle), 428 (Bestätigung), 429 (Anmeldesperre), 503 (Notfall/Wartung)
-FEHLER_STATUS = (400, 403, 404, 405, 413, 414)
+FEHLER_STATUS = (400, 403, 404, 413, 414)   # 405 nicht: HEAD/OPTIONS von Verfügbarkeitsprüfungen sollen niemanden sperren
 HARMLOS = ('/favicon.ico', '/robots.txt', '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png')   # fragt jeder Browser
 NACHLADEN = 10           # Sekunden: so schnell wirkt eine Änderung von außen (verwaltung.py schutz-aus)
 STATISTIK_ALLE = 30      # Sekunden: Stundenstatistik höchstens so oft schreiben
 VERKEHR_MAX = 500
 MITSCHNITT_MINUTEN = 15
 MAX_AUTO = 5000          # automatische Sperren gleichzeitig; darüber verdrängt eine neue die mit dem frühesten Ablauf
-FREMD_FAKTOR = 10        # Treffer von fremden Seiten (Sec-Fetch-Site cross-/same-site) sperren erst ab der zehnfachen Schwelle
 QUELLEN = ('https://www.spamhaus.org/drop/drop.txt', 'https://www.spamhaus.org/drop/dropv6.txt')
 LISTE_BYTES = 2_000_000
 LISTE_NETZE = (50, 20000)   # plausibel (Stand 11/2026: rund 1.800 Netze)
@@ -126,10 +125,14 @@ def aufrufer(verbindung, weitergereicht=''):
         elif letzter.count(':') == 1:            # 198.51.100.7:51234 (IPv6 ohne Klammern hat mehrere Doppelpunkte)
             letzter = letzter.partition(':')[0]
         try:
-            return _adresse(letzter)
+            weiter = _adresse(letzter)
+            if not weiter.is_loopback:
+                return weiter
         except ValueError:
-            # unlesbarer Kopf vom eigenen Proxy: wie ohne Kopf (nie sperrbar) statt alle auszusperren – die Konfigurationsprüfung meldet es
-            _MERKER['unlesbar'] = UHR()
+            pass
+        # unlesbarer oder lokaler Eintrag vom eigenen Proxy (er reicht den Kopf des Aufrufers durch, statt die Adresse selbst
+        # anzuhängen): wie ohne Kopf (nie sperrbar) statt alle auszusperren – die Konfigurationsprüfung meldet es
+        _MERKER['unlesbar'] = UHR()
     return ip
 
 
@@ -278,7 +281,7 @@ def _zaehlen(ip, art, fenster, jetzt):
     if len(_ZAEHLER) > 5000:   # älteste Hälfte verwerfen
         for key in sorted(_ZAEHLER, key=lambda k: _ZAEHLER[k]['t'])[:2500]:
             del _ZAEHLER[key]
-    e = _ZAEHLER.setdefault(_schluessel(ip), {'h': [], 'f': [], 'e': [], 't': jetzt})
+    e = _ZAEHLER.setdefault(_schluessel(ip), {'h': [], 'e': [], 't': jetzt})
     e[art] = [t for t in e[art] if t > jetzt - fenster][-600:] + [jetzt]
     e['t'] = jetzt
     return len(e[art])
@@ -314,14 +317,14 @@ def _schreiben(pfad, aufgabe):
 
 
 def _treffer(z, pfad, ip, art, grund, jetzt, zaehler='h'):
-    """Treffer festhalten; ab der Schwelle automatisch sperren. `zaehler`: 'h' = normal, 'f' = von einer fremden Seite
-    (eigener Zähler, FREMD_FAKTOR-fache Schwelle), None = nur Statistik (angemeldet)."""
+    """Treffer festhalten; ab der Schwelle automatisch sperren. `zaehler`: 'h' = zählen, None = nur Statistik (angemeldet
+    oder von einer fremden Seite ausgelöst)."""
     verdraengt = None
     with _SCHLOSS:
         _zaehle_statistik(art, jetzt)
         n = _zaehlen(ip, zaehler, FENSTER, jetzt) if zaehler else 0
         key = _schluessel(ip)
-        sperren = bool(zaehler and z.e['auto'] and n >= z.e['schwelle'] * (FREMD_FAKTOR if zaehler == 'f' else 1) and z.auto.get(key, 0) <= jetzt)
+        sperren = bool(zaehler and z.e['auto'] and n >= z.e['schwelle'] and z.auto.get(key, 0) <= jetzt)
         if sperren and key not in z.auto and len(z.auto) >= MAX_AUTO:   # voll: lieber die bald ablaufende Sperre opfern als niemanden sperren
             verdraengt = min(z.auto, key=z.auto.get)
             del z.auto[verdraengt]
@@ -349,8 +352,9 @@ def _treffer(z, pfad, ip, art, grund, jetzt, zaehler='h'):
 def eingang(pfad, ip, ziel, agent='', angemeldet=False, fremd=False):
     """Prüfung VOR der Verarbeitung einer Anfrage. Liefert (Status, Art): Status 403/404 = so abweisen, None = durchlassen;
     Art = Text für den Live-Verkehr ('' = unauffällig). `ziel` = Pfad mit Abfrage, `fremd` = von einer fremden Seite ausgelöst
-    (zählt getrennt mit FREMD_FAKTOR-facher Schwelle: eine Webseite soll nicht mit fünf Bildern ihre Besucher sperren lassen,
-    ein Scanner, der Sec-Fetch-Site fälscht, aber auch nicht unbegrenzt durchkommen). Angemeldet: die Abfrage (Suchtexte)
+    (wird abgewiesen, aber nie gezählt: sonst könnte jede Webseite mit ein paar unsichtbaren Bildern ihre Besucher vom
+    Server aussperren – der Browser schickt sie ohne Sitzungscookie. Ein Scanner, der Sec-Fetch-Site fälscht, entgeht so
+    der Sperre, bleibt aber bei jedem Treffer abgewiesen). Angemeldet: die Abfrage (Suchtexte)
     wird nicht auf Muster geprüft, der Pfad schon."""
     z = _zustand(pfad)
     if z.e['modus'] == 'aus' or _nie(z, ip):
@@ -372,7 +376,7 @@ def eingang(pfad, ip, ziel, agent='', angemeldet=False, fremd=False):
         if not gruppe:
             return None, ''
         art, status, kurz = 'Angriffsmuster: ' + gruppe, 403, 'muster'
-    _treffer(z, pfad, ip, kurz, art, jetzt, None if angemeldet else 'f' if fremd else 'h')
+    _treffer(z, pfad, ip, kurz, art, jetzt, None if angemeldet or fremd else 'h')
     return (status if weisen else None), art + ('' if weisen else ' – nur protokolliert')
 
 
@@ -726,7 +730,7 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
           {'abweisen': 'Angriffe werden abgewiesen' + ('.' if e['auto'] else ' – automatisches Sperren ist aus.'),
            'protokollieren': 'Die Firewall protokolliert nur und weist nichts ab.', 'aus': 'Die Firewall ist ausgeschaltet.'}[e['modus']], 'firewall'),
         p('aufrufer', 'Adresse jedes Aufrufers lesbar', 'kritisch' if unlesbar else 'ok',
-          f'Aufruferadresse nicht lesbar – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen). Zuletzt {_iso(unlesbar)}.' if unlesbar
+          f'Aufruferadresse nicht lesbar oder lokal – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen). Zuletzt {_iso(unlesbar)}.' if unlesbar
           else 'Der Proxy reicht für jede Anfrage eine lesbare Adresse weiter.', 'firewall'),
         p('bedrohungsliste', 'Bedrohungsliste aktuell', 'ok' if e['liste'] and not liste['veraltet'] else 'hinweis',
           'Die Bedrohungsliste ist ausgeschaltet.' if not e['liste'] else 'Noch nicht geladen – „Jetzt laden“.' if not liste['stand'] else
