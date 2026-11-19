@@ -9,7 +9,8 @@
 #   - PostgreSQL: Rolle und Datenbank „keycloak“ (Passwort zufällig, Verbindung nur über 127.0.0.1)
 #   - Keycloak $KC_VERSION nach /opt/keycloak/<Version> (nur mit passender SHA-256), Verweis /opt/keycloak/current,
 #     Programm gehört root; beschreibbar ist nur /var/lib/keycloak (= data/), Dienst ju-keycloak als Benutzer keycloak
-#   - Realm „ju-hamburg“ und Client „ju-verwaltung“ (kcadm.sh gegen http://127.0.0.1:8180/auth)
+#   - Anmeldeseiten im Aussehen der Anwendung: server/keycloak-theme/ju-hamburg nach /opt/keycloak/<Version>/themes
+#   - Realm „ju-hamburg“ (mit loginTheme) und Client „ju-verwaltung“ (kcadm.sh gegen http://127.0.0.1:8180/auth)
 #   - Werte JU_FINANZEN_KEYCLOAK_* in /etc/ju-finanzen/ju-finanzen.env (JU_FINANZEN_ANMELDUNG bleibt unverändert)
 #   - Tailscale Serve: nur /auth/realms/ju-hamburg und /auth/resources (keine Admin-Konsole, kein master-Realm)
 #   - tägliche Sicherung der Keycloak-Datenbank (Timer ju-keycloak-sicherung)
@@ -28,6 +29,7 @@ KC_PORT=8180
 KC_HEALTH=http://127.0.0.1:9000/auth/health/ready   # Management-Schnittstelle (erbt http-host 127.0.0.1)
 KC_REALM=ju-hamburg
 KC_CLIENT=ju-verwaltung
+KC_THEME=ju-hamburg
 KC_ADMIN=ju-einrichtung
 ETC=/etc/ju-finanzen
 ENV_FILE=$ETC/ju-finanzen.env
@@ -110,6 +112,22 @@ EOF
   chown root:"$KC_USER" "$tmp"; chmod 640 "$tmp"; mv -f "$tmp" "$1"
 }
 
+# Programmordner Quellordner(server/) – Anmeldeseiten im Aussehen der Anwendung nach themes/ (gehört root, nur lesbar).
+# Nur bei angehaltenem Keycloak aufrufen: Vorlagen und Texte liest Keycloak beim Start (Theme-Cache).
+theme_installieren() {
+  local ziel="$1/themes/$KC_THEME" h
+  [ -f "$2/keycloak-theme/$KC_THEME/login/theme.properties" ] || die "Theme fehlt: $2/keycloak-theme/$KC_THEME"
+  rm -rf -- "$ziel"
+  cp -R --no-preserve=all "$2/keycloak-theme/$KC_THEME" "$ziel"
+  # Browser behalten Theme-Dateien 30 Tage, und die Adresse ändert sich nur mit der Keycloak-Version – daher die Prüfsumme anhängen
+  h="$(cat "$ziel"/login/resources/css/* "$ziel"/login/resources/img/* | sha256sum | cut -c1-8)"
+  sed -i "s|css/$KC_THEME\.css|&?v=$h|" "$ziel/login/theme.properties"
+  sed -i "s|img/logo\.svg|&?v=$h|" "$ziel/login/resources/css/$KC_THEME.css"
+  chown -R root:root "$ziel"; chmod -R u=rwX,go=rX "$ziel"
+  [ ! -L "$KC_DATA/tmp" ] || die "$KC_DATA/tmp ist ein Verweis – bitte prüfen."
+  rm -rf -- "$KC_DATA/tmp/kc-gzip-cache"   # gepackte Theme-Dateien hebt Keycloak über Neustarts auf – sonst käme das alte CSS
+}
+
 # Programmordner Datenordner – Build mit der Konfiguration; danach gehört alles root, data/ zeigt auf den Datenordner
 kc_bauen() {
   local log
@@ -140,11 +158,11 @@ kc_anmelden() {   # Admin-Passwort aus KC_CLI_PASSWORD (Umgebung, nie in der Bef
 # Adresse Secret-Datei – Realm und Client einrichten (idempotent). Erwartet KCADM, WORK und das Admin-Passwort in
 # KC_CLI_PASSWORD. Das Client-Secret landet nur in der Secret-Datei (0600).
 realm_einrichten() {
-  local adresse="$1" r="$KC_REALM" id scope
+  local adresse="$1" r="$KC_REALM" id scope rm x koerper="" rollen=(manage-users view-users query-users)
   kc_anmelden
   kc get "realms/$r" --fields realm >/dev/null 2>&1 || kc create realms -s realm="$r" -s enabled=true
   # brute force: wie die Anmeldung des Programms 5 Fehlversuche, Wartezeit wachsend bis 15 Minuten (Standard)
-  kc update "realms/$r" -s enabled=true -s displayName='JU Hamburg' \
+  kc update "realms/$r" -s enabled=true -s displayName='JU Hamburg' -s loginTheme="$KC_THEME" \
     -s internationalizationEnabled=true -s 'supportedLocales=["de"]' -s defaultLocale=de \
     -s registrationAllowed=false -s resetPasswordAllowed=false -s rememberMe=false \
     -s bruteForceProtected=true -s failureFactor=5 \
@@ -168,10 +186,18 @@ realm_einrichten() {
   [ -n "$id" ] || id="$(kc create clients -r "$r" -s clientId="$KC_CLIENT" -i)"
   kc update "clients/$id" -r "$r" -s enabled=true -s protocol=openid-connect -s publicClient=false -s bearerOnly=false \
     -s standardFlowEnabled=true -s directAccessGrantsEnabled=false -s implicitFlowEnabled=false -s serviceAccountsEnabled=true \
-    -s "redirectUris=[\"$adresse/api/keycloak/rueckkehr\"]" -s 'webOrigins=[]' \
+    -s "redirectUris=[\"$adresse/api/keycloak/rueckkehr\"]" -s 'webOrigins=[]' -s "baseUrl=$adresse/" \
     -s 'attributes."pkce.code.challenge.method"=S256' -s "attributes.\"post.logout.redirect.uris\"=$adresse/"
   kc add-roles -r "$r" --uusername "service-account-$KC_CLIENT" --cclientid realm-management \
-    --rolename manage-users --rolename view-users --rolename query-users
+    --rolename "${rollen[0]}" --rolename "${rollen[1]}" --rolename "${rollen[2]}"
+  # „Full scope allowed“ aus (veraltet, Keycloak warnt bei jeder Anmeldung): Tokens tragen nur noch die Rollen, die hier
+  # dem Client zugeordnet sind – die der Nutzerverwaltung, Anmelde-Tokens von Personen gar keine. Erst zuordnen, dann
+  # abschalten: sonst bekäme die Nutzerverwaltung dazwischen 403, und Anmeldungen mit App-Pflicht scheiterten
+  rm="$(kc get clients -r "$r" -q clientId=realm-management --fields id --format csv --noquotes)"
+  [ -n "$rm" ] || die "Client realm-management fehlt im Realm $r."
+  for x in "${rollen[@]}"; do koerper+="${koerper:+,}$(kc get "clients/$rm/roles/$x" -r "$r" --fields id,name)"; done
+  printf '[%s]' "$koerper" | kc create "clients/$id/scope-mappings/clients/$rm" -r "$r" -f -
+  kc update "clients/$id" -r "$r" -s fullScopeAllowed=false
   # die Admin-API (Keycloak 26.8) nimmt nur Tokens mit dem Scope kc-admin-api (Audience <Adresse>/auth/admin/realms/…)
   scope="$(kc get client-scopes -r "$r" --fields id,name --format csv --noquotes | sed -n 's/,kc-admin-api$//p')"
   [ -n "$scope" ] || die "Client-Scope kc-admin-api fehlt im Realm $r."
@@ -190,7 +216,7 @@ werte_eintragen() {
 }
 
 main() {
-  case "${1:-}" in -h|--help) sed -n '2,17p' "$0"; exit 0 ;; "") ;; *) die "Unbekannte Option: $1 (Hilfe: --help)" ;; esac
+  case "${1:-}" in -h|--help) sed -n '2,18p' "$0"; exit 0 ;; "") ;; *) die "Unbekannte Option: $1 (Hilfe: --help)" ;; esac
   [ "$(id -u)" -eq 0 ] || die "Bitte mit sudo ausführen: sudo ju-finanzen keycloak-einrichten"
   command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ] || die "systemd läuft hier nicht."
   [ -f "$ENV_FILE" ] || die "$ENV_FILE fehlt – zuerst das Programm installieren (server/install.sh)."
@@ -230,8 +256,10 @@ main() {
     info "Neue Keycloak-Version ($before → $KC_VERSION): Datenbank vorher sichern"
     /usr/local/bin/ju-finanzen keycloak-sicherung
   fi
+  [ -f "$src/keycloak-theme/$KC_THEME/login/theme.properties" ] || die "Theme fehlt: $src/keycloak-theme/$KC_THEME"
   systemctl stop "$SERVICE" 2>/dev/null || true
   kc_konfiguration "$home/conf/keycloak.conf" "$adresse" "$db_pw"
+  theme_installieren "$home" "$src"
   info "kc.sh build (dauert etwa eine Minute)"
   kc_bauen "$home" "$KC_DATA"
   ln -sfn "$KC_VERSION" "$KC_ROOT/current.neu" && mv -Tf "$KC_ROOT/current.neu" "$KC_ROOT/current"
