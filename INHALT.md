@@ -31,9 +31,9 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Mitgliederverwaltung ändern oder Benutzer und Rollen ändern:** `POST /api/adressen-laden`
 
-**Sicherheit lesen:** `GET /api/sicherheit-ereignisse.csv`, `GET /api/sicherheit-ereignisse`, `GET /api/sicherheit`, `POST /api/notfall-an`
+**Sicherheit lesen:** `GET /api/schutz`, `GET /api/sicherheit-ereignisse.csv`, `GET /api/sicherheit-ereignisse`, `GET /api/sicherheit`, `POST /api/notfall-an`
 
-**Sicherheit ändern:** `GET /api/sicherheit-verwaltung`, `POST /api/dateipruefung`, `POST /api/notfall-aus` ⚠, `POST /api/sitzung-beenden` ⚠, `POST /api/sperre-aufheben` ⚠, `POST /api/wartung` ⚠
+**Sicherheit ändern:** `GET /api/sicherheit-verwaltung`, `POST /api/dateipruefung`, `POST /api/notfall-aus` ⚠, `POST /api/schutz-einstellungen` ⚠, `POST /api/schutz-freigeben` ⚠, `POST /api/schutz-liste-laden` ⚠, `POST /api/schutz-mitschnitt`, `POST /api/schutz-sperren` ⚠, `POST /api/sitzung-beenden` ⚠, `POST /api/sperre-aufheben` ⚠, `POST /api/wartung` ⚠
 
 **Sicherung ändern:** `GET /api/backup` ⚠
 
@@ -87,7 +87,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/sepa-datei.js`: sepaFileDialog → /api/sepa-aufteilen, /api/sepa-begleitzettel, /api/sepa-vorschau
 - `static/js/views/sepa.js`: activeMandate, bindMandateSection, mandateSection, sepaDialog → /api/debit-notice, /api/mandate, /api/mandate-revoke, /api/mandate.pdf, /api/sepa, /api/sepa-batch, /api/sepa-batch-status, /api/sepa-debit-reject, /api/sepa-debit-remove, /api/sepa.xml
 - `static/js/views/settings.js`: settings → /api/backup, /api/gliederung-import, /api/gliederung-vorschau, /api/keycloak, /api/kv-nummern, /api/mail-check, /api/mail-forget, /api/mail-password, /api/mail-status, /api/mail-test, /api/mandate.pdf, /api/ortsverband, /api/ortsverband-loeschen, /api/ortsverband-status, /api/password, /api/preview.pdf, /api/settings
-- `static/js/views/sicherheit.js`: sicherheit → /api/dateipruefung, /api/notfall-an, /api/notfall-aus, /api/sicherheit, /api/sicherheit-ereignisse, /api/sicherheit-ereignisse.csv, /api/sicherheit-verwaltung, /api/sitzung-beenden, /api/sperre-aufheben, /api/wartung
+- `static/js/views/sicherheit.js`: sicherheit → /api/dateipruefung, /api/notfall-an, /api/notfall-aus, /api/schutz, /api/schutz-einstellungen, /api/schutz-freigeben, /api/schutz-liste-laden, /api/schutz-mitschnitt, /api/schutz-sperren, /api/sicherheit, /api/sicherheit-ereignisse, /api/sicherheit-ereignisse.csv, /api/sicherheit-verwaltung, /api/sitzung-beenden, /api/sperre-aufheben, /api/wartung
 - `static/js/views/wahlrecht.js`: wahlrecht → /api/wahlrecht, /api/wahlrecht.csv, /api/wahlrecht.pdf
 
 ## Kern
@@ -96,7 +96,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 JU Hamburg Finanzen – local authenticated pilot server.
 
-Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_server.py, test_sicherheit.py, test_start.py, test_static.py, test_uebernahme.py
+Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_start.py, test_static.py, test_uebernahme.py
 
 - `backups_dir()`
 - `save_receipt(store, table, rid, number, filename, suffix, raw)` – Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
@@ -147,7 +147,10 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
   - `Handler.sperre_info(store, s)` – Sperre für /api/status: nur für Angemeldete; Grund und Auslöser nur mit „Sicherheit lesen“.
   - `Handler.rights(store)` – Rechte der angemeldeten Person (rollen.py); die Mac-App hat eine Person und prüft keine Rechte.
   - `Handler.from_proxy()`
-  - `Handler.device()` – Gerät für Sperre und Protokoll: hinter Tailscale Serve (Anfrage von 127.0.0.1) Tailscale-Login bzw. Adresse aus
+  - `Handler.adresse()` – Adresse des Aufrufers – nur über schutz.aufrufer (X-Forwarded-For zählt allein von 127.0.0.1); None = unlesbar.
+  - `Handler.device()` – Gerät für Sperre und Protokoll: hinter Tailscale Serve (Anfrage von 127.0.0.1) der Tailscale-Login, sonst die
+  - `Handler.abwehr(daten=…)` – Der eine Einstieg der Abwehr (schutz.py) vor jeder Anfrage im Serverbetrieb – auch für statische Dateien und unbekannte
+  - `Handler.send_response(code, message=…)` – Jede Antwort – auch Fehler der Basisklasse – läuft hier durch: Fehlerbremse und Live-Verkehr (schutz.nachher).
   - `Handler.who()` – Herkunft für das Protokoll (keine Inhalte).
   - `Handler.same_site()` – Browser melden mit Sec-Fetch-Site, woher eine Anfrage kommt: nur eigene Seite oder direkte Eingabe zulassen
   - `Handler.do_GET()`
@@ -158,6 +161,7 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
 - `write_start_url(url)` – Adresse und Steuerschlüssel (Beenden, Anmeldecode) für den Mac-Starter hinterlegen.
 - `env_list(name)`
 - `run_backups(backups)` – Tägliche Sicherung der Datenbank und neue Belege spiegeln (beim Start und im Servermodus stündlich geprüft).
+- `schutz_stuendlich()` – Abwehr im Hintergrundlauf: Stundenstatistik schreiben, Bedrohungsliste täglich auffrischen – Fehler nur protokollieren.
 - `check_bind(host)` – Servermodus: nur eine bestimmte Adresse (127.0.0.1 hinter Tailscale Serve oder die Tailscale-Adresse 100.x),
 - `keycloak_from_env(env)` – JU_FINANZEN_ANMELDUNG = passwort (Standard) | keycloak. Keycloak nur mit vollständiger, passender Einrichtung – sonst
 - `main(argv=…)`
@@ -168,7 +172,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_rollen.py, test_rpj.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -925,7 +929,7 @@ Tests: test_bereinigung.py, test_rpj.py
 
 Anmeldung mit Benutzername und Passwort im Serverbetrieb (Ubuntu-Server hinter Tailscale).
 
-Tests: test_keycloak_app.py, test_rollen.py, test_server.py, test_sicherheit.py
+Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py
 
 - `check_new(password)` – Anforderungen an ein neues Passwort; Fehlermeldung als ValueError.
 - `hash_password(password)`
@@ -950,7 +954,7 @@ Rollen und Rechte im Serverbetrieb (ab 0.34).
 
 Tabellen: `roles`, `user_roles`
 
-Tests: test_keycloak_app.py, test_rollen.py, test_sicherheit.py
+Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_sicherheit.py
 
 - `required(method, path)` – Nötiges Recht für eine Adresse; unbekannte Adressen verlangen „Verwaltung schreiben“.
 - `allowed(rights, need)`
@@ -973,7 +977,7 @@ Sicherheit im Serverbetrieb (ab 0.35): Ereignisse, Notfall- und Wartungsmodus, D
 
 Tabellen: `sicherheit_ereignisse`, `sicherheit_zustand`
 
-Tests: test_keycloak_app.py, test_sicherheit.py
+Tests: test_keycloak_app.py, test_schutz.py, test_sicherheit.py
 
 - `init(db)`
 - `ereignis(db, art, person=…, geraet=…, detail=…)` – Ereignis festhalten (eigene Transaktion). Ältere Einträge als AUFBEWAHREN_TAGE fallen dabei weg.
@@ -991,6 +995,41 @@ Tests: test_keycloak_app.py, test_sicherheit.py
 - `letzte_dateipruefung(db, app_dir)` – Letztes Ergebnis; älter als einen Tag → jetzt neu prüfen (dauert unter einer Sekunde).
 - `konten(db)` – Personen mit letzter Anmeldung, Verwaltungs-/Sicherheitsrechten und Hinweisen (ungenutzt, ohne Passwort, deaktiviert).
 - `lagebild(db, sitzungen, sperren, letzte_sicherung, app_dir)`
+
+### schutz.py
+
+Abwehr in der Anwendung im Serverbetrieb (ab 0.38): Firewall, Sperrliste, Bedrohungsliste, Live-Verkehr, Prüfungen.
+
+Tabellen: `schutz_sperren`, `schutz_stunden`
+
+Tests: test_schutz.py
+
+- `init(db)`
+- `aufrufer(verbindung, weitergereicht=…)` – Adresse des Aufrufers (einzige Stelle): X-Forwarded-For zählt nur, wenn die Verbindung von 127.0.0.1/::1 kommt
+- Klasse `_Stand`
+- `einstellungen(db)` – Einstellungen der Firewall mit Vorgaben für alles, was nicht gespeichert ist.
+- `vergessen(alles=…)` – Stand bei der nächsten Anfrage neu laden (nach Änderungen); `alles` leert auch Zähler, Verkehr und Statistik (Tests).
+- `muster(*texte)` – Gruppe des ersten Angriffsmusters in den Texten (auch ein- und zweifach URL-dekodiert) oder None.
+- `eingang(pfad, ip, ziel, agent=…, angemeldet=…, fremd=…)` – Prüfung VOR der Verarbeitung einer Anfrage. Liefert (Status, Art): Status 403/404 = so abweisen, None = durchlassen;
+- `inhalt(pfad, ip, daten)` – JSON-Werte einer Anfrage OHNE Anmeldung prüfen (Passwortfelder nie). Liefert (Status, Art) wie `eingang`.
+- `nachher(pfad, ip, methode, ziel, status, art=…, angemeldet=…, fremd=…)` – Nach jeder Antwort: Fehlerbremse (viele Fehlerantworten einer Adresse ohne Anmeldung = Treffer) und Live-Verkehr.
+- `einstellungen_speichern(db, daten, actor, eigene=…, geraet=…)` – Einstellungen prüfen und speichern (nur genannte Felder). Schutz vor Aussperrung: die Bedrohungsliste lässt sich nicht
+- `sperren(db, netz, grund, minuten, actor, eigene=…, geraet=…)` – Adresse oder Netz von Hand sperren (minuten 0 = unbefristet). Nie: die eigene Adresse, 127.0.0.1, „nie sperren“.
+- `freigeben(db, wen, actor, geraet=…)` – Sperre freigeben: Kennung einer Sperre oder 'auto' für alle automatischen. Liefert die Anzahl.
+- `aus(db, actor=…)` – Notausgang (verwaltung.py schutz-aus): alle Sperren löschen, Firewall auf „nur protokollieren“. Liefert die Anzahl.
+- `notfall(db, an)` – Notfallmodus: Vorlage NOTFALL anwenden und den vorherigen Stand merken bzw. beim Beenden zurückbringen – je Feld und
+- `mitschnitt(db, an, actor, geraet=…)` – Mitschnitt aller Anfragen für MITSCHNITT_MINUTEN starten bzw. beenden (nur Adresse, Methode, Pfad, Status).
+- `status(db, eigene=…)` – Übersicht für den Reiter „Firewall & Sperren“: Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr.
+- `abwehr(db)` – Abwehr der letzten 24 Stunden für das Lagebild: Treffer nach Art, Abweisungen, Sperren – gesamt und je Stunde.
+- Klasse `_KeineWeiterleitung`
+  - `_KeineWeiterleitung.redirect_request(req, fp, code, msg, headers, newurl)`
+- `holen(url)` – Eine Quelle der Bedrohungsliste abrufen: nur https, ohne Weiterleitung, mit Zeit- und Größengrenze. In Tests ersetzt.
+- `liste_lesen(text)` – Netze aus einer DROP-Datei („Netz ; SBL-Nummer“, Kommentare mit ;). Jede Zeile muss ein plausibles öffentliches Netz
+- `liste_laden(db, actor=…, geraet=…)` – Bedrohungsliste neu laden und prüfen; bei jedem Fehler bleibt die bisherige Liste. Liefert Stand und Anzahl.
+- `liste_info(db)` – Stand der Bedrohungsliste: {'stand', 'anzahl', 'veraltet'} – ohne Liste stand = ''.
+- `stuendlich(db)` – Hintergrundlauf (app.py, jede Stunde): Stundenstatistik schreiben; Bedrohungsliste neu laden, wenn eingeschaltet und
+- `serverschutz(pfad=…, jetzt=…)` – Bericht der Betriebssystem-Härtung lesen: {'vorhanden', 'aktuell', 'hinweis', 'zeit', 'pruefungen', 'zahlen'}.
+- `pruefung(db, lage, bericht, keycloak=…, https=…)` – Konfigurationsprüfung für das Lagebild: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
 
 ### keycloak.py
 
@@ -1021,7 +1060,7 @@ Tests: test_keycloak.py, test_keycloak_app.py
 
 Verwaltung im Serverbetrieb (auf dem Ubuntu-Server über `sudo ju-finanzen …`).
 
-Tests: test_keycloak_app.py, test_rollen.py, test_server.py
+Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py
 
 - `einstellungen()` – JU_FINANZEN_KEYCLOAK_* und JU_FINANZEN_ANMELDUNG: aus der Einstellungsdatei des Dienstes (JU_FINANZEN_ENV_DATEI, sonst
 - `folders(args)`
@@ -1030,6 +1069,7 @@ Tests: test_keycloak_app.py, test_rollen.py, test_server.py
 - `cmd_passwort(args)`
 - `cmd_benutzer(args)`
 - `cmd_notfall_aus(args)` – Notzugang: Notfall- und Wartungsmodus auf dem Server beenden (z. B. wenn sich niemand mehr anmelden kann).
+- `cmd_schutz_aus(args)` – Notausgang der Abwehr: alle Sperren löschen und die Firewall auf „nur protokollieren“ stellen (Ereignis in der Sicherheit).
 - `cmd_rolle(args)` – Notzugang: einer Person eine Rolle geben oder nehmen, wenn sich niemand mehr für die Verwaltung anmelden kann.
 - `cmd_keycloak_verbinden(args)` – Bestehende Person mit Keycloak verbinden (z. B. nach dem Umstieg). Gibt es den Benutzernamen in Keycloak schon, wird nur
 - `cmd_notzugang(args)` – Notzugang im Keycloak-Betrieb kurz freischalten bzw. schließen (Ereignis in der Sicherheit).

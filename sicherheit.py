@@ -34,6 +34,13 @@ ARTEN = {
     'wartung_aus': 'Wartung ausgeschaltet',
     'sicherung': 'Sicherung heruntergeladen',
     'dateipruefung': 'Dateiprüfung',
+    # Abwehr (schutz.py, ab 0.38)
+    'schutz_sperre': 'Adresse gesperrt',
+    'schutz_frei': 'Adresse freigegeben',
+    'schutz_einstellung': 'Firewall-Einstellungen geändert',
+    'schutz_liste': 'Bedrohungsliste geladen',
+    'schutz_mitschnitt': 'Mitschnitt gestartet',
+    'schutz_aus': 'Abwehr auf dem Server zurückgesetzt',   # sudo ju-finanzen schutz-aus
 }
 AUFBEWAHREN_TAGE = 400
 UNGENUTZT_TAGE = 90

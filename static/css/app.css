@@ -692,6 +692,61 @@ button.map-kv:hover { background: var(--surface-2); }
 .sec-page h3 { font-size: 14px; margin: 16px 0 0; }
 .sec-filter { justify-content: flex-start; }
 .sec-filter [data-csv] { margin-left: auto; }
+/* 0.38: Abwehr, Konfigurationsprüfung, Firewall & Sperren */
+.sec-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px 24px; margin: 0; }
+.sec-stats div { min-width: 0; }
+.sec-stats dt { font-size: 13px; font-weight: 500; color: var(--muted); }
+.sec-stats dd { margin: 2px 0 0; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.sec-stats small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.4; }
+.sec-hours { margin-top: 20px; }
+.sec-hours h3 { margin: 0 0 8px; color: var(--ink-2); }
+/* Säulen je Stunde: eine Reihe (--teal), 2 px Abstand, oben gerundet, unten an der Grundlinie; nur der Höchstwert beschriftet */
+.sec-cols { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; height: 92px; border-bottom: 1px solid var(--line); }
+.sec-cols li { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
+.sec-bar { width: min(24px, 100%); background: var(--teal); border-radius: 4px 4px 0 0; }
+.sec-cols li:hover .sec-bar { background: var(--teal-700); }
+.sec-peak { font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sec-axis { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; margin-top: 4px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sec-axis span { grid-row: 1; }
+.sec-axis .now { grid-column: 21 / span 4; text-align: right; }
+.sec-details { margin-top: 12px; }
+.sec-details summary { cursor: pointer; font-size: 13px; font-weight: 500; color: var(--navy); }
+.sec-details .tablewrap { margin-top: 8px; }
+.sec-checks { list-style: none; margin: 0; padding: 0; }
+.sec-checks li { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line-2); }
+.sec-checks li:first-child { border-top: 0; padding-top: 0; }
+.sec-checks .badge { justify-self: start; }
+.sec-checks div { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.sec-checks + .sec-facts { padding-top: 12px; border-top: 1px solid var(--line-2); }
+.sec-mono { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
+.sec-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sec-facts + p { margin-top: 12px; }
+@media (max-width: 640px) {
+  /* Sperrliste und Live-Verkehr auf dem Handy: je Eintrag ein Block statt einer Tabelle zum seitlichen Schieben */
+  table.sec-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  table.sec-stack, table.sec-stack tbody { display: block; }
+  table.sec-stack tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line-2); }
+  table.sec-stack td { display: block; padding: 0; border: 0; min-width: 0; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+  table.sec-stack td[data-label]::before { content: attr(data-label) " "; color: var(--muted); }
+  .sec-traffic td:nth-child(3) { grid-area: 1 / 1; }
+  .sec-traffic td:nth-child(4) { grid-area: 1 / 2; font-weight: 600; }
+  .sec-traffic td:nth-child(2) { grid-area: 2 / 1; color: var(--ink-2); }
+  .sec-traffic td:nth-child(1) { grid-area: 2 / 2; color: var(--muted); }
+  .sec-traffic td:nth-child(5) { grid-area: 3 / 1 / auto / -1; }
+  .sec-blocks td:nth-child(1) { grid-area: 1 / 1; }
+  .sec-blocks td:nth-child(2) { grid-area: 1 / 2; }
+  .sec-blocks td:nth-child(3) { grid-area: 2 / 1 / auto / -1; }
+  .sec-blocks td:nth-child(4) { grid-area: 3 / 1; }
+  .sec-blocks td:nth-child(5) { grid-area: 4 / 1; }
+  .sec-blocks td:nth-child(6) { grid-area: 3 / 2 / span 2; align-self: center; }
+}
+@media (max-width: 480px) {
+  .sec-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sec-facts { grid-template-columns: 1fr; gap: 2px 0; }
+  .sec-facts dd { margin-bottom: 8px; }
+  .sec-checks li { grid-template-columns: minmax(0, 1fr) auto; }
+  .sec-checks li div { grid-column: 1 / -1; grid-row: 2; }
+}
 /* Benutzer & Rollen im Keycloak-Betrieb (0.36): Startpasswort einmal groß und gut abschreibbar */
 .kc-startpasswort { font: 600 26px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; text-align: center; padding: 16px; background: var(--line-2); border-radius: var(--radius); user-select: all; overflow-wrap: anywhere; }
 /* Wahlberechtigung (0.37): auf dem Handy (390 px) passen auch die Tabellen ohne seitliches Scrollen – Kreis-/Ortsverband

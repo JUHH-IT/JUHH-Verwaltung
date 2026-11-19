@@ -13,6 +13,7 @@ import workflow
 import sicherung
 import rollen
 import sicherheit
+import schutz
 import uebernahme
 import rechnung_pdf
 import versand
@@ -64,7 +65,8 @@ CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-lis
          ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
          ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
-         ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben')}
+         ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
+         ('POST','/api/schutz-einstellungen'),('POST','/api/schutz-sperren'),('POST','/api/schutz-freigeben'),('POST','/api/schutz-liste-laden')}
 CONFIRM_SECONDS=300
 # im Notfall/Wartung auch ohne „Sicherheit ändern“ – bewusst ohne /api/password: ein übernommenes Konto soll die echte Person nicht aussperren
 SPERRE_FREI_POST=('/api/logout','/api/bestaetigen','/api/notfall-an')
@@ -455,14 +457,41 @@ class Handler(BaseHTTPRequestHandler):
         if not s: return {}
         return rollen.rights_of(store.db,s['actor']) if server_mode() else dict(rollen.ALL)
     def from_proxy(self): return self.client_address[0] in ('127.0.0.1','::1')
+    def adresse(self):
+        """Adresse des Aufrufers – nur über schutz.aufrufer (X-Forwarded-For zählt allein von 127.0.0.1); None = unlesbar."""
+        return schutz.aufrufer(self.client_address[0],self.headers.get('X-Forwarded-For','') if getattr(self,'headers',None) else '')
     def device(self):
-        """Gerät für Sperre und Protokoll: hinter Tailscale Serve (Anfrage von 127.0.0.1) Tailscale-Login bzw. Adresse aus
-        X-Forwarded-For, sonst die Adresse der Verbindung."""
-        if self.from_proxy():
-            login=self.headers.get('Tailscale-User-Login','').strip()[:80]
-            ip=self.headers.get('X-Forwarded-For','').split(',')[-1].strip()[:45]
-            return login or ip or self.client_address[0]
-        return self.client_address[0]
+        """Gerät für Sperre und Protokoll: hinter Tailscale Serve (Anfrage von 127.0.0.1) der Tailscale-Login, sonst die
+        Adresse des Aufrufers."""
+        login=self.headers.get('Tailscale-User-Login','').strip()[:80] if self.from_proxy() else ''
+        return login or str(self.adresse() or self.client_address[0])
+    def abwehr(self,daten=None):
+        """Der eine Einstieg der Abwehr (schutz.py) vor jeder Anfrage im Serverbetrieb – auch für statische Dateien und unbekannte
+        Pfade; mit `daten` die JSON-Werte einer Anfrage ohne Anmeldung. True = abgewiesen und beantwortet (knapp, ohne Details).
+        Ein Fehler in der Abwehr hält keine Anfrage auf."""
+        if not server_mode(): return False
+        try:
+            if daten is None: status,art=schutz.eingang(DB,self.adresse(),self.path,self.headers.get('User-Agent',''),bool(self.session()),not self.same_site())
+            else: status,art=schutz.inhalt(DB,self.adresse(),daten)
+        except Exception:
+            log_error('Abwehr');return False
+        if art: self._abwehr=art
+        if not status: return False
+        self.close_connection=True
+        if status==404: self.send(404,'Nicht gefunden.','text/plain')   # wie jede unbekannte Adresse
+        elif self.path.startswith('/api/'): self.send(403,{'error':'Zugriff verweigert.'})
+        else: self.send(403,'Zugriff verweigert.','text/plain')
+        return True
+    def send_response(self,code,message=None):
+        """Jede Antwort – auch Fehler der Basisklasse – läuft hier durch: Fehlerbremse und Live-Verkehr (schutz.nachher)."""
+        super().send_response(code,message)
+        if server_mode() and not getattr(self,'_gezaehlt',False):
+            self._gezaehlt=True
+            try:
+                kopf=getattr(self,'headers',None)
+                schutz.nachher(DB,self.adresse(),self.command or '',getattr(self,'path',''),code,getattr(self,'_abwehr',''),
+                               getattr(self,'_session',None) is not None,bool(kopf) and not self.same_site())
+            except Exception: log_error('Abwehr')
     def who(self):
         """Herkunft für das Protokoll (keine Inhalte)."""
         return self.device()
@@ -471,6 +500,7 @@ class Handler(BaseHTTPRequestHandler):
         (Schutz vor Seiten auf anderen Rechnern im Tailnet, die als „same-site“ gelten)."""
         return self.headers.get('Sec-Fetch-Site','') in ('','same-origin','none')
     def do_GET(self):
+        if self.abwehr(): return
         if not self.valid_host(): return self.send(403,{'error':'Ungültiger Host.'})
         parsed=urlparse(self.path);path=parsed.path;query=parse_qs(parsed.query)
         if path.startswith('/api/') and not self.same_site(): return self.send(403,{'error':'Ungültige Anfrageherkunft.'})
@@ -493,9 +523,13 @@ class Handler(BaseHTTPRequestHandler):
                 rights=self.rights(store)
                 if not rollen.allowed(rights,rollen.required('GET',path)): return self.verweigert(store,path)
                 if self.gesperrt(store,rights,'GET',path) or self.braucht_bestaetigung('GET',path): return
-                if path.startswith('/api/sicherheit') and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
+                if path.startswith(('/api/sicherheit','/api/schutz')) and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
                 if path=='/api/sicherheit':
-                    return self.send(200,{'lagebild':sicherheit.lagebild(store.db,self.sitzungen(),self.sperren(store),sicherung.last_daily(backups_dir()/'Automatisch'),ROOT)})
+                    lage=sicherheit.lagebild(store.db,self.sitzungen(),self.sperren(store),sicherung.last_daily(backups_dir()/'Automatisch'),ROOT)
+                    bericht=schutz.serverschutz();https=bool(ADDRESSES) and all(a.startswith('https://') for a in ADDRESSES)
+                    return self.send(200,{'lagebild':lage,'abwehr':schutz.abwehr(store.db),'serverschutz':bericht,
+                                          'pruefung':schutz.pruefung(store.db,lage,bericht,keycloak_mode(),https)})
+                if path=='/api/schutz': return self.send(200,schutz.status(store.db,self.adresse()))
                 if path in ('/api/sicherheit-ereignisse','/api/sicherheit-ereignisse.csv'):
                     q=lambda k,d='':query.get(k,[d])[0]
                     rows=sicherheit.ereignisse(store.db,q('art'),int(q('tage','30')) if q('tage','30').isdigit() else 30,q('suche')[:100])
@@ -707,6 +741,7 @@ class Handler(BaseHTTPRequestHandler):
             log_error('GET '+path);self.send(500,{'error':'Interner Fehler. Die Aktion wurde nicht abgeschlossen.'})
         finally: store.db.close()
     def do_POST(self):
+        if self.abwehr(): return
         if not self.valid_host(): return self.send(403,{'error':'Ungültiger Host.'})
         if self.headers.get('Origin') not in allowed_origins(self.server.server_port) or self.headers.get('Content-Type','').split(';')[0]!='application/json' or not self.same_site():
             return self.send(403,{'error':'Ungültige Anfrageherkunft.'})
@@ -726,6 +761,7 @@ class Handler(BaseHTTPRequestHandler):
         try: data=json.loads(self.rfile.read(size))
         except Exception: return self.send(400,{'error':'Ungültige Anfragedaten.'})
         if not isinstance(data,dict): return self.send(400,{'error':'Ungültige Anfragedaten.'})
+        if s is None and self.abwehr(data): return   # Angriffsmuster im Inhalt nur ohne Anmeldung – Angemeldete dürfen jeden Text speichern
         store=Store(DB)
         try:
             if path=='/api/login':
@@ -774,7 +810,8 @@ class Handler(BaseHTTPRequestHandler):
             rights=self.rights(store)
             if not rollen.allowed(rights,rollen.required('POST',path)): return self.verweigert(store,path)
             if self.gesperrt(store,rights,'POST',path) or self.braucht_bestaetigung('POST',path): return
-            if path in ('/api/bestaetigen','/api/notfall-an','/api/notfall-aus','/api/wartung','/api/sitzung-beenden','/api/sperre-aufheben','/api/dateipruefung') and not server_mode():
+            if path in ('/api/bestaetigen','/api/notfall-an','/api/notfall-aus','/api/wartung','/api/sitzung-beenden','/api/sperre-aufheben','/api/dateipruefung',
+                        '/api/schutz-einstellungen','/api/schutz-sperren','/api/schutz-freigeben','/api/schutz-liste-laden','/api/schutz-mitschnitt') and not server_mode():
                 return self.send(404,{'error':'Nur im Serverbetrieb.'})
             if path in ('/api/mail-send','/api/mail-test') and (sicherheit.sperre(store.db) or {}).get('art')=='notfall':
                 return self.send(503,{'error':'Notfallmodus: Der E-Mail-Versand ist angehalten.'})
@@ -817,12 +854,13 @@ class Handler(BaseHTTPRequestHandler):
                 alle=data.get('alle_abmelden') is True
                 if alle and not sicherheit.darf_trotz_sperre(rights): raise ValueError('Alle abmelden darf nur, wer „Sicherheit ändern“ hat.')
                 sicherheit.notfall_an(store.db,actor,data.get('grund'),self.device());beendet=0
+                schutz.notfall(store.db,True)   # Firewall auf die Vorlage Notfall; das Beenden bringt den vorherigen Stand zurück
                 versand.cancel()   # ein laufender E-Mail-Versand endet nach der aktuellen Nachricht
                 for k,v in list(SESSIONS.items()):   # alle außer „Sicherheit ändern“ (auf Wunsch auch diese) abmelden – die eigene Sitzung bleibt
                     if v is not s and (alle or not sicherheit.darf_trotz_sperre(rollen.rights_of(store.db,v['actor']))):
                         SESSIONS.pop(k,None);beendet+=1
                 result['beendet']=beendet;log(f'Notfall ausgelöst durch {actor}, {beendet} Sitzungen beendet')
-            elif path=='/api/notfall-aus': sicherheit.notfall_aus(store.db,actor,self.device());log(f'Notfall beendet durch {actor}')
+            elif path=='/api/notfall-aus': sicherheit.notfall_aus(store.db,actor,self.device());schutz.notfall(store.db,False);log(f'Notfall beendet durch {actor}')
             elif path=='/api/wartung': sicherheit.wartung(store.db,actor,data.get('an') is True,data.get('text'),self.device())
             elif path=='/api/sitzung-beenden':
                 found=[k for k in list(SESSIONS) if hashlib.sha256(k.encode()).hexdigest()[:16]==str(data.get('id',''))]
@@ -838,6 +876,12 @@ class Handler(BaseHTTPRequestHandler):
                 if not found or not keys: raise ValueError('Diese Sperre gibt es nicht mehr.')
                 THROTTLE.freigeben(keys[0]);sicherheit.ereignis(store.db,'sperre_aufgehoben',actor,self.device(),{'art':found[0]['art'],'wert':found[0]['wert']})
             elif path=='/api/dateipruefung': result['ergebnis']=sicherheit.dateipruefung_lauf(store.db,ROOT,actor,self.device())
+            # Abwehr (schutz.py): die eigene aktuelle Adresse wird nie gesperrt (Meldung statt Sperre)
+            elif path=='/api/schutz-einstellungen': result['einstellungen']=schutz.einstellungen_speichern(store.db,data,actor,self.adresse(),self.device())
+            elif path=='/api/schutz-sperren': result['netz']=schutz.sperren(store.db,data.get('netz'),data.get('grund'),data.get('minuten',0),actor,self.adresse(),self.device())
+            elif path=='/api/schutz-freigeben': result['anzahl']=schutz.freigeben(store.db,data.get('id'),actor,self.device())
+            elif path=='/api/schutz-liste-laden': result['liste']=schutz.liste_laden(store.db,actor,self.device())
+            elif path=='/api/schutz-mitschnitt': result['bis']=schutz.mitschnitt(store.db,data.get('an') is True,actor,self.device())
             elif path=='/api/benutzer':
                 # Person anlegen/ändern (Verwaltung): ein neues Passwort oder das Deaktivieren beendet deren Sitzungen (Fingerabdruck)
                 result['id']=rollen.save_user(store.db,data,actor,lokal=not keycloak_mode());log(f'Person gespeichert durch {actor}')
@@ -1145,6 +1189,16 @@ def run_backups(backups):
     except Exception as e:
         log('Automatische Sicherung fehlgeschlagen: '+str(e))
 
+def schutz_stuendlich():
+    """Abwehr im Hintergrundlauf: Stundenstatistik schreiben, Bedrohungsliste täglich auffrischen – Fehler nur protokollieren."""
+    try:
+        con=sqlite3.connect(DB,timeout=10)
+        try:
+            if schutz.stuendlich(con): log('Bedrohungsliste neu geladen.')
+        finally: con.close()
+    except Exception as e:
+        log('Bedrohungsliste nicht geladen: '+(str(e) if isinstance(e,ValueError) else type(e).__name__))
+
 def check_bind(host):
     """Servermodus: nur eine bestimmte Adresse (127.0.0.1 hinter Tailscale Serve oder die Tailscale-Adresse 100.x),
     nie alle Netzwerkkarten – so ist das Programm aus dem Internet nicht erreichbar."""
@@ -1215,7 +1269,7 @@ def main(argv=None):
     if server_mode():
         stop=threading.Event()
         def every_hour():
-            while not stop.wait(3600): run_backups(backups)
+            while not stop.wait(3600): run_backups(backups);schutz_stuendlich()
         threading.Thread(target=every_hour,daemon=True,name='sicherung').start()
         # systemd beendet mit SIGTERM: laufenden E-Mail-Versand nach der aktuellen Nachricht anhalten (wird protokolliert),
         # höchstens 25 s warten (TimeoutStopSec=30), dann den Server herunterfahren

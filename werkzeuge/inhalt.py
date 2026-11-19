@@ -22,7 +22,7 @@ BEREICHE = (
     ('Buchhaltung', 'bankimport uebernahme workflow kasse verbindlichkeiten erstattung erechnung freigabe berichte'),
     ('Rechnungen und Versand', 'rechnung_pdf pdfschrift versand geheimnis'),
     ('Verband', 'haushalt kvbudget kvabgleich rpj'),
-    ('Serverbetrieb und Sicherheit', 'zugang rollen sicherheit keycloak verwaltung'),
+    ('Serverbetrieb und Sicherheit', 'zugang rollen sicherheit schutz keycloak verwaltung'),
     ('Sicherung und Pflege', 'sicherung bereinigung'),
 )
 

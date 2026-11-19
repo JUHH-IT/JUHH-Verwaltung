@@ -95,6 +95,7 @@ GET = {
     # Sicherheit (0.35): Lage und Ereignisse lesen; Sitzungen, Konten und System nur mit „ändern“
     **{path: _r('sicherheit') for path in ('/api/sicherheit', '/api/sicherheit-ereignisse', '/api/sicherheit-ereignisse.csv')},
     '/api/sicherheit-verwaltung': _w('sicherheit'),
+    '/api/schutz': _r('sicherheit'),   # Abwehr (0.38): Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr
 }
 POST = {
     '/api/logout': FREE, '/api/password': FREE,
@@ -126,6 +127,8 @@ POST = {
     '/api/bestaetigen': FREE,
     '/api/notfall-an': _r('sicherheit'),   # viele dürfen auslösen, nur „ändern“ darf beenden (ein übernommenes Konto hebt ihn nicht auf)
     **{path: _w('sicherheit') for path in ('/api/notfall-aus', '/api/wartung', '/api/sitzung-beenden', '/api/sperre-aufheben', '/api/dateipruefung')},
+    **{path: _w('sicherheit') for path in ('/api/schutz-einstellungen', '/api/schutz-sperren', '/api/schutz-freigeben', '/api/schutz-liste-laden',
+                                           '/api/schutz-mitschnitt')},
 }
 # ohne Sitzung bzw. nur in der Mac-App (dort keine Rechteprüfung)
 # Keycloak (0.36): Anmeldung beginnen und Rückkehr – ohne Sitzung, geschützt über Vorgang (Cookie + state, PKCE)
