@@ -477,12 +477,16 @@ try {
   check((await toast()).includes('verbucht'), 'Aufteilung verbucht');
 
   // 4) Parken, dann auflösen
-  for (let attempt = 0; attempt < 3; attempt++) {   // nach dem Verbuchen wird die Liste neu aufgebaut – Klick kann ins Leere gehen
-    await page.click('#park');
-    if (await page.waitForSelector('#park-form input', { timeout: 3000 }).then(() => true, () => false)) break;
+  // nach dem Verbuchen lädt die Seite neu und baut die Liste neu auf – erst danach ist das Formular stabil
+  await page.waitForLoadState('networkidle').catch(() => {});
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await page.click('#park', { timeout: 5000 });
+      await page.fill('#park-form input', 'Beleg fehlt', { timeout: 3000 });
+      await page.click('#park-form button[type=submit]', { timeout: 3000 });
+      break;
+    } catch (e) { if (attempt >= 3) throw e; }
   }
-  await page.fill('#park-form input', 'Beleg fehlt');
-  await page.click('#park-form button[type=submit]');
   check((await toast()).includes('1370'), 'Parken');
   check((await page.locator('.empty').textContent()).includes('Alles verbucht'), 'Leerer Zustand „Alles verbucht“');
   await page.click('[data-filter=parked]');
