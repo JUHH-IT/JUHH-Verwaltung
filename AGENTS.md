@@ -101,7 +101,7 @@ Ziel: kurze Wege für Entwickler und parallel arbeitende Agenten, ohne Qualität
 
 ## Arbeitsweise
 
-- Änderungen auf eigenem Branch, Merge nach `main` und Neubau der installierten App nur nach Freigabe durch Lennert.
+- Änderungen auf eigenem Branch, Merge nach `main` und Freigabe einer Version (Release) nur durch Lennert.
 - GitHub (ab 0.33, privates Repository – einzige gemeinsame Quelle, auch für mehrere parallel arbeitende Agenten):
   - Je Aufgabe ein eigener Branch und ein Pull Request; nie direkt auf `main` schreiben, nie selbst zusammenführen. Ein Pull Request nennt, was geplant, umgesetzt und getestet ist.
   - Freigegebene Version = Tag `v<Version>` auf `main`, erst nach Freigabe durch Lennert; `VERSION` in `app.py` nennt dieselbe Version. Einen übertragenen Tag nie versetzen oder löschen (der Server bricht dann ab) – stattdessen eine neue Version.
