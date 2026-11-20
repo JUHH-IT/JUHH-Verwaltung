@@ -1,5 +1,3 @@
-import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND']='1'
 import unittest, tempfile, threading, json, urllib.request, urllib.error, http.cookiejar, sqlite3, io, zipfile, time
 from datetime import date
 from pathlib import Path

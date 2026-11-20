@@ -1,6 +1,5 @@
 """Zahlungserinnerungen für überfällige Rechnungen – nur erfundene Testdaten, Versand nur an einen lokalen Testserver."""
 import email
-import os
 import sys
 import tempfile
 import time
@@ -9,7 +8,6 @@ from datetime import date, timedelta
 from email import policy
 from pathlib import Path
 
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'  # Tests berühren nie den echten Schlüsselbund
 sys.path.insert(0, str(Path(__file__).parent / 'tests'))
 
 import geheimnis

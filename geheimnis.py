@@ -1,12 +1,9 @@
-"""Passwort für den E-Mail-Versand: im Schlüsselbund des Betriebssystems, sonst nur im Arbeitsspeicher.
+"""Passwort für den E-Mail-Versand: auf dem Server in einer Datei, sonst nur im Arbeitsspeicher.
 
 Das Passwort wird nie in der Datenbank, in Sicherungen oder im Protokoll gespeichert.
-macOS: Schlüsselbund (Keychain), Windows: Anmeldeinformationsverwaltung – jeweils über „keyring“.
-Server (Ubuntu): Datei im Ordner aus JU_FINANZEN_GEHEIMNISSE (nur für den Dienstbenutzer lesbar, 0600,
-außerhalb von Daten und Sicherungen) – Ort „datei“.
-Ohne verfügbaren Schlüsselbund (oder auf Wunsch) gilt das Passwort nur bis zum Beenden des Programms.
-Der Schlüsselbund wird je Konto höchstens einmal gelesen und das Ergebnis im Arbeitsspeicher gehalten
-(vermeidet wiederholte Rückfragen von macOS).
+Ablage: Datei im Ordner aus JU_FINANZEN_GEHEIMNISSE (nur für den Dienstbenutzer lesbar, 0600, außerhalb von Daten und
+Sicherungen) – Ort „datei“. Ohne diesen Ordner (oder auf Wunsch) gilt das Passwort nur bis zum Neustart des Servers.
+Die Ablage wird je Konto höchstens einmal gelesen und das Ergebnis im Arbeitsspeicher gehalten.
 """
 import json
 import os
@@ -15,7 +12,7 @@ import threading
 from pathlib import Path
 
 SERVICE = 'JU Hamburg Finanzen – E-Mail-Versand'
-_cache = {}  # Konto → (Passwort oder None, Ort: 'schluesselbund' | 'datei' | 'sitzung' | None)
+_cache = {}  # Konto → (Passwort oder None, Ort: 'datei' | 'sitzung' | None)
 _lock = threading.Lock()
 
 
@@ -61,58 +58,46 @@ class FileStore:
             self._write(data)
 
 
-def _keyring():
-    if os.environ.get('JU_FINANZEN_GEHEIMNISSE'):
-        return FileStore(os.environ['JU_FINANZEN_GEHEIMNISSE'])
-    if os.environ.get('JU_FINANZEN_OHNE_SCHLUESSELBUND'):
-        return None
-    try:
-        import keyring
-        from keyring.backends import fail
-        backend = keyring.get_keyring()
-        name = type(backend).__module__ + '.' + type(backend).__name__
-        if isinstance(backend, fail.Keyring) or 'null' in name.lower() or ('chainer' in name.lower() and not backend.backends):
-            return None
-        return backend
-    except Exception:
-        return None
+def _ablage():
+    folder = os.environ.get('JU_FINANZEN_GEHEIMNISSE')
+    return FileStore(folder) if folder else None
 
 
 def available():
-    return _keyring() is not None
+    return _ablage() is not None
 
 
 def _lookup(account):
-    """Einmal je Konto im Schlüsselbund nachsehen; danach aus dem Arbeitsspeicher."""
+    """Einmal je Konto in der Ablage nachsehen; danach aus dem Arbeitsspeicher."""
     with _lock:
         if account in _cache:
             return _cache[account]
     value, origin = None, None
-    backend = _keyring()
+    backend = _ablage()
     if backend is not None and account:
         try:
             value = backend.get_password(SERVICE, account)
         except Exception:
             value = None
-        origin = getattr(backend, 'label', 'schluesselbund') if value else None
+        origin = backend.label if value else None
     with _lock:
         _cache.setdefault(account, (value, origin))
         return _cache[account]
 
 
 def save(account, password, remember=True):
-    """Speichert das Passwort; liefert 'schluesselbund', 'datei' oder 'sitzung'."""
+    """Speichert das Passwort; liefert 'datei' oder 'sitzung'."""
     if not account:
         raise ValueError('Zuerst den Benutzernamen des E-Mail-Kontos speichern.')
     if not password or len(password) > 512 or any(c in password for c in '\r\n\0'):
         raise ValueError('Ungültiges Passwort.')
-    backend = _keyring()
+    backend = _ablage()
     origin = 'sitzung'
     if backend is not None:
         try:
             if remember:
                 backend.set_password(SERVICE, account, password)
-                origin = getattr(backend, 'label', 'schluesselbund')
+                origin = backend.label
             else:
                 backend.delete_password(SERVICE, account)  # älteren Eintrag nicht weiterverwenden
         except Exception:
@@ -127,12 +112,12 @@ def load(account):
 
 
 def where(account):
-    """'schluesselbund', 'datei', 'sitzung' oder None – ohne das Passwort preiszugeben."""
+    """'datei', 'sitzung' oder None – ohne das Passwort preiszugeben."""
     return _lookup(account)[1] if account else None
 
 
 def forget(account):
-    backend = _keyring()
+    backend = _ablage()
     if backend is not None and account:
         try:
             backend.delete_password(SERVICE, account)

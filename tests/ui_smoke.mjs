@@ -32,9 +32,8 @@ execFileSync('python3', [join(repo, 'verwaltung.py'), '--data', join(base, 'Date
 
 const mailDir = join(base, 'Mails');
 const smtp = spawn('python3', [join(repo, 'tests', 'fake_smtp.py'), mailDir], { stdio: 'ignore' });
-const env = { ...process.env, JU_FINANZEN_OHNE_SCHLUESSELBUND: '1' }; // nie den echten Schlüsselbund berühren
 // Start über tests/ui_start.py: erfundene Adressdaten statt des Abrufs bei der Stadt – der Durchlauf geht nie ins Netz
-const server = spawn('python3', [join(repo, 'tests', 'ui_start.py'), '--port', String(port), '--data', join(base, 'Daten'), '--backups', join(base, 'Sicherungen')], { stdio: 'ignore', env });
+const server = spawn('python3', [join(repo, 'tests', 'ui_start.py'), '--port', String(port), '--data', join(base, 'Daten'), '--backups', join(base, 'Sicherungen')], { stdio: 'ignore' });
 let smtpPort = 0;
 const mails = () => readdirSync(mailDir).filter((f) => f.endsWith('.eml')).sort((a, b) => parseInt(a) - parseInt(b)).map((f) => readFileSync(join(mailDir, f), 'latin1'));
 const failures = [];
@@ -177,7 +176,7 @@ try {
   await page.selectOption('select[name=smtp_security]', 'none');
   await page.click('form[data-save] button[type=submit]');
   check((await toast()).includes('gespeichert'), 'E-Mail-Konto speichern');
-  check(await page.locator('#pw-form input[name=remember]').isDisabled(), 'Ohne Schlüsselbund: Passwort nur für die Sitzung');
+  check(await page.locator('#pw-form input[name=remember]').isDisabled(), 'Ohne Ablage auf dem Server: Passwort nur für die Sitzung');
   await page.fill('#pw-form input[name=password]', 'falsch');
   await page.click('#pw-form button[type=submit]');
   await toast();
@@ -185,7 +184,7 @@ try {
   check((await toast()).includes('Anmeldung'), 'Falsches Passwort wird erkannt');
   await page.fill('#pw-form input[name=password]', 'geheim');
   await page.click('#pw-form button[type=submit]');
-  check((await toast()).includes('Beenden'), 'Passwort gespeichert');
+  check((await toast()).includes('Neustart'), 'Passwort gespeichert');
   await page.click('#mail-check');
   check((await toast()).includes('erfolgreich'), 'Verbindung prüfen');
   await page.click('#mail-test');

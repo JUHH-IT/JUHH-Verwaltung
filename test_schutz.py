@@ -3,7 +3,6 @@ Nur erfundene Daten, nie ins Netz – Adressen ausschließlich aus den Dokumenta
 203.0.113.0/24, 2001:db8::/32)."""
 import socket
 import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import io
 import ipaddress
 import json

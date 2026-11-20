@@ -1,6 +1,4 @@
 """Befunde der unabhängigen Prüfung zu 0.23 (Fachlogik) – Regressionstests mit erfundenen Daten."""
-import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import datetime as _dt
 import io
 import sqlite3

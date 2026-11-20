@@ -1,6 +1,5 @@
 """Modul Sicherheit (ab 0.35): Ereignisse, Notfall, Wartung, Passwortbestätigung, Sitzungen, Sperren, Dateiprüfung – nur erfundene Daten."""
 import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import hashlib
 import json
 import tempfile

@@ -1,6 +1,4 @@
 """Mitgliederstatus und Wahlberechtigung (ab 0.37, Satzung § 37) – nur erfundene Testdaten."""
-import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import json
 import tempfile
 import unittest

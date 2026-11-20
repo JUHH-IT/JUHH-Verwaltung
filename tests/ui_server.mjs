@@ -30,7 +30,7 @@ writeFileSync(serverschutz, JSON.stringify({ zeit: new Date().toISOString(), ver
     { id: 'ssh', titel: 'SSH nur mit Schlüssel', stand: 'ok', detail: 'Passwort-Anmeldung aus' },
     { id: 'updates', titel: 'Sicherheitsupdates', stand: 'hinweis', detail: '2 Updates offen <b id="xss-serverschutz">fett</b>' }],
   zahlen: { sperrliste_netze: 1837, sperrliste_stand: new Date().toISOString(), gebannt: 3, abgewiesen_24h: 412, updates_offen: 2, neustart_noetig: false } }));
-const env = { ...process.env, JU_FINANZEN_OHNE_SCHLUESSELBUND: '1', JU_FINANZEN_GEHEIMNISSE: join(base, 'geheim'), JU_FINANZEN_SERVERSCHUTZ: serverschutz };
+const env = { ...process.env, JU_FINANZEN_GEHEIMNISSE: join(base, 'geheim'), JU_FINANZEN_SERVERSCHUTZ: serverschutz };
 const server = spawn('python3', [join(repo, 'tests', 'ui_start.py'), '--port', String(port), '--data', data, '--backups', join(base, 'Sicherungen')], { stdio: 'ignore', env });
 
 async function waitForServer() {

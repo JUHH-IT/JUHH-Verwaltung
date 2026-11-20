@@ -253,8 +253,7 @@ function importDialog() {
 
 function versand(s, status) {
   const local = ['127.0.0.1', 'localhost'].includes(s.smtp_host);
-  const pw = status?.password === 'schluesselbund' ? html`<span class="badge ok">Im Schlüsselbund gespeichert</span>`
-    : status?.password === 'datei' ? html`<span class="badge ok">Auf dem Server gespeichert</span>`
+  const pw = status?.password === 'datei' ? html`<span class="badge ok">Auf dem Server gespeichert</span>`
       : status?.password === 'sitzung' ? html`<span class="badge warn">Nur bis zum Neustart des Servers gespeichert</span>` : html`<span class="badge danger">Kein Passwort hinterlegt</span>`;
   return html`<div class="split-row">
     <form data-save class="panel grow2" style="display:flex;flex-direction:column;gap:16px">
@@ -279,7 +278,7 @@ function versand(s, status) {
         <form id="pw-form" style="display:flex;flex-direction:column;gap:10px">
           <label class="field">Passwort des E-Mail-Kontos<input type="password" name="password" autocomplete="new-password" required></label>
           <label class="check"><input type="checkbox" name="remember" ${status?.keychain ? 'checked' : 'disabled'}> Auf dem Server speichern (nur für das Programm lesbar)</label>
-          ${status?.keychain ? '' : html`<p class="small muted">Kein Schlüsselbund verfügbar – das Passwort gilt bis zum Beenden des Programms.</p>`}
+          ${status?.keychain ? '' : html`<p class="small muted">Keine Ablage auf dem Server eingerichtet – das Passwort gilt bis zum Neustart des Servers.</p>`}
           <div class="form-actions"><button type="submit" class="btn primary">Passwort speichern</button>
             ${status?.password ? html`<button type="button" class="btn ghost" id="pw-forget">Entfernen</button>` : ''}</div>
         </form>
@@ -478,7 +477,7 @@ export async function settings(main) {
     e.preventDefault();
     safe(async () => {
       const r = await api('/api/mail-password', { password: pwForm.password.value, remember: pwForm.remember.checked });
-      toast(r.where === 'schluesselbund' ? 'Passwort im Schlüsselbund gespeichert.' : r.where === 'datei' ? 'Passwort auf dem Server gespeichert.' : 'Passwort gilt bis zum Beenden des Programms.');
+      toast(r.where === 'datei' ? 'Passwort auf dem Server gespeichert.' : 'Passwort gilt bis zum Neustart des Servers.');
       rerender();
     });
   };

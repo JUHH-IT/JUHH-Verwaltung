@@ -800,7 +800,7 @@ Tests: test_lastschrift.py, test_mahnung.py, test_rechnungen.py
 
 ### geheimnis.py
 
-Passwort für den E-Mail-Versand: im Schlüsselbund des Betriebssystems, sonst nur im Arbeitsspeicher.
+Passwort für den E-Mail-Versand: auf dem Server in einer Datei, sonst nur im Arbeitsspeicher.
 
 Tests: test_mahnung.py, test_rechnungen.py, test_server.py
 
@@ -809,9 +809,9 @@ Tests: test_mahnung.py, test_rechnungen.py, test_server.py
   - `FileStore.set_password(service, account, password)`
   - `FileStore.delete_password(service, account)`
 - `available()`
-- `save(account, password, remember=…)` – Speichert das Passwort; liefert 'schluesselbund', 'datei' oder 'sitzung'.
+- `save(account, password, remember=…)` – Speichert das Passwort; liefert 'datei' oder 'sitzung'.
 - `load(account)`
-- `where(account)` – 'schluesselbund', 'datei', 'sitzung' oder None – ohne das Passwort preiszugeben.
+- `where(account)` – 'datei', 'sitzung' oder None – ohne das Passwort preiszugeben.
 - `forget(account)`
 
 ## Verband

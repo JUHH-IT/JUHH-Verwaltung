@@ -1,6 +1,4 @@
 """Rollen und Rechte im Serverbetrieb (ab 0.34) – nur erfundene Daten."""
-import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import json
 import re
 import tempfile

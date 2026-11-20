@@ -1,6 +1,5 @@
 """Serverbetrieb (Ubuntu hinter Tailscale): Anmeldung mit Passwort, Adressen, Sitzungen, Verwaltung – nur erfundene Daten."""
 import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import io
 import json
 import re

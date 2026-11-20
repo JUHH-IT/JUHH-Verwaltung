@@ -1,6 +1,4 @@
 """Karte und amtliche Adressdaten (0.32) – nur erfundene Adressen und Mitglieder, kein Netzzugriff."""
-import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import hashlib
 import json
 import tempfile
