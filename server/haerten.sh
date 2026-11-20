@@ -1252,9 +1252,14 @@ if [ "$PRUEFEN" -eq 0 ]; then
     [ "$(readlink -f "$HIER")" = "$(readlink -f /opt/ju-finanzen/current/server)" ] \
       || die "Bitte die installierte Version aufrufen: sudo ju-finanzen haerten (die Zeitgeber verweisen auf /opt/ju-finanzen/current)."
   fi
-  SICHERUNG="$SICHERUNGEN/$(date +%Y%m%d-%H%M%S)"
   install -d -m 700 "$SICHERUNGEN"
-  mkdir -m 700 "$SICHERUNG"   # ohne -p: zwei Läufe in derselben Sekunde teilen sich keinen Ordner
+  # mkdir ohne -p: zwei Läufe teilen sich nie einen Ordner – folgt einer in derselben Sekunde auf den anderen, wartet er auf die nächste
+  for _ in 1 2 3; do
+    SICHERUNG="$SICHERUNGEN/$(date +%Y%m%d-%H%M%S)"
+    if mkdir -m 700 "$SICHERUNG" 2>/dev/null; then break; fi
+    SICHERUNG=""; sleep 1
+  done
+  [ -n "$SICHERUNG" ] || die "Der Sicherungsordner unter $SICHERUNGEN ließ sich nicht anlegen."
   MANIFEST="$SICHERUNG/MANIFEST"; : > "$MANIFEST"
   LOG="$SICHERUNG/protokoll.log"; : > "$LOG"
   say "Härtung des Betriebssystems anwenden"
