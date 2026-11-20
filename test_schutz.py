@@ -1080,19 +1080,6 @@ class SchutzHttpTests(unittest.TestCase):
         body = self.get(self.chefin, '/api/schutz')[1]
         self.assertEqual((body['einstellungen']['modus'], body['einstellungen']['schwelle'], body['notfall_vorlage']), ('protokollieren', 8, False))
 
-    def test_nur_im_serverbetrieb(self):
-        app.MODE = 'mac'
-        try:
-            self.assertEqual(self.get(self.chefin, '/api/schutz')[0], 404)
-            for path in ('/api/schutz-einstellungen', '/api/schutz-sperren', '/api/schutz-freigeben', '/api/schutz-liste-laden', '/api/schutz-mitschnitt'):
-                self.assertEqual(self.post(self.chefin, path, {})[0], 404, path)
-            self.assertEqual(self.seite('/wp-login.php', **self.VON)[0], 404)
-            for _ in range(8):
-                self.seite('/.env', **self.VON)
-            self.assertEqual(self.seite('/', **self.VON)[0], 200)                            # Mac-App: keine Abwehr
-        finally:
-            app.MODE = 'server'
-
 
 if __name__ == '__main__':
     unittest.main()

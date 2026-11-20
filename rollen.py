@@ -7,7 +7,6 @@
 - Jede Adresse des Servers steht in `GET`/`POST` mit dem nötigen Recht (mehrere Einträge = eines davon genügt).
   Unbekannte Adressen verlangen „Verwaltung schreiben“ (`required`) – `test_rollen.py` prüft, dass keine Adresse fehlt.
 - Die Gesamtdaten (`/api/data`) werden je Bereich geleert (`filter_snapshot`): gleiche Form, aber ohne Inhalt.
-- Die Mac-App hat eine Person und prüft keine Rechte (`app.py` ruft diese Prüfung nur im Serverbetrieb).
 - Es bleibt immer mindestens eine aktive Person mit „Verwaltung schreiben“ (`_check_admin_remains`).
 """
 import json
@@ -130,10 +129,8 @@ POST = {
     **{path: _w('sicherheit') for path in ('/api/schutz-einstellungen', '/api/schutz-sperren', '/api/schutz-freigeben', '/api/schutz-liste-laden',
                                            '/api/schutz-mitschnitt')},
 }
-# ohne Sitzung bzw. nur in der Mac-App (dort keine Rechteprüfung)
-# Keycloak (0.36): Anmeldung beginnen und Rückkehr – ohne Sitzung, geschützt über Vorgang (Cookie + state, PKCE)
-OUTSIDE = ('/api/status', '/api/login', '/api/stop', '/api/login-code', '/api/login-device', '/api/shutdown',
-           '/api/keycloak/start', '/api/keycloak/rueckkehr')
+# ohne Sitzung; Keycloak (0.36): Anmeldung beginnen und Rückkehr – geschützt über Vorgang (Cookie + state, PKCE)
+OUTSIDE = ('/api/status', '/api/login', '/api/keycloak/start', '/api/keycloak/rueckkehr')
 
 # Gesamtdaten: welcher Schlüssel gehört zu welchem Bereich (alles andere sehen alle Angemeldeten)
 SNAPSHOT = {
@@ -239,7 +236,7 @@ def _admins(db, with_password=True):
 
 
 def on_user_created(db, user_id):
-    """Neue Person über den Verwaltungsbefehl oder die Mac-Anmeldung: gibt es noch niemanden für die Verwaltung,
+    """Neue Person über den Verwaltungsbefehl: gibt es noch niemanden für die Verwaltung,
     bekommt sie alle Rechte (erste Person). Sonst bleibt sie ohne Rolle, bis die Verwaltung eine vergibt."""
     init(db)   # Datenbank aus einer älteren Version (z. B. gerade übernommen): Tabellen und Anfangsbestand anlegen
     user = db.execute('SELECT password FROM users WHERE id=?', (user_id,)).fetchone()

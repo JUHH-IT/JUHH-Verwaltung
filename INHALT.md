@@ -47,7 +47,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **angemeldet:** `GET /api/data`, `GET /api/haushalt`, `GET /api/karte-gebiete`, `GET /api/workflow`, `POST /api/bestaetigen`, `POST /api/logout`, `POST /api/password`
 
-**ohne Anmeldung** (`rollen.OUTSIDE`): `/api/keycloak/rueckkehr`, `/api/keycloak/start`, `/api/login`, `/api/login-code`, `/api/login-device`, `/api/shutdown`, `/api/status`, `/api/stop`
+**ohne Anmeldung** (`rollen.OUTSIDE`): `/api/keycloak/rueckkehr`, `/api/keycloak/start`, `/api/login`, `/api/status`
 
 ## Oberfläche (`static/js`, ES-Module ohne Build-Schritt)
 
@@ -100,7 +100,6 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
 
 - `backups_dir()`
 - `save_receipt(store, table, rid, number, filename, suffix, raw)` – Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
-- `server_mode()`
 - `keycloak_mode()`
 - `notzugang(db, name)` – Keycloak-Betrieb: Anmeldung mit lokalem Passwort nur als Notzugang – solange auf dem Server freigeschaltet
 - `kc_abmelden(db, name)` – Keycloak-Sitzungen der Person beenden – best effort: ein Fehler wird nur protokolliert (Meldung ohne Tokens).
@@ -145,7 +144,7 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
   - `Handler.gesperrt(store, rights, method, path)` – Notfall/Wartung: 503 für alle ohne „Sicherheit ändern“, außer den wenigen erlaubten Wegen. True = Antwort gesendet.
   - `Handler.braucht_bestaetigung(method, path)`
   - `Handler.sperre_info(store, s)` – Sperre für /api/status: nur für Angemeldete; Grund und Auslöser nur mit „Sicherheit lesen“.
-  - `Handler.rights(store)` – Rechte der angemeldeten Person (rollen.py); die Mac-App hat eine Person und prüft keine Rechte.
+  - `Handler.rights(store)` – Rechte der angemeldeten Person (rollen.py).
   - `Handler.from_proxy()`
   - `Handler.adresse()` – Adresse des Aufrufers – nur über schutz.aufrufer (X-Forwarded-For zählt allein von 127.0.0.1); None = unlesbar.
   - `Handler.device()` – Gerät für Sperre und Protokoll: hinter Tailscale Serve (Anfrage von 127.0.0.1) der Tailscale-Login, sonst die
@@ -156,10 +155,7 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
   - `Handler.andere_methode()` – Jede Methode außer GET und POST: auch hier zuerst die Abwehr (Sperren, Fallen, Zählung), sonst 405.
   - `Handler.do_GET()`
   - `Handler.do_POST()`
-- `new_login_code()` – Einmaliger Anmeldecode (60 Sekunden gültig) – nur nach Prüfung durch macOS bzw. beim Start im Terminal.
-- `mac_user_name()` – Name des Mac-Benutzers, unter dem der Server läuft (vollständiger Name, sonst Kurzname) –
 - `write_private(name, text)` – Datei im Datenordner anlegen, die nur der Benutzer lesen kann.
-- `write_start_url(url)` – Adresse und Steuerschlüssel (Beenden, Anmeldecode) für den Mac-Starter hinterlegen.
 - `env_list(name)`
 - `run_backups(backups)` – Tägliche Sicherung der Datenbank und neue Belege spiegeln (beim Start und im Servermodus stündlich geprüft).
 - `schutz_stuendlich()` – Abwehr im Hintergrundlauf: Stundenstatistik schreiben, Bedrohungsliste täglich auffrischen – Fehler nur protokollieren.
@@ -173,7 +169,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -930,7 +926,7 @@ Tests: test_bereinigung.py, test_rpj.py
 
 Anmeldung mit Benutzername und Passwort im Serverbetrieb (Ubuntu-Server hinter Tailscale).
 
-Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py
+Tests: test_http.py, test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_uebernahme.py
 
 - `check_new(password)` – Anforderungen an ein neues Passwort; Fehlermeldung als ValueError.
 - `hash_password(password)`
@@ -964,7 +960,7 @@ Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_sicherheit.py
 - `filter_snapshot(snapshot, rights)`
 - `clean_rights(raw)` – Rechte aus einer Eingabe: nur bekannte Bereiche und Stufen.
 - `init(db)`
-- `on_user_created(db, user_id)` – Neue Person über den Verwaltungsbefehl oder die Mac-Anmeldung: gibt es noch niemanden für die Verwaltung,
+- `on_user_created(db, user_id)` – Neue Person über den Verwaltungsbefehl: gibt es noch niemanden für die Verwaltung,
 - `rights_of(db, name)` – Rechte einer Person: je Bereich die höchste Stufe ihrer Rollen; inaktiv, abgelaufen oder unbekannt = keine.
 - `overview(db)` – Personen, Rollen und Bereiche für die Verwaltung – ohne Passwörter.
 - `save_role(db, data, actor)` – Rolle anlegen oder ändern (`id` leer = neu). Liefert die Kennung. Das Protokoll hält Rechte vorher und nachher fest.

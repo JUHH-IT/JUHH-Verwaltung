@@ -509,6 +509,8 @@ class AbgleichTests(unittest.TestCase):
 class UebernahmeHttpTests(unittest.TestCase):
     def test_preview_import_and_backup(self):
         import app
+        import test_http
+        import zugang
         tmp = tempfile.TemporaryDirectory()
         old = app.DATA, app.DB, app.BACKUPS
         try:
@@ -516,18 +518,24 @@ class UebernahmeHttpTests(unittest.TestCase):
             app.DATA.mkdir()
             app.DB = app.DATA / 'finanzen.sqlite3'
             app.BACKUPS = Path(tmp.name) / 'Sicherungen'
+            store = Store(app.DB)
+            try:
+                zugang.set_password(store.db, test_http.NAME, test_http.test_server.PASSWORT, create=True)   # erste Person: alle Rechte
+            finally:
+                store.db.close()
             server = app.ThreadingHTTPServer(('127.0.0.1', 0), app.Handler)
             threading.Thread(target=server.serve_forever, daemon=True).start()
             url = f'http://127.0.0.1:{server.server_port}'
             client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
-            def post(path, data, csrf=''):
-                req = urllib.request.Request(url + path, json.dumps(data).encode(),
-                                             {'Content-Type': 'application/json', 'Origin': url, 'X-CSRF-Token': csrf})
-                return json.load(client.open(req))
+            def request(path, data, csrf=''):
+                return client.open(urllib.request.Request(url + path, json.dumps(data).encode(),
+                                                          {'Content-Type': 'application/json', 'Origin': url, 'X-CSRF-Token': csrf}))
 
-            code = post('/api/login-code', {'token': app.STOP_TOKEN})['code']
-            csrf = post('/api/login-device', {'code': code})['csrf']
+            def post(path, data, csrf=''):
+                return json.load(request(path, data, csrf))
+
+            csrf = test_http.anmelden(request)
             p = post('/api/preview-master', {'filename': 'master.xlsx', 'content': base64.b64encode(master_xlsx()).decode()}, csrf)
             self.assertEqual(len(p['rows']), 15)
             self.assertNotIn('fingerprint', p['rows'][0])

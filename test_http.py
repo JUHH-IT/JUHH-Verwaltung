@@ -4,6 +4,17 @@ import unittest, tempfile, threading, json, urllib.request, urllib.error, http.c
 from datetime import date
 from pathlib import Path
 import app
+import test_server   # Passwort und schnelles Hashing der Tests (nicht als Name importiert, sonst liefen dessen Tests hier noch einmal)
+import zugang
+from core import Store
+
+NAME='Schatzmeisterin Test'
+
+def anmelden(request):
+    """Anmeldung mit Passwort wie auf dem Server, danach die Passwortbestätigung für kritische Aktionen (5 Minuten); liefert das CSRF-Token."""
+    csrf=json.load(request('/api/login',{'name':NAME,'password':test_server.PASSWORT}))['csrf']
+    request('/api/bestaetigen',{'password':test_server.PASSWORT},csrf)
+    return csrf
 
 class HttpTests(unittest.TestCase):
     @classmethod
@@ -11,6 +22,9 @@ class HttpTests(unittest.TestCase):
         cls.tmp=tempfile.TemporaryDirectory()
         app.DATA=Path(cls.tmp.name);app.DB=app.DATA/'finanzen.sqlite3';(app.DATA/'Importe').mkdir()
         app.BACKUPS=app.DATA/'Sicherungen-Test'   # Sicherungen vor Importen bleiben im Testordner
+        store=Store(app.DB)
+        try: zugang.set_password(store.db,NAME,test_server.PASSWORT,create=True)   # erste Person: alle Rechte
+        finally: store.db.close()
         cls.server=app.ThreadingHTTPServer(('127.0.0.1',0),app.Handler)
         cls.thread=threading.Thread(target=cls.server.serve_forever,daemon=True);cls.thread.start()
         cls.url=f'http://127.0.0.1:{cls.server.server_port}'
@@ -31,26 +45,10 @@ class HttpTests(unittest.TestCase):
         for path in ('/api/op-liste.pdf','/api/op-listen.zip','/api/mitgliederkonten.csv?year=2026','/api/member-account?id=1'):   # 0.24: nur mit Sitzung
             with self.assertRaises(urllib.error.HTTPError) as cm: request(path)
             self.assertEqual(cm.exception.code,401)
-        # Anmeldung nur über macOS: Code mit dem Steuerschlüssel, einmalig und kurzlebig – kein Passwort
-        for path,data,code in (('/api/setup',{'name':'test','password':'testpasswort12345'},401),('/api/login',{'name':'test','password':'testpasswort12345'},404)):
-            with self.assertRaises(urllib.error.HTTPError) as cm: request(path,data)
-            self.assertEqual(cm.exception.code,code)                                  # Passwort-Anmeldung nur im Serverbetrieb
-        with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/login-code',{'token':'falsch'})
-        self.assertEqual(cm.exception.code,403)
-        with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/login-code',{'token':app.STOP_TOKEN},origin=False)
-        self.assertEqual(cm.exception.code,403)
-        stolen=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/login-device',{'code':stolen},origin=False)
-        self.assertEqual(cm.exception.code,403)                                       # fremde Seite kann keinen Code einlösen
-        old=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        app.LOGIN_CODES[old]['created']-=120
-        with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/login-device',{'code':old})
-        self.assertEqual(cm.exception.code,401)                                       # abgelaufen
-        code=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        r=json.load(request('/api/login-device',{'code':code}));csrf=r['csrf']
-        with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/login-device',{'code':code})
-        self.assertEqual(cm.exception.code,401)                                       # nur einmal gültig
-        self.assertEqual(json.load(request('/api/status'))['user'],app.mac_user_name())   # Name des Mac-Benutzers
+        with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/setup',{'name':'test','password':'testpasswort12345'})
+        self.assertEqual(cm.exception.code,401)
+        csrf=anmelden(request)
+        self.assertEqual(json.load(request('/api/status'))['user'],NAME)
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/settings',{'issuer':'bad'})
         self.assertEqual(cm.exception.code,403)
         request('/api/settings',{'issuer':'Test','issuer_address':'Test 1','iban':'DE89 3704 0044 0532 0130 00','age_basis':'jan1'},csrf)
@@ -72,8 +70,6 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(cm.exception.code,400)  # Vorschau-Schlüssel nur einmal gültig
         busy=app.versand.busy;app.versand.busy=lambda:True
         try:
-            with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/shutdown',{},csrf)
-            self.assertEqual(cm.exception.code,400)  # kein Beenden während eines Versands
             self.assertTrue(json.load(request('/api/status'))['mail_busy'])
         finally: app.versand.busy=busy
         with self.assertRaises(urllib.error.HTTPError) as cm: request(f"/api/mail-preview?draft={pv['token']}&i=9")
@@ -261,12 +257,6 @@ class HttpTests(unittest.TestCase):
         request('/api/logout',{},csrf)
         with self.assertRaises(urllib.error.HTTPError) as cm:request('/api/data')
         self.assertEqual(cm.exception.code,401)
-        code=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        json.load(request('/api/login-device',{'code':code}))
-        conn=sqlite3.connect(app.DB);conn.execute("UPDATE users SET name='Schatzmeisterin Test'");conn.commit();conn.close()
-        code=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        json.load(request('/api/login-device',{'code':code}))
-        self.assertEqual(json.load(request('/api/status'))['user'],'Schatzmeisterin Test')   # bestehender Benutzer bleibt
     def test_rpj_endpoints(self):
         # 0.26: RPJ-Mittel – Jahr, Projekt, Mittelabruf, Import mit Vorschau-Schlüssel, PDF/CSV, Zuordnung; ohne Sitzung gesperrt
         import base64
@@ -278,8 +268,7 @@ class HttpTests(unittest.TestCase):
         for path in (f'/api/rpj?year={y}',f'/api/rpj.pdf?year={y}','/api/rpj-offen'):
             with self.assertRaises(urllib.error.HTTPError) as cm: request(path)
             self.assertEqual(cm.exception.code,401)
-        code=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        csrf=json.load(request('/api/login-device',{'code':code}))['csrf']
+        csrf=anmelden(request)
         request('/api/rpj-jahr',{'year':y,'contingent':'5000','notice_on':f'{y}-01-15'},csrf)
         pid=json.load(request('/api/rpj-projekt',{'year':y,'no':'7','name':'HTTP-Testprojekt','quarter':'2','plan':{'a':'900','i':'100'}},csrf))['id']
         rid=json.load(request('/api/rpj-abruf',{'year':y,'quarter':'1','amount':'800'},csrf))['id']
@@ -315,8 +304,7 @@ class HttpTests(unittest.TestCase):
         for path in ('/api/karte','/api/karte-gebiete','/api/adressen-status'):
             with self.assertRaises(urllib.error.HTTPError) as cm: request(path)
             self.assertEqual(cm.exception.code,401)
-        code=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        csrf=json.load(request('/api/login-device',{'code':code}))['csrf']
+        csrf=anmelden(request)
         for path in ('/api/adresse-pruefen','/api/adressen-laden','/api/strassen-suche'):
             with self.assertRaises(urllib.error.HTTPError) as cm: request(path,{'street':'Testallee 1'})
             self.assertEqual(cm.exception.code,403)                                   # ohne CSRF-Schlüssel
@@ -368,8 +356,7 @@ class HttpTests(unittest.TestCase):
             return client.open(urllib.request.Request(self.url+path,json.dumps(data).encode() if data is not None else None,headers))
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/klaerfaelle')
         self.assertEqual(cm.exception.code,401)
-        code=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        csrf=json.load(request('/api/login-device',{'code':code}))['csrf']
+        csrf=anmelden(request)
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/klaerfall-klaeren',{'id':1,'no_dues':True})
         self.assertEqual(cm.exception.code,403)                                       # ohne CSRF-Schlüssel
         m=json.load(request('/api/member',{'number':'K-HTTP-1','first_name':'Kira','last_name':'Klar','street':'Testweg 1','zip':'20000','city':'Hamburg',
@@ -417,8 +404,7 @@ class HttpTests(unittest.TestCase):
             return client.open(urllib.request.Request(self.url+path,json.dumps(data).encode() if data is not None else None,headers))
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/ortsverband',{'kv':'5100','number':'1','name':'X'})
         self.assertIn(cm.exception.code,(401,403))
-        code=json.load(request('/api/login-code',{'token':app.STOP_TOKEN}))['code']
-        csrf=json.load(request('/api/login-device',{'code':code}))['csrf']
+        csrf=anmelden(request)
         oid=json.load(request('/api/ortsverband',{'kv':'5100','number':'14','name':'HTTP-Testort'},csrf))['id']
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/ortsverband',{'kv':'5100','number':'14','name':'Doppelt'},csrf)
         self.assertIn('schon',json.load(cm.exception)['error'])
@@ -472,13 +458,5 @@ class HttpTests(unittest.TestCase):
             try:
                 for (detail,) in db.execute('SELECT detail FROM audit'): self.assertNotIn(t.PASSWORD,detail or '')
             finally: db.close()
-    def test_mac_user_name(self):
-        from unittest import mock
-        with mock.patch('pwd.getpwuid',return_value=mock.Mock(pw_gecos='Erika  Muster,Raum 1')):
-            self.assertEqual(app.mac_user_name(),'Erika Muster')
-        with mock.patch('pwd.getpwuid',side_effect=KeyError),mock.patch('getpass.getuser',return_value='erika'):
-            self.assertEqual(app.mac_user_name(),'erika')
-        with mock.patch('pwd.getpwuid',side_effect=KeyError),mock.patch('getpass.getuser',side_effect=OSError):
-            self.assertEqual(app.mac_user_name(),'Schatzmeister')
 
 if __name__=='__main__':unittest.main(verbosity=2)

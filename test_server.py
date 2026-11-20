@@ -3,6 +3,7 @@ import os
 os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import io
 import json
+import re
 import sqlite3
 import stat
 import subprocess
@@ -96,12 +97,11 @@ class ServerHttpTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
-        cls.saved = (app.DATA, app.DB, app.BACKUPS, app.MODE, app.ADDRESSES, app.THROTTLE)
+        cls.saved = (app.DATA, app.DB, app.BACKUPS, app.ADDRESSES, app.THROTTLE)
         app.DATA = Path(cls.tmp.name) / 'Daten'
         app.DB = app.DATA / 'finanzen.sqlite3'
         (app.DATA / 'Importe').mkdir(parents=True)
         app.BACKUPS = Path(cls.tmp.name) / 'Sicherungen'
-        app.MODE = 'server'
         app.ADDRESSES = [ADRESSE]
         cls.server = app.ThreadingHTTPServer(('127.0.0.1', 0), app.Handler)
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -114,7 +114,7 @@ class ServerHttpTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join()
-        app.DATA, app.DB, app.BACKUPS, app.MODE, app.ADDRESSES, app.THROTTLE = cls.saved
+        app.DATA, app.DB, app.BACKUPS, app.ADDRESSES, app.THROTTLE = cls.saved
         app.SESSIONS.clear()
         cls.tmp.cleanup()
 
@@ -195,12 +195,13 @@ class ServerHttpTests(unittest.TestCase):
         self.assertEqual(self.login(origin=None)[0], 403)
         self.assertEqual(self.login(origin='http://ju-finanzen.beispiel.ts.net')[0], 403)   # falsches Schema
 
-    def test_mac_functions_are_off(self):
+    def test_former_mac_paths_are_gone(self):
+        """Die Wege der Mac-App (bis 0.41) gibt es nicht mehr: ohne Sitzung 401 wie jede Adresse, angemeldet 404, Server läuft weiter."""
         self.user()
         _, body, sid, _ = self.login()
-        for path in ('/api/login-code', '/api/login-device', '/api/stop'):
-            self.assertEqual(self.call(path, {'token': app.STOP_TOKEN, 'code': 'x'})[0], 404, path)
-        self.assertEqual(self.call('/api/shutdown', {}, cookie=sid, csrf=body['csrf'])[0], 404)
+        for path in ('/api/login-code', '/api/login-device', '/api/stop', '/api/shutdown'):
+            self.assertEqual(self.call(path, {'token': 'x', 'code': 'x'})[0], 401, path)
+            self.assertEqual(self.call(path, {'token': 'x', 'code': 'x'}, cookie=sid, csrf=body['csrf'])[0], 404, path)
         self.assertTrue(self.thread.is_alive())
 
     def test_throttle_blocks_after_failures(self):
@@ -377,46 +378,74 @@ class StartTests(unittest.TestCase):
         finally:
             app.ADDRESSES = saved
 
+    def start_like_systemd(self, tmp, env_extra=None, args_extra=()):
+        """Start genau wie die Unit server/ju-finanzen.service: Argumente aus ExecStart, Umgebung aus der Einstellungsdatei
+        (Vorlage server/ju-finanzen.env.beispiel – so steht sie auf bestehenden Servern) mit Testordnern und freiem Port."""
+        repo = Path(app.__file__).parent
+        unit = (repo / 'server' / 'ju-finanzen.service').read_text(encoding='utf-8')
+        exec_start = re.search(r'^ExecStart=(.*)$', unit, re.M).group(1).split()
+        self.assertEqual(exec_start[:2], ['/opt/ju-finanzen/current/venv/bin/python', '/opt/ju-finanzen/current/app.py'])
+        settings = dict(line.split('=', 1) for line in (repo / 'server' / 'ju-finanzen.env.beispiel').read_text(encoding='utf-8').splitlines()
+                        if line and not line.startswith('#'))
+        port = 18000 + os.getpid() % 1000
+        settings.update(JU_FINANZEN_DATEN=f'{tmp}/Daten', JU_FINANZEN_SICHERUNGEN=f'{tmp}/Sicherungen', JU_FINANZEN_PORT=str(port),
+                        JU_FINANZEN_ADRESSEN=ADRESSE, JU_FINANZEN_GEHEIMNISSE=f'{tmp}/geheim', **(env_extra or {}))
+        env = {'PATH': os.environ.get('PATH', ''), 'LANG': 'C.UTF-8', 'TZ': 'Europe/Berlin', 'PYTHONUNBUFFERED': '1', 'PYTHONDONTWRITEBYTECODE': '1',
+               'HOME': tmp, **settings}
+        proc = subprocess.Popen([sys.executable, str(repo / 'app.py'), *exec_start[2:], *args_extra], env=env, cwd=tmp,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        return proc, port
+
     def test_server_start_as_process(self):
-        """Start wie unter systemd: Umgebungsvariablen, kein Browser, keine Steuerdateien, SIGTERM beendet sauber."""
-        with tempfile.TemporaryDirectory() as tmp:
-            port = 18000 + os.getpid() % 1000
-            env = {**os.environ, 'JU_FINANZEN_MODUS': 'server', 'JU_FINANZEN_DATEN': f'{tmp}/Daten', 'JU_FINANZEN_SICHERUNGEN': f'{tmp}/Sicherungen',
-                   'JU_FINANZEN_PORT': str(port), 'JU_FINANZEN_ADRESSEN': ADRESSE, 'PYTHONUNBUFFERED': '1'}
-            proc = subprocess.Popen([sys.executable, str(Path(app.__file__)), '--no-browser'], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            try:
-                for _ in range(100):
-                    try:
-                        with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}/api/status', headers={'Host': 'ju-finanzen.beispiel.ts.net'})) as r:
-                            status = json.load(r)
-                        break
-                    except OSError:
-                        time.sleep(0.1)
-                else:
-                    self.fail('Server startet nicht')
-                self.assertEqual((status['mode'], status['configured']), ('server', False))
-                self.assertFalse((Path(tmp) / 'Daten' / '.steuerung').exists())
-                self.assertFalse((Path(tmp) / 'Daten' / '.start-url').exists())
-                proc.terminate()                                                           # SIGTERM wie systemctl stop
-                out, _ = proc.communicate(timeout=10)
-            finally:
-                if proc.poll() is None:
-                    proc.kill()
-            self.assertEqual(proc.returncode, 0, out)
-            self.assertIn('Serverbetrieb', out)
-            self.assertIn('passwort', out)
-            self.assertIn('Beendet', out)
-            self.assertTrue((Path(tmp) / 'Daten' / 'finanzen.sqlite3').exists())
+        """Start wie unter systemd mit den Einstellungen bestehender Server (JU_FINANZEN_MODUS=server) – auch mit den Argumenten der
+        Unit bis 0.41 (--no-browser) und --modus server: kein Browser, keine Steuerdateien, SIGTERM beendet sauber."""
+        for args in ((), ('--no-browser',), ('--no-browser', '--modus', 'server')):
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as tmp:
+                proc, port = self.start_like_systemd(tmp, args_extra=args)
+                try:
+                    for _ in range(100):
+                        try:
+                            with urllib.request.urlopen(urllib.request.Request(f'http://127.0.0.1:{port}/api/status', headers={'Host': 'ju-finanzen.beispiel.ts.net'})) as r:
+                                status = json.load(r)
+                            break
+                        except OSError:
+                            time.sleep(0.1)
+                    else:
+                        self.fail('Server startet nicht: ' + proc.communicate(timeout=5)[0])
+                    self.assertEqual((status['mode'], status['auth'], status['configured']), ('server', 'password', False))   # install.sh prüft mode
+                    self.assertFalse((Path(tmp) / 'Daten' / '.steuerung').exists())
+                    self.assertFalse((Path(tmp) / 'Daten' / '.start-url').exists())
+                    proc.terminate()                                                           # SIGTERM wie systemctl stop
+                    out, _ = proc.communicate(timeout=10)
+                finally:
+                    if proc.poll() is None:
+                        proc.kill()
+                        proc.communicate()
+                self.assertEqual(proc.returncode, 0, out)
+                self.assertIn('Serverbetrieb', out)
+                self.assertIn('passwort', out)
+                self.assertIn('Beendet', out)
+                self.assertTrue((Path(tmp) / 'Daten' / 'finanzen.sqlite3').exists())
+
+    def test_mac_mode_is_refused(self):
+        """Betriebsart „mac“ (Einstellung oder Argument) bricht mit deutscher Meldung ab, statt still etwas anderes zu starten."""
+        for env_extra, args in (({'JU_FINANZEN_MODUS': 'mac'}, ()), ({}, ('--modus', 'mac'))):
+            with self.subTest(env=env_extra, args=args), tempfile.TemporaryDirectory() as tmp:
+                proc, _ = self.start_like_systemd(tmp, env_extra, args)
+                out, _ = proc.communicate(timeout=20)
+                self.assertEqual(proc.returncode, 6, out)
+                self.assertIn('Start abgebrochen: Betriebsart „mac“ gibt es nicht mehr', out)
+                self.assertFalse((Path(tmp) / 'Daten').exists())                            # nichts angelegt
 
     def test_refuses_all_interfaces(self):
         with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
-            saved = (app.DATA, app.DB, app.BACKUPS, app.MODE, app.ADDRESSES)
+            saved = (app.DATA, app.DB, app.BACKUPS, app.ADDRESSES)
             try:
                 with self.assertRaises(SystemExit):
                     app.main(['--modus', 'server', '--host', '0.0.0.0', '--data', f'{tmp}/D', '--no-browser'])
                 self.assertEqual(app.main(['--modus', 'server', '--adresse', 'keine-adresse', '--data', f'{tmp}/D', '--no-browser']), 4)
             finally:
-                app.DATA, app.DB, app.BACKUPS, app.MODE, app.ADDRESSES = saved
+                app.DATA, app.DB, app.BACKUPS, app.ADDRESSES = saved
 
 
 class GeheimnisDateiTests(unittest.TestCase):
