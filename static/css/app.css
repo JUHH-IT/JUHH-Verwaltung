@@ -340,8 +340,8 @@ dialog#preview::backdrop { background: rgba(16, 45, 59, 0.35); }
 .login-error { color: var(--danger); font-size: 14px; }
 .login > p { max-width: 400px; }
 
-/* ---------- Kompakte Ansicht: Seitenleiste als Menü (Klasse html.compact setzt main.js: Mac-Fenster bis 900 px,
-   Serverbetrieb im Browser bis 1100 px – Tablet quer bekommt so die volle Breite für den Buchungsplatz) ---------- */
+/* ---------- Kompakte Ansicht: Seitenleiste als Menü (Klasse html.compact setzt main.js bis 1100 px –
+   Tablet quer bekommt so die volle Breite für den Buchungsplatz) ---------- */
 html.compact .shell { display: block; }
 html.compact .topbar {
   display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 20; height: 56px; padding: 0 12px 0 4px;

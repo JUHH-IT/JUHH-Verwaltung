@@ -1,6 +1,7 @@
-// Browser-Durchlauf der Oberfläche mit erfundenen Daten (Playwright).
+// Browser-Durchlauf der Oberfläche mit erfundenen Daten (Playwright): die fachlichen Abläufe aller Seiten.
 // Aufruf: node tests/ui_smoke.mjs [Ordner für Bildschirmfotos]
-// Startet einen eigenen Server mit leerem Datenordner; berührt keine echten Daten.
+// Startet einen eigenen Server mit leerem Datenordner; berührt keine echten Daten. Anmeldung, Sperre, Handy und
+// Passwortbestätigung im Dialog prüft tests/ui_server.mjs.
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
@@ -25,11 +26,15 @@ const lockedPassword = execFileSync('python3', ['-c', `import sys; sys.path.inse
 const kvMasterPath = join(base, 'kv-master.xlsx');
 execFileSync('python3', ['-c', `import sys; sys.path.insert(0, ${JSON.stringify(repo)}); import test_kvabgleich; open(${JSON.stringify(kvMasterPath)}, 'wb').write(test_kvabgleich.workbook())`]);
 
+const NAME = 'Test Schatzmeisterin', PASSWORT = 'Erfundenes-Passwort-2026';
+// Passwort wie auf dem Server über verwaltung.py setzen (Passwort zweimal über stdin); die erste Person bekommt alle Rechte
+execFileSync('python3', [join(repo, 'verwaltung.py'), '--data', join(base, 'Daten'), 'passwort', NAME], { input: `${PASSWORT}\n${PASSWORT}\n` });
+
 const mailDir = join(base, 'Mails');
 const smtp = spawn('python3', [join(repo, 'tests', 'fake_smtp.py'), mailDir], { stdio: 'ignore' });
 const env = { ...process.env, JU_FINANZEN_OHNE_SCHLUESSELBUND: '1' }; // nie den echten Schlüsselbund berühren
 // Start über tests/ui_start.py: erfundene Adressdaten statt des Abrufs bei der Stadt – der Durchlauf geht nie ins Netz
-const server = spawn('python3', [join(repo, 'tests', 'ui_start.py'), '--no-browser', '--port', String(port), '--data', join(base, 'Daten'), '--backups', join(base, 'Sicherungen')], { stdio: 'ignore', env });
+const server = spawn('python3', [join(repo, 'tests', 'ui_start.py'), '--port', String(port), '--data', join(base, 'Daten'), '--backups', join(base, 'Sicherungen')], { stdio: 'ignore', env });
 let smtpPort = 0;
 const mails = () => readdirSync(mailDir).filter((f) => f.endsWith('.eml')).sort((a, b) => parseInt(a) - parseInt(b)).map((f) => readFileSync(join(mailDir, f), 'latin1'));
 const failures = [];
@@ -43,19 +48,12 @@ async function waitForServer() {
   throw new Error('Server startet nicht');
 }
 
-let browser;
+let browser, confirmTimer;
 try {
   await waitForServer();
   for (let i = 0; i < 50 && !existsSync(join(mailDir, 'port')); i++) await new Promise((r) => setTimeout(r, 100));
   smtpPort = Number(readFileSync(join(mailDir, 'port'), 'utf8'));
-  const startUrl = readFileSync(join(base, 'Daten', '.start-url'), 'utf8').trim();
-  // Anmeldung wie die Mac-App nach Touch ID: einmaliger Code mit dem Steuerschlüssel aus Daten/.steuerung
-  const loginUrl = async () => {
-    const token = readFileSync(join(base, 'Daten', '.steuerung'), 'utf8').trim();
-    const r = await fetch(`http://127.0.0.1:${port}/api/login-code`, { method: 'POST', body: JSON.stringify({ token }),
-      headers: { 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${port}` } });
-    return `${startUrl}?login=${(await r.json()).code}`;
-  };
+  const origin = `http://127.0.0.1:${port}`;
   browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${port}` });
@@ -72,11 +70,9 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   let rejected = 0; // absichtlich provozierte Ablehnungen (400) werden gezählt statt als Fehler gewertet
-  let expect401 = false, refused = 0; // absichtlich wiederverwendeter Anmeldecode
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     if (m.text().includes('status of 400')) rejected++;
-    else if (expect401 && m.text().includes('status of 401')) refused++;
     else errors.push(m.text());
   });
   // Haushaltsposten: Knopf öffnet die Liste, Nummer eintippen, Enter übernimmt
@@ -98,19 +94,28 @@ try {
   const shot = (name) => page.screenshot({ path: join(shots, name + '.png'), fullPage: false });
   const dialogClose = () => page.locator('#modal .dialog-head [data-close]').click();
 
-  // Ohne Anmeldung: Hinweis auf die App, kein Passwortfeld
-  await page.goto(startUrl);
-  await page.waitForSelector('.login');
-  check(await page.locator('input[type=password]').count() === 0 && (await page.locator('.login').textContent()).includes('Wahltaste'), 'Anmeldeseite ohne Passwort');
-  // Erste Anmeldung (wie nach Touch ID): Benutzer wird angelegt
-  await page.goto(await loginUrl());
-  await page.waitForSelector('.sidebar');
+  // Kritische Aktionen verlangen die Passwortbestätigung (app.CONFIRM, 5 Minuten): jede Minute im Hintergrund über die Cookies
+  // des Browsers bestätigen – den Dialog dafür prüft tests/ui_server.mjs
+  const confirm = async () => {
+    const { csrf } = await (await context.request.get(`${origin}/api/status`)).json();
+    if (csrf) await context.request.post(`${origin}/api/bestaetigen`, { headers: { 'X-CSRF-Token': csrf, Origin: origin }, data: { password: PASSWORT } });
+  };
+  confirmTimer = setInterval(() => confirm().catch(() => {}), 60_000);
+  const login = async () => {
+    await page.goto(origin);
+    await page.waitForSelector('#login-form');
+    await page.fill('input[name=name]', NAME);
+    await page.fill('input[name=password]', PASSWORT);
+    await page.click('#login-form button[type=submit]');
+    await page.waitForSelector('.sidebar');
+    await confirm();
+  };
+  await login();
   check(await page.locator('h1').textContent() === 'Start' && await page.locator('main h2#tasks-title').textContent() === 'Aufgaben', 'Einrichtung und Start (Aufgaben je Bereich)');
   check(await page.evaluate(() => { const k = document.querySelector('main .cards'), t = document.querySelector('main .task-grid'); return k && t && k.getBoundingClientRect().bottom <= t.getBoundingClientRect().top; }),
     'Start: Kennzahlen stehen über den Aufgaben');
   check(await page.locator('.task-card').count() === 4 && (await page.locator('.nav-group').allTextContents()).join('|') === 'Mitgliederverwaltung|Buchhaltung|Verband|Verwaltung',
     'Navigation nach Bereichen');
-  check(!page.url().includes('login='), 'Anmeldecode nicht in der Adresse');
   const version = readFileSync(join(repo, 'app.py'), 'utf8').match(/^VERSION='([^']+)'/m)[1];
   check((await page.locator('.sidebar-foot').textContent()).includes(`Version ${version}`), 'Version in der Seitenleiste');
 
@@ -1474,19 +1479,8 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('#logout');
   await page.waitForSelector('.login');
   await shot('13-anmeldung');
-  const used = await loginUrl();
-  await page.goto(used);
-  await page.waitForSelector('.sidebar');
+  await login();
   check(true, 'Abmelden und Anmelden');
-  await page.click('#logout');
-  await page.waitForSelector('.login');
-  expect401 = true;
-  await page.goto(used);                                    // Code gilt nur einmal
-  await page.waitForSelector('.login');
-  check((await toast()).includes('abgelaufen') && refused === 1, 'Anmeldecode nur einmal gültig');
-  expect401 = false;
-  await page.goto(await loginUrl());
-  await page.waitForSelector('.sidebar');
 
   // 6 bisherige + doppelte OV-Nummer + geschützte Datei (Kennwort fehlt, Kennwort falsch)
   const expected = 7 + (existsSync(lockedPath) ? 2 : 0);
@@ -1496,6 +1490,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   failures.push(e.message);
   console.log('ABBRUCH ' + e.stack);
 } finally {
+  clearInterval(confirmTimer);
   await browser?.close();
   server.kill();
   smtp.kill();

@@ -29,7 +29,7 @@ export function closeDialog() {
   if (el.open) el.close();
 }
 
-/** Oberste offene Ebene schließen (erst Liste/Vorschau, dann Dialog). Esc und ⌘W im Programmfenster; true = geschlossen. */
+/** Oberste offene Ebene schließen (erst Liste/Vorschau, dann Dialog). Esc; true = geschlossen. */
 export function closeTop() {
   const top = [document.getElementById('preview'), modal()].find((d) => d && d.open);
   if (!top) return false;
@@ -169,7 +169,6 @@ const ICONS = {
   file: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M10 13h6"/><path d="M10 17h6"/>',
   book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>',
-  power: '<path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',

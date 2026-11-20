@@ -102,19 +102,8 @@ export async function fileToBase64(file) {
 }
 
 /** Datei vom Server laden und speichern – bei einem Fehler die Meldung des Servers statt einer kaputten Datei.
- *  Im Programmfenster lädt macOS die Datei direkt (Sichern-Dialog, Fehlermeldung des Servers als Hinweis); der Umweg
- *  über eine Blob-Adresse entfällt dort, weil WebKit ihn nicht zuverlässig als Download behandelt.
- *  Rückgabe: true = Datei liegt vor (Browser), false = Programmfenster übernimmt (Ergebnis zeigt macOS). */
+ *  Rückgabe: true = Datei liegt vor. */
 export async function download(url, filename, confirmed = false) {
-  if (window.webkit?.messageHandlers?.ju) {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    return false;
-  }
   let response;
   try {
     response = await fetch(url);

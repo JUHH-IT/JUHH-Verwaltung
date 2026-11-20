@@ -11,7 +11,7 @@ import { addressState, addressSummary, addressCredit, loadAddressData, loadedTex
 
 const TABS = [['schalter', 'Schalter'], ['verein', 'Verein & Bank'], ['beitraege', 'Beiträge'], ['gliederung', 'Gliederung'], ['versand', 'E-Mail-Versand'], ['vorlagen', 'Vorlagen'], ['sicherung', 'Sicherung']];
 // ohne das Recht „Einstellungen“ bleibt im Serverbetrieb nur die eigene Anmeldung (Passwort ändern)
-const tabs = () => (store.mode !== 'server' ? TABS : can('einstellungen') ? [...TABS, ['zugang', 'Anmeldung']] : [['zugang', 'Anmeldung']]);
+const tabs = () => (can('einstellungen') ? [...TABS, ['zugang', 'Anmeldung']] : [['zugang', 'Anmeldung']]);
 const PLACEHOLDERS = [['vorname', 'Vorname'], ['name', 'Name'], ['nummer', 'Rechnungsnummer'], ['betrag', 'Betrag'], ['faellig', 'Fällig am'],
   ['datum', 'Rechnungsdatum'], ['jahr', 'Beitragsjahr'], ['leistung', 'Leistungen'], ['mitgliedsnummer', 'Mitgliedsnummer'], ['iban', 'IBAN'], ['absender', 'Absendername'],
   ['offen', 'offener Betrag'], ['neue_frist', 'neue Frist (Erinnerung)'], ['stufe', 'Nummer der Erinnerung'],
@@ -253,10 +253,9 @@ function importDialog() {
 
 function versand(s, status) {
   const local = ['127.0.0.1', 'localhost'].includes(s.smtp_host);
-  const server = store.mode === 'server';
   const pw = status?.password === 'schluesselbund' ? html`<span class="badge ok">Im Schlüsselbund gespeichert</span>`
     : status?.password === 'datei' ? html`<span class="badge ok">Auf dem Server gespeichert</span>`
-      : status?.password === 'sitzung' ? html`<span class="badge warn">${server ? 'Nur bis zum Neustart des Servers gespeichert' : 'Nur bis zum Beenden gespeichert'}</span>` : html`<span class="badge danger">Kein Passwort hinterlegt</span>`;
+      : status?.password === 'sitzung' ? html`<span class="badge warn">Nur bis zum Neustart des Servers gespeichert</span>` : html`<span class="badge danger">Kein Passwort hinterlegt</span>`;
   return html`<div class="split-row">
     <form data-save class="panel grow2" style="display:flex;flex-direction:column;gap:16px">
       <div class="formgrid">
@@ -279,7 +278,7 @@ function versand(s, status) {
         <p>${pw}</p>
         <form id="pw-form" style="display:flex;flex-direction:column;gap:10px">
           <label class="field">Passwort des E-Mail-Kontos<input type="password" name="password" autocomplete="new-password" required></label>
-          <label class="check"><input type="checkbox" name="remember" ${status?.keychain ? 'checked' : 'disabled'}> ${server ? 'Auf dem Server speichern (nur für das Programm lesbar)' : 'Im Schlüsselbund dieses Macs speichern'}</label>
+          <label class="check"><input type="checkbox" name="remember" ${status?.keychain ? 'checked' : 'disabled'}> Auf dem Server speichern (nur für das Programm lesbar)</label>
           ${status?.keychain ? '' : html`<p class="small muted">Kein Schlüsselbund verfügbar – das Passwort gilt bis zum Beenden des Programms.</p>`}
           <div class="form-actions"><button type="submit" class="btn primary">Passwort speichern</button>
             ${status?.password ? html`<button type="button" class="btn ghost" id="pw-forget">Entfernen</button>` : ''}</div>
@@ -326,17 +325,12 @@ function vorlagen(s) {
 }
 
 function sicherung() {
-  const server = store.mode === 'server';
   return html`<div class="split-row">
     <section class="panel grow1"><h2 style="margin-bottom:8px">Datensicherung</h2>
-      <p class="small muted" style="margin-bottom:12px">${server
-        ? 'Der Server sichert täglich automatisch (30 Tage), vor jedem Update und vor Importen. Zusätzlich hier regelmäßig eine ZIP-Datei mit Datenbank, Belegen und importierten Originaldateien herunterladen und getrennt vom Server aufbewahren.'
-        : 'Das Programm sichert beim Start täglich automatisch und vor jedem Update (Ordner „Sicherungen“). Zusätzlich hier eine ZIP-Datei mit Datenbank, Belegen und importierten Originaldateien erstellen und getrennt aufbewahren.'}</p>
+      <p class="small muted" style="margin-bottom:12px">Der Server sichert täglich automatisch (30 Tage), vor jedem Update und vor Importen. Zusätzlich hier regelmäßig eine ZIP-Datei mit Datenbank, Belegen und importierten Originaldateien herunterladen und getrennt vom Server aufbewahren.</p>
       <button type="button" class="btn" id="backup-download">${icon('download', 16)} Sicherung herunterladen</button></section>
     <section class="panel grow1"><h2 style="margin-bottom:8px">Wiederherstellen</h2>
-      <p class="small muted">${server
-        ? html`Auf dem Server mit <code>sudo ju-finanzen uebernehmen &lt;ZIP-Datei&gt; --ersetzen</code>. Die bisherigen Daten werden vorher vollständig zur Seite gelegt, nichts wird gelöscht.`
-        : html`Die ZIP-Datei enthält den Ordner „Daten“. Für den Umzug auf den Server: <code>sudo ju-finanzen uebernehmen &lt;ZIP-Datei&gt;</code> (siehe SERVER.md).`}</p></section></div>`;
+      <p class="small muted">Auf dem Server mit <code>sudo ju-finanzen uebernehmen &lt;ZIP-Datei&gt; --ersetzen</code>. Die bisherigen Daten werden vorher vollständig zur Seite gelegt, nichts wird gelöscht.</p></section></div>`;
 }
 
 function zugang() {

@@ -57,7 +57,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/format.js`: bookingKind, date, dateTime, eur, findIban, parseCents, plain, shortDate, signed, toInput, todayIso, weekdayDate
 - `static/js/gliederung.js`: bindKvOv, kvLabel, kvOvFields, memberKvs, ovById, ovLabel, ovsOf
 - `static/js/html.js`: esc, html, mount, raw
-- `static/js/main.js` → /api/bestaetigen, /api/keycloak, /api/login, /api/login-device, /api/logout, /api/shutdown, /api/status
+- `static/js/main.js` → /api/bestaetigen, /api/keycloak, /api/login, /api/logout, /api/status
 - `static/js/member-picker.js`: CASE_REASON, EXTERNAL_REASON, addressLine, caseLabel, externalLabel, fold, matchMembers, membersLabel, membersPayload, pickMembers, sortName, suggestMembers
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
