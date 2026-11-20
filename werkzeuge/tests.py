@@ -53,9 +53,9 @@ def betroffen(geaendert, graph=None, tief=False):
             tests.add(test)
     if any(f.startswith(('static/', 'tests/')) for f in geaendert):
         hinweise.append('Oberfläche geändert: node tests/html_escape.mjs · NODE_PATH=$(npm root -g) node tests/ui_smoke.mjs <Ordner> · … tests/ui_server.mjs <Ordner>')
-    if any(f.startswith('server/') for f in geaendert):
-        tests |= {'test_server', 'test_repo'} & set(graph)
-        hinweise.append('Server-Skripte geändert: shellcheck server/*.sh server/ju-finanzen')
+    if any(f.startswith(('server/', 'tests/haertung_')) for f in geaendert):
+        tests |= {'test_server', 'test_repo', 'test_haertung'} & set(graph)
+        hinweise.append('Server-Skripte geändert: shellcheck server/*.sh server/ju-finanzen tests/haertung_stub.sh')
     if geaendert:
         tests |= {'test_repo', 'test_inhalt'} & set(graph)   # Wächter und Inhaltsverzeichnis gelten für jede Änderung
     return sorted(tests), hinweise

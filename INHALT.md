@@ -1003,7 +1003,7 @@ Abwehr in der Anwendung im Serverbetrieb (ab 0.39): Firewall, Sperrliste, Bedroh
 
 Tabellen: `schutz_sperren`, `schutz_stunden`
 
-Tests: test_schutz.py
+Tests: test_haertung.py, test_schutz.py
 
 - `init(db)`
 - `aufrufer(verbindung, weitergereicht=…)` – Adresse des Aufrufers (einzige Stelle): X-Forwarded-For zählt nur, wenn die Verbindung von 127.0.0.1/::1 kommt

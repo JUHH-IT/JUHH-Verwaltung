@@ -15,6 +15,10 @@
 #   sudo ju-finanzen keycloak-einrichten    Keycloak (Zwei-Faktor-Anmeldung) einrichten bzw. auffrischen – wiederholbar
 #   sudo ju-finanzen keycloak-status        Keycloak: Dienst, Health, Version
 #   sudo ju-finanzen keycloak-sicherung     Keycloak-Datenbank jetzt sichern (sonst täglich per Timer)
+#   sudo ju-finanzen haerten [--pruefen | --zurueck]   Betriebssystem härten: Firewall, Sperrliste, fail2ban, Kern, Updates, SSH
+#   sudo ju-finanzen haerten --bestaetigen  nach „haerten“ aus einem ZWEITEN Fenster: Änderungen behalten (sonst nimmt der Server sie zurück)
+#   sudo ju-finanzen schutz-status          Statusbericht des Serverschutzes (derselbe, den das Programm zeigt)
+#   sudo ju-finanzen schutz-aus             Notausgang der Abwehr im Programm: alle Sperren löschen, nur noch protokollieren (ab 0.39)
 set -euo pipefail
 SERVICE=ju-finanzen
 SERVICE_USER=jufinanzen
@@ -42,7 +46,7 @@ keycloak_kurz() {   # Version, Dienst, Health (Management-Schnittstelle nur auf 
 }
 
 case "${1:-}" in
-  ""|-h|--help|hilfe) sed -n '2,17p' "$0"; exit 0 ;;
+  ""|-h|--help|hilfe) sed -n '2,21p' "$0"; exit 0 ;;
   status)
     echo "Programmversion: $(sed -n "s/^VERSION='\(.*\)'.*/\1/p" "$APP/app.py" | head -n 1)$( [ -f "$APP/server/GIT-STAND" ] && printf ' (Stand %.12s)' "$(cat "$APP/server/GIT-STAND")" )"
     systemctl status "$SERVICE" --no-pager || true; command -v tailscale >/dev/null && tailscale serve status || true
@@ -64,6 +68,11 @@ case "${1:-}" in
     mv -f "$file.neu" "$file"
     find "$dir" -name 'keycloak-*.dump' -mtime +30 -delete
     echo "Keycloak-Datenbank gesichert: $file" ;;
+  haerten|schutz-status)   # Härtung des Betriebssystems (SERVER.md, Abschnitt „Härtung“)
+    [ -x "$APP/server/haerten.sh" ] || { echo "Diese Programmversion kennt die Härtung des Betriebssystems noch nicht." >&2; exit 1; }
+    if [ "$1" = schutz-status ]; then exec "$APP/server/haerten.sh" status; fi
+    shift
+    exec "$APP/server/haerten.sh" "$@" ;;
   aktualisieren)
     shift
     [ -x "$APP/server/aktualisieren.sh" ] || { echo "Diese Programmversion kennt das Update aus dem Git-Repository noch nicht (ab 0.33)." >&2; exit 1; }

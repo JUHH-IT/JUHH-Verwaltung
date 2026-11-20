@@ -1,0 +1,23 @@
+# JU Hamburg Finanzen – Schutztabelle „inet ju_schutz“ (installiert von server/haerten.sh)
+# Lädt beim Start nur die eigene Tabelle, früh wie ufw.service. Nie „flush ruleset“: ufw und Tailscale bleiben unberührt.
+# Notaus: sudo systemctl stop ju-serverschutz   (entfernt die Tabelle; ufw schützt weiter)
+[Unit]
+Description=JU Hamburg Finanzen – Schutztabelle (Sperrliste, ungültige Pakete, SSH-Takt)
+Documentation=file:/opt/ju-finanzen/current/SERVER.md
+DefaultDependencies=no
+Wants=network-pre.target local-fs.target
+Before=network-pre.target shutdown.target
+After=local-fs.target
+Conflicts=shutdown.target
+ConditionPathExists=/var/lib/ju-serverschutz/ju_schutz.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /var/lib/ju-serverschutz/ju_schutz.nft
+# die Sperrliste (nur der Inhalt der Mengen); fehlt oder scheitert sie, gelten die Regeln trotzdem
+ExecStart=-/usr/sbin/nft -f /var/lib/ju-serverschutz/ju_mengen.nft
+ExecStop=-/usr/sbin/nft delete table inet ju_schutz
+
+[Install]
+WantedBy=multi-user.target

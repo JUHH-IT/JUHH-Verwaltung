@@ -1,0 +1,16 @@
+# JU Hamburg Finanzen – geplante Rücknahme der Härtung (installiert von server/haerten.sh)
+# Tut nur etwas, solange ein Lauf auf Probe gilt (Marke RUECKNAHME in seinem Ordner). Ausgelöst nach Ablauf der Frist
+# (ju-haertung-ruecknahme.timer in /run) und nach jedem Start des Servers (ju-haertung-neustart.timer).
+# Scheitert die Rücknahme, folgen fünf weitere Versuche im Abstand von einer Minute; danach meldet es der Statusbericht.
+[Unit]
+Description=JU Hamburg Finanzen – Härtung zurücknehmen, die nicht bestätigt wurde
+Documentation=file:/opt/ju-finanzen/current/SERVER.md
+ConditionPathExistsGlob=/var/backups/ju-haertung/*/RUECKNAHME
+StartLimitIntervalSec=15min
+StartLimitBurst=6
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ju-finanzen/current/server/haerten.sh --zurueck --ohne-rueckfrage
+Restart=on-failure
+RestartSec=60

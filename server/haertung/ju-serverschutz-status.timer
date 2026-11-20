@@ -1,0 +1,10 @@
+[Unit]
+Description=JU Hamburg Finanzen – Statusbericht des Serverschutzes alle 15 Minuten
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
