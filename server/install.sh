@@ -133,7 +133,7 @@ mkdir "$RELEASE"    # ohne -p: zwei Läufe in derselben Sekunde teilen sich kein
 trap 'rm -rf -- "$RELEASE"' ERR
 trap 'rm -rf -- "$RELEASE"; exit 130' INT TERM HUP
 # nur Programmdateien – keine Daten, keine Mac-App, kein Git
-tar -C "$SRC" --exclude='./.git' --exclude='./.github' --exclude='./mac' --exclude='./Finanzen starten.cmd' --exclude='*/__pycache__' --exclude='./Daten' --exclude='./Sicherungen' \
+tar -C "$SRC" --exclude='./.git' --exclude='./.github' --exclude='*/__pycache__' --exclude='./Daten' --exclude='./Sicherungen' \
     --exclude='./server/wheels' --exclude='*.sqlite3' --exclude='*.zip' -cf - . | tar -C "$RELEASE" -xf -
 # Installation aus einem Git-Checkout (GitHub): den Stand festhalten, damit er sich mit dem freigegebenen vergleichen lässt
 if [ ! -f "$RELEASE/server/GIT-STAND" ] && [ -d "$SRC/.git" ] && command -v git >/dev/null 2>&1; then

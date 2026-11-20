@@ -96,7 +96,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 JU Hamburg Finanzen – local authenticated pilot server.
 
-Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_start.py, test_static.py, test_uebernahme.py
+Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_static.py, test_uebernahme.py
 
 - `backups_dir()`
 - `save_receipt(store, table, rid, number, filename, suffix, raw)` – Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
@@ -1090,7 +1090,7 @@ Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py
 
 Automatische tägliche Sicherung der Datenbank beim Programmstart.
 
-Tests: test_start.py
+Tests: test_sicherung.py
 
 - `last_daily(backup_dir)` – Datum (JJJJ-MM-TT) der jüngsten automatischen Sicherung oder ''.
 - `daily_backup(db_path, backup_dir, keep=…, today=…)` – Legt höchstens eine Sicherung pro Tag an und behält die letzten ``keep`` Stände.
