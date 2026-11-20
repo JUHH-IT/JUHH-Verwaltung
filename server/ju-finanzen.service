@@ -12,7 +12,9 @@ Group=jufinanzen
 EnvironmentFile=/etc/ju-finanzen/ju-finanzen.env
 Environment="LANG=C.UTF-8" "TZ=Europe/Berlin" "PYTHONUNBUFFERED=1" "PYTHONDONTWRITEBYTECODE=1" "HOME=/var/lib/ju-finanzen"
 WorkingDirectory=/var/lib/ju-finanzen
-ExecStart=/opt/ju-finanzen/current/venv/bin/python /opt/ju-finanzen/current/app.py
+# --modus server: 0.42 kennt nichts anderes; nach einem Zurückschalten auf 0.41 oder älter hängt der Serverbetrieb so
+# nicht an der Zeile JU_FINANZEN_MODUS in der Einstellungsdatei
+ExecStart=/opt/ju-finanzen/current/venv/bin/python /opt/ju-finanzen/current/app.py --modus server
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
