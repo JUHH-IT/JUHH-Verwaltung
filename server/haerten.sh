@@ -828,7 +828,7 @@ net.core.bpf_jit_harden|2|BPF-Übersetzer härten|mind
 kernel.randomize_va_space|2|zufällige Speicheradressen
 fs.protected_hardlinks|1|Verweis-Tricks in /tmp
 fs.protected_symlinks|1|Verweis-Tricks in /tmp
-fs.protected_fifos|2|untergeschobene Dateien in /tmp|mind
+fs.protected_fifos|1|untergeschobene Dateien in /tmp (Ubuntu stellt beim Start selbst 1 ein)|mind
 fs.protected_regular|2|untergeschobene Dateien in /tmp|mind
 fs.suid_dumpable|0|keine Speicherabzüge von Programmen mit erhöhten Rechten
 dev.tty.ldisc_autoload|0|keine Terminal-Module auf Zuruf laden'
