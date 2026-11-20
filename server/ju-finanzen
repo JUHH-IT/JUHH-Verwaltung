@@ -4,7 +4,7 @@
 #   sudo ju-finanzen benutzer               Benutzer mit Rollen anzeigen
 #   sudo ju-finanzen rolle "Name" Rolle     Notzugang: Rolle vergeben (--entfernen nimmt sie)
 #   sudo ju-finanzen notfall-aus            Notfall- und Wartungsmodus beenden (Notzugang)
-#   sudo ju-finanzen uebernehmen DATEI      Daten aus der Mac-App übernehmen (stoppt und startet den Dienst)
+#   sudo ju-finanzen uebernehmen DATEI      Daten aus einer Sicherung übernehmen (stoppt und startet den Dienst)
 #   sudo ju-finanzen sicherung              Sicherung jetzt anlegen
 #   sudo ju-finanzen pruefen                Datenbank prüfen (nur Anzahlen)
 #   sudo ju-finanzen aktualisieren [Version] [--pruefen]   neue freigegebene Version aus dem Git-Repository installieren

@@ -190,7 +190,7 @@ if __name__ == '__main__':
     path = Path(sys.argv[1])
     if not path.is_file() or path.read_bytes()[:16] != b'SQLite format 3\x00':
         sys.exit(f'{path}: keine vorhandene SQLite-Datenbank.')
-    if path.parent.name == 'Daten' or (path.parent / '.steuerung').exists():
+    if path.parent.name == 'Daten':
         sys.exit('Nur auf einer Kopie ausführen, nicht auf der Datenbank im Ordner Daten.')
     import sqlite3
     probe = sqlite3.connect(path)

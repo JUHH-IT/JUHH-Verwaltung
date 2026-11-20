@@ -14,7 +14,7 @@ from core import Store
 try:
     import msoffcrypto   # noqa: F401
     from msoffcrypto.format.ooxml import OOXMLFile
-except ImportError:      # z. B. Python 3.10 der Mac-VM: Paket erst ab 3.11
+except ImportError:      # z. B. Python 3.10: Paket erst ab 3.11
     OOXMLFile = None
 
 BASE = dict(number='M1', first_name='Erika', last_name='Muster', street='Musterweg 1', zip='20095', city='Hamburg',

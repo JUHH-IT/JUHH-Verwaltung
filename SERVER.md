@@ -1,6 +1,6 @@
 # JU Hamburg Finanzen auf dem eigenen Server (Ubuntu 24.04 + Tailscale)
 
-Ab Version 0.23 läuft das Programm auch als Dienst auf einem Ubuntu-Server. Aufgerufen wird es im Browser
+Das Programm läuft als Dienst auf einem Ubuntu-Server (seit 0.23; die Mac-App gab es bis 0.41, seit 0.42 nur noch den Server). Aufgerufen wird es im Browser
 (Laptop, Tablet, Handy), angemeldet wird mit Benutzername und Passwort. Erreichbar ist es **nur im eigenen
 Tailnet**, nie direkt aus dem Internet.
 
@@ -9,9 +9,6 @@ Browser (Gerät im Tailnet) ──HTTPS──▶ Tailscale Serve (https://<serve
                                          └──▶ 127.0.0.1:8769  Dienst „ju-finanzen“ (Benutzer jufinanzen)
                                                  └──▶ /var/lib/ju-finanzen  (Daten, Sicherungen)
 ```
-
-Die Mac-App funktioniert unverändert weiter. Nach dem Umzug aber **nur noch auf dem Server buchen**, sonst
-entstehen zwei Datenstände.
 
 ## 1. Server vorbereiten (einmalig)
 
@@ -58,13 +55,13 @@ Es gibt zwei Wege. Beide führen zur selben Installation; die Daten liegen in be
 
 | | Weg A – Paket | Weg B – direkt aus GitHub (ab 0.33) |
 | --- | --- | --- |
-| Quelle | Datei `ju-finanzen-<Version>-server.tar.gz` vom Mac | privates Git-Repository, freigegebene Version (Tag `v<Version>`) |
+| Quelle | Datei `ju-finanzen-<Version>-server.tar.gz` (`server/paket-bauen.sh`) | privates Git-Repository, freigegebene Version (Tag `v<Version>`) |
 | Server braucht Internet | nein (Python-Pakete liegen im Paket) | ja: `github.com` und `pypi.org`/`files.pythonhosted.org` (Prüfsummen) |
 | Update | neues Paket kopieren, `install.sh` aufrufen | `sudo ju-finanzen aktualisieren` |
 
 ### Weg A – aus dem Paket
 
-Das Paket `ju-finanzen-0.23-server.tar.gz` auf den Server kopieren, z. B. vom Mac:
+Das Paket `ju-finanzen-0.23-server.tar.gz` auf den Server kopieren, z. B. vom eigenen Rechner:
 `scp ju-finanzen-0.23-server.tar.gz <benutzer>@srv1:` (Tailscale-Name des Servers).
 Die Datei `ju-finanzen-0.23-server.tar.gz.sha256` mitkopieren und vor dem Entpacken die Prüfsumme kontrollieren:
 
@@ -121,9 +118,9 @@ zufällig genauso heißt. Der Ordner
 `/opt/ju-finanzen/quelle` gehört root und wird nicht von Hand geändert. Welcher Stand läuft, zeigt
 `sudo ju-finanzen status` (Programmversion und Git-Stand zum Vergleich mit GitHub).
 
-## 3. Daten vom Mac übernehmen
+## 3. Daten aus einer Sicherung übernehmen
 
-1. In der Mac-App: **Stammdaten → Sicherung → Sicherung herunterladen**. Es entsteht eine ZIP-Datei mit
+1. Im Programm: **Einstellungen → Sicherung → Sicherung herunterladen**. Es entsteht eine ZIP-Datei mit
    Datenbank, Belegen und importierten Kontoauszügen.
 2. Die ZIP-Datei auf den Server kopieren: `scp JU-Sicherung-*.zip <benutzer>@ju-finanzen:`
 3. Auf dem Server:
@@ -140,7 +137,7 @@ auch dann wird vorher alles gesichert. Danach die ZIP-Datei vom Server löschen:
 ## 4. Passwort setzen
 
 ```bash
-sudo ju-finanzen benutzer                        # zeigt den Benutzernamen aus der Mac-App, z. B. Lennert-Gust
+sudo ju-finanzen benutzer                        # zeigt die übernommenen Benutzernamen, z. B. Lennert-Gust
 sudo ju-finanzen passwort "Lennert-Gust"         # fragt zweimal, mindestens 12 Zeichen
 ```
 
@@ -579,7 +576,7 @@ Sperrliste, Schutztabelle, Kern-Einstellungen und Updates gelten dann unverände
   - vor jeder neuen Programmversion;
   - vor Excel- und Mitgliederimporten;
   - Belege werden zusätzlich gespiegelt.
-- **Zusätzlich außerhalb des Servers:** regelmäßig (z. B. monatlich) in **Stammdaten → Sicherung** die
+- **Zusätzlich außerhalb des Servers:** regelmäßig (z. B. monatlich) in **Einstellungen → Sicherung** die
   ZIP-Datei herunterladen. Wenn möglich, auch die Snapshot- bzw. Backup-Funktion des VM-Anbieters einschalten.
 - Sicherung sofort anlegen: `sudo ju-finanzen sicherung`
 - Zurückholen:
@@ -734,5 +731,5 @@ Die Verbindung ist dann innerhalb von Tailscale verschlüsselt, der Browser zeig
   3. Die Prüfsummen mit `pip hash` neu eintragen.
   4. Alle Tests mit Python 3.12 laufen lassen.
 - Start im Serverbetrieb zum Testen:
-  `python3 app.py --modus server --data /tmp/ju/Daten --adresse http://127.0.0.1:8769 --no-browser`;
+  `python3 app.py --data /tmp/ju/Daten --adresse http://127.0.0.1:8769`;
   Passwort setzen mit `python3 verwaltung.py --data /tmp/ju/Daten passwort "Test"`.

@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.41'
+VERSION='0.42'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -191,9 +191,7 @@ def keep_original(preview,raw):
     (DATA/'Importe'/(preview['hash']+(suffix if suffix in IMPORT_SUFFIXES else '.csv'))).write_bytes(raw)
 
 class LocalServer(ThreadingHTTPServer):
-    # Windows: SO_REUSEADDR erlaubt dort mehrere Listener auf einem Port, daher nur auf macOS/Linux
-    # (verhindert dort „Port belegt“ direkt nach dem Beenden).
-    allow_reuse_address = os.name != 'nt'
+    allow_reuse_address = True   # verhindert „Port belegt“ direkt nach dem Beenden (unter Linux sicher, anders als unter Windows)
     daemon_threads = True
     MAX_CONNECTIONS = 48   # gleichzeitige Verbindungen; weitere werden sofort geschlossen (Schutz vor Überlastung)
     def __init__(self,*args,**kwargs):

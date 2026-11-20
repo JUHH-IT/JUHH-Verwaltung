@@ -10,7 +10,7 @@ import { accountField, bindAccountPickers } from '../account-picker.js';
 import { addressState, addressSummary, addressCredit, loadAddressData, loadedText } from '../adressdaten.js';
 
 const TABS = [['schalter', 'Schalter'], ['verein', 'Verein & Bank'], ['beitraege', 'Beiträge'], ['gliederung', 'Gliederung'], ['versand', 'E-Mail-Versand'], ['vorlagen', 'Vorlagen'], ['sicherung', 'Sicherung']];
-// ohne das Recht „Einstellungen“ bleibt im Serverbetrieb nur die eigene Anmeldung (Passwort ändern)
+// ohne das Recht „Einstellungen“ bleibt nur die eigene Anmeldung (Passwort ändern)
 const tabs = () => (can('einstellungen') ? [...TABS, ['zugang', 'Anmeldung']] : [['zugang', 'Anmeldung']]);
 const PLACEHOLDERS = [['vorname', 'Vorname'], ['name', 'Name'], ['nummer', 'Rechnungsnummer'], ['betrag', 'Betrag'], ['faellig', 'Fällig am'],
   ['datum', 'Rechnungsdatum'], ['jahr', 'Beitragsjahr'], ['leistung', 'Leistungen'], ['mitgliedsnummer', 'Mitgliedsnummer'], ['iban', 'IBAN'], ['absender', 'Absendername'],

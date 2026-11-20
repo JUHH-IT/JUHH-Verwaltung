@@ -1,9 +1,9 @@
 # JU Hamburg Finanzen – Anleitung (Version 0.37)
 
-## Auf dem Server (Browser, ab 0.23)
+## Auf dem Server (Browser)
 
-Das Programm kann auf einem eigenen Ubuntu-Server laufen. Er ist nur über Tailscale erreichbar, Einrichtung und
-Verwaltung stehen in `SERVER.md`.
+Das Programm läuft auf einem eigenen Ubuntu-Server (die Mac-App gab es bis 0.41). Er ist nur über Tailscale erreichbar,
+Einrichtung und Verwaltung stehen in `SERVER.md`.
 
 - **Aufrufen:** die Adresse des Servers im Browser öffnen, z. B. `https://ju-finanzen.<tailnet>.ts.net`. Das geht auf
   Laptop, Tablet oder Handy, sofern das Gerät in Tailscale angemeldet ist. Auf dem Handy über „Zum Home-Bildschirm“ wie
@@ -69,7 +69,6 @@ Verwaltung stehen in `SERVER.md`.
   - Mindestens eine aktive Person muss „Benutzer ändern“ und ein eigenes Passwort behalten (der Notzugang).
   - Unten auf der Seite steht, wer wem welche Rolle gegeben und welche Rechte geändert hat.
   - Wer bisher angemeldet war, behält alle Rechte. Notzugang auf dem Server: `sudo ju-finanzen rolle "Name" Administrator`.
-  - In der Mac-App gibt es weiter nur eine Person mit allen Rechten.
 - **Sicherheit (ab 0.35, nur Server):** Unter **Verwaltung → Sicherheit**.
   - **Lagebild:** Notfall/Wartung, Fehlanmeldungen, verweigerte Zugriffe, Sitzungen, gesperrte und ungenutzte Konten
     (über 90 Tage ohne Anmeldung), Konten mit Verwaltungsrechten, letzte Sicherung, Dateiprüfung. Ab 0.39 dazu
@@ -123,7 +122,7 @@ Verwaltung stehen in `SERVER.md`.
     seine eigene Härtung ablegt (Firewall des Betriebssystems, Sperrlisten, Updates). Das Programm zeigt ihn nur an;
     fehlt er oder ist er älter als 60 Minuten, steht dort „Kein aktueller Bericht vom Server“.
   - Anfangsrechte: Administrator ändern; Schatzmeister, Landesgeschäftsführer, Landesvorsitzender lesen.
-- **Bedienung wie am Mac.** Unterschiede: Es gibt kein „Programm beenden“, der Server läuft ständig. Esc schließt Dialoge.
+- **Bedienung:** Der Server läuft ständig. **Esc** schließt die oberste Ebene (erst eine Liste wie die Kontenauswahl, dann den Dialog).
 - **Bis 1100 px Breite** (Tablet, Handy) öffnet ☰ oben links die Seitenleiste. Dialoge füllen auf dem Handy den
   ganzen Bildschirm.
 - **Downloads** (PDF, CSV, ZIP) speichert bzw. öffnet der Browser.
@@ -131,31 +130,7 @@ Verwaltung stehen in `SERVER.md`.
   ZIP-Datei herunterladen und getrennt vom Server aufbewahren.
 - **Neue Programmversion (ab 0.33):** Der Server kann freigegebene Versionen direkt aus dem privaten GitHub-Repository
   holen: `sudo ju-finanzen aktualisieren` (`SERVER.md`, „Weg B“). Bei GitHub liegt nur das Programm – die Daten bleiben
-  auf dem Server bzw. dem Mac und kommen nur als Sicherungsdatei von einem zum anderen.
-
-## Starten und beenden (Mac)
-
-Das Programm liegt unter **Programme → JU Hamburg Finanzen**:
-
-```
-JU Hamburg Finanzen/
-├── JU Hamburg Finanzen.app   ← Doppelklick startet das Programm in einem eigenen Fenster
-├── Daten/                    ← Datenbank und importierte Kontoauszüge (nicht von Hand ändern)
-├── Sicherungen/              ← automatische Tagessicherungen, ältere Programmversionen, Archiv
-├── Unterlagen/               ← Satzung, Finanzordnung, Master-Excel
-└── Quellcode/                ← Entwicklung (Git)
-```
-
-- **Start:** App doppelklicken. Das Programm öffnet sich in einem eigenen Fenster mit Menüleiste wie jede Mac-App (kein Browser nötig). Ein erneuter Doppelklick holt das Fenster nach vorn.
-- **Im Fenster:** Rechnungen, Belege und Berichte (PDF) öffnen sich im Standard-PDF-Programm des Mac (z. B. Vorschau oder Adobe Acrobat) – zum Aufbewahren dort **Sichern unter** bzw. **Exportieren als PDF** wählen (die geöffnete Datei wird beim nächsten Start der App gelöscht). Dateien zum Aufbewahren – Prüferpaket, Lastschriftdatei, CSV, Sicherung – fragt der Dialog „Sichern unter …“ ab (Vorschlag: Downloads). Drucken mit ⌘P, Schrift größer/kleiner mit ⌘+ / ⌘−, Originalgröße mit ⌘0. Links ins Internet öffnet der Standardbrowser.
-- **Dialoge schließen:** **Esc** oder **⌘W** schließt die oberste Ebene (erst eine Liste wie die Kontenauswahl, dann den Dialog). ⌘W beendet nie das Programm – dafür ⌘Q, **Programm beenden** oder der rote Knopf des Fensters.
-- **Lieber im Browser – oder Störung im Fenster?** Die App beenden und mit gedrückter Wahltaste (⌥) doppelklicken – dann öffnet sich das Programm wie bisher im Browser unter `http://127.0.0.1:8769`. Kann das Fenster gar nicht geöffnet werden, nimmt die App den Browser von selbst. Hinweise auf Fehler stehen in `Daten/programm.log`.
-- **Dock:** App ins Dock ziehen (legt nur eine Verknüpfung an). Die App selbst nicht aus dem Ordner verschieben – sie findet ihre Daten im Ordner daneben.
-- **Beenden:** roter Knopf des Fensters, ⌘Q oder **Programm beenden** unten in der Seitenleiste – alles ist gespeichert. Läuft gerade ein E-Mail-Versand, lehnt **Programm beenden** ab; Fenster schließen und ⌘Q fragen nach. Dann läuft der Versand unsichtbar im Hintergrund zu Ende, und das Programm bleibt im Hintergrund, bis die App erneut geöffnet und geschlossen wird. Im Browser beendet nur **Programm beenden** das Programm, nicht das Schließen des Tabs.
-- **Anmelden:** mit Touch ID, Apple Watch oder dem Passwort deines Mac – ein eigenes Passwort des Programms gibt es nicht (Face ID gibt es am Mac nicht). Die Abfrage erscheint beim Öffnen der App; im Programmfenster nach **Abmelden**, Abbruch oder Ablauf der Sitzung (8 Stunden) über die Schaltfläche **Anmelden**. Auch für die Anzeige im Browser (⌥) fragt die App vorher; dort nach dem Abmelden die App erneut öffnen. Ohne Touch ID bzw. Mac-Passwort ist keine Anmeldung möglich – auch nicht im Browser. Beim ersten Start wird der Name deines Mac-Benutzers als Name im Änderungsprotokoll übernommen; ein vorhandenes Konto behält seinen Namen.
-- Die App bringt ihre eigene Python-Laufzeit mit; es muss nichts installiert werden. Sie läuft nur auf diesem Rechner und überträgt keine Daten.
-- Bei Problemen zeigt die App einen Hinweis; Details stehen in `Daten/programm.log`.
-- Ältere Programmversionen liegen unter `Sicherungen/Programmversionen` mit der Endung `.app-archiv`, damit sie nicht versehentlich gestartet werden. Zum Starten einer alten Version die Endung wieder in `.app` ändern (nur mit beendetem Programm).
+  auf dem Server.
 
 ## Aufbau der Oberfläche
 
@@ -190,11 +165,10 @@ Tastatur im Buchungsplatz: **J/K** (oder Pfeiltasten) nächster/vorheriger Umsat
 
 ## Sicherung
 
-- Beim Start legt das Programm einmal täglich eine Sicherung unter `Sicherungen/Automatisch` an (die letzten 30 Tage bleiben erhalten).
+- Der Server legt einmal täglich eine Sicherung unter `Sicherungen/Automatisch` an (die letzten 30 Tage bleiben erhalten).
 - Vor dem ersten Start einer neuen Programmversion sichert das Programm die Datenbank zusätzlich unter `Sicherungen/Vor Änderungen`; schlägt das fehl, startet es nicht.
 - Zusätzlich über **Einstellungen → Sicherung → Sicherung herunterladen** eine ZIP-Datei erstellen und getrennt aufbewahren (z. B. USB-Stick).
-- Wiederherstellung: Programm beenden, Ordner `Daten` umbenennen, `finanzen.sqlite3` aus der Sicherung in einen neuen Ordner `Daten` legen, App starten und mit Touch ID bzw. Mac-Passwort anmelden.
-- Die Datenbank ist nicht verschlüsselt. Der Schutz hängt am Mac-Benutzerkonto: Der Mac sollte per FileVault verschlüsselt sein und sich schnell sperren.
+- Wiederherstellung: auf dem Server mit `sudo ju-finanzen uebernehmen <ZIP-Datei> --ersetzen` (`SERVER.md`); die bisherigen Daten werden vorher zur Seite gelegt.
 
 ## Kontoauszüge importieren
 
@@ -359,9 +333,9 @@ Es gibt zwei Arten, beide mit **automatisch fortlaufenden Nummern** je Kalenderj
 
 **PDF:** A4 im Briefformat mit Logo, Anschriftfeld, Rechnungsdaten, Positionen, Zahlungsangaben und **GiroCode** (QR-Code zum Überweisen in der Banking-App), Fußzeile mit Bankverbindung. Vorschauen tragen das Wasserzeichen „VORSCHAU“, stornierte Rechnungen „STORNIERT“. Mehrere ausgewählte Rechnungen lassen sich als ein PDF zum **Drucken** öffnen (z. B. für Mitglieder ohne E-Mail).
 
-**E-Mail-Versand:** In der Rechnungsliste Rechnungen auswählen und **Per E-Mail senden** oder **E-Mail-Versand** öffnen. Je Rechnung gibt es eine Vorschau (Augen-Symbol); **Testmail an mich** schickt die E-Mail zu einer Rechnung nur an die eigene Absenderadresse. Nach der Bestätigung läuft der Versand im Hintergrund mit Fortschrittsanzeige; er kann abgebrochen werden. Jede E-Mail enthält einen persönlichen Text, einen Kasten mit Rechnungsnummer, Betrag, Fälligkeit und IBAN und die Rechnung als PDF. Jede versendete oder fehlgeschlagene E-Mail wird protokolliert (Spalte „Versand“); bereits versendete Rechnungen werden nur auf ausdrücklichen Wunsch erneut verschickt. Empfänger ohne E-Mail-Adresse werden übersprungen und sind zum Drucken markiert; bezahlte, beitragsfreie und stornierte Rechnungen werden nie per E-Mail verschickt. Nach einem Anmeldefehler oder zwei Verbindungsfehlern hintereinander stoppt der Versand; eine E-Mail wird nie automatisch ein zweites Mal übertragen. Bricht die Verbindung genau während der Übertragung ab, steht die Rechnung auf **„Zustellung unklar“** – dann im Postfach (Kopie) nachsehen und nur bei Bedarf bewusst erneut senden. Während ein Versand läuft, lässt sich das Programm nicht über **Programm beenden** beenden (Fenster schließen fragt nach; der Versand läuft dann im Hintergrund weiter), und ein Update wartet, bis er abgeschlossen ist. E-Mail-Adressen mit Umlauten werden nicht unterstützt. PDFs nutzen die eingebettete Schrift Liberation Sans – Namen mit Sonderzeichen (z. B. Ş, ı, Ł, ő) erscheinen vollständig. Hinweis: Versendete E-Mails landen nicht automatisch im Ordner „Gesendet“ des Postfachs – dafür die eigene Adresse als Kopie (Bcc) eintragen.
+**E-Mail-Versand:** In der Rechnungsliste Rechnungen auswählen und **Per E-Mail senden** oder **E-Mail-Versand** öffnen. Je Rechnung gibt es eine Vorschau (Augen-Symbol); **Testmail an mich** schickt die E-Mail zu einer Rechnung nur an die eigene Absenderadresse. Nach der Bestätigung läuft der Versand im Hintergrund mit Fortschrittsanzeige; er kann abgebrochen werden. Jede E-Mail enthält einen persönlichen Text, einen Kasten mit Rechnungsnummer, Betrag, Fälligkeit und IBAN und die Rechnung als PDF. Jede versendete oder fehlgeschlagene E-Mail wird protokolliert (Spalte „Versand“); bereits versendete Rechnungen werden nur auf ausdrücklichen Wunsch erneut verschickt. Empfänger ohne E-Mail-Adresse werden übersprungen und sind zum Drucken markiert; bezahlte, beitragsfreie und stornierte Rechnungen werden nie per E-Mail verschickt. Nach einem Anmeldefehler oder zwei Verbindungsfehlern hintereinander stoppt der Versand; eine E-Mail wird nie automatisch ein zweites Mal übertragen. Bricht die Verbindung genau während der Übertragung ab, steht die Rechnung auf **„Zustellung unklar“** – dann im Postfach (Kopie) nachsehen und nur bei Bedarf bewusst erneut senden. Wird der Server während eines Versands neu gestartet (z. B. für ein Update), hält er den Versand nach der aktuellen E-Mail an; das steht im Protokoll. E-Mail-Adressen mit Umlauten werden nicht unterstützt. PDFs nutzen die eingebettete Schrift Liberation Sans – Namen mit Sonderzeichen (z. B. Ş, ı, Ł, ő) erscheinen vollständig. Hinweis: Versendete E-Mails landen nicht automatisch im Ordner „Gesendet“ des Postfachs – dafür die eigene Adresse als Kopie (Bcc) eintragen.
 
-**Strato-Postfach einrichten:** Einstellungen → E-Mail-Versand: Server `smtp.strato.de`, Verschlüsselung SSL/TLS, Port 465 (alternativ STARTTLS mit Port 587), Benutzername = vollständige E-Mail-Adresse, Absenderadresse = dieselbe Adresse. Passwort eingeben und „Im Schlüsselbund dieses Macs speichern“ anhaken. Das Passwort liegt dann im macOS-Schlüsselbund, nie in der Datenbank oder in Sicherungen. Fragt macOS beim ersten Versand nach einer Version des Programms nach Zugriff auf den Schlüsselbund, „Immer erlauben“ wählen. Danach „Verbindung prüfen“ und „Testmail an mich senden“.
+**Strato-Postfach einrichten:** Einstellungen → E-Mail-Versand: Server `smtp.strato.de`, Verschlüsselung SSL/TLS, Port 465 (alternativ STARTTLS mit Port 587), Benutzername = vollständige E-Mail-Adresse, Absenderadresse = dieselbe Adresse. Passwort eingeben und „Auf dem Server speichern“ anhaken. Das Passwort liegt dann in einer nur für das Programm lesbaren Datei auf dem Server, nie in der Datenbank oder in Sicherungen. Danach „Verbindung prüfen“ und „Testmail an mich senden“.
 
 Rechnungen sind nach Festschreibung unveränderlich. Storno nur ohne Zahlungszuordnung; stornierte Rechnungen bleiben mit Nummer sichtbar. Eine geänderte E-Mail-Adresse am Mitglied gilt auch für noch nicht versendete Rechnungen.
 
@@ -462,8 +436,8 @@ Reiter **Spenden** unter Haushalt & Budgets:
 
 ## Monatsbericht und Kassenprüfer-Paket
 
-- **Monatsbericht** (Start → „Monatsbericht“ → Monat wählen → „PDF öffnen“): PDF für den Landesvorstand zum Monatsende (im laufenden Monat: heute) – Saldo der gebuchten Bankbewegungen (ein Anfangsbestand nur, wenn er gebucht ist), Umsätze im Parkkonto und nicht zugeordnete Umsätze, Ein- und Ausgänge des Monats mit den größten Ausgaben nach Haushaltstitel, Haushalt Plan/Ist bis zum Stichtag mit 10-%-Hinweis, offene Forderungen und Verbindlichkeiten (aktueller Stand), Kreisverbände und Schüler Union mit Plan, Übertrag, FFK, Beitragsanteil, Zugängen, Ausgaben, Stand am Stichtag und nächstem Verfall, Spenden und die anstehenden Aufgaben. Im Programmfenster öffnet sich das PDF in Vorschau. Nur so aktuell wie der zuletzt importierte Kontoauszug.
-- **Kassenprüfer-Paket** (Start → „Kassenprüfer-Paket JJJJ“, im Programmfenster fragt danach „Sichern unter …“ nach dem Ablageort – das Erstellen kann einige Sekunden dauern): ZIP für die Rechnungsprüfer (Satzung § 19 Abs. 2) mit Übersicht und automatischen Prüfhinweisen (fehlende Belege, ohne Freigabe bezahlt, nicht protokollierte Quartalsprüfung, offene Umsätze, Barspenden, Budgetabschluss), Buchungsjournal, Haushalt-PDF, Kontoumsätze mit den Original-Kontoauszugsdateien, Ausgangsrechnungen (Liste und alle PDFs), Eingangsrechnungen mit Belegen, Freigaben, Prüfprotokollen, E-Mail-Protokoll, Liste der Lastschriften und Mandate (IBAN gekürzt, keine hochladbare Lastschriftdatei), KV-Budgets, Spenden, Barspenden und Änderungsprotokoll. Das Paket wird Datei für Datei auf die Platte geschrieben; bei vielen Rechnungen ist das Sammel-PDF in Teile zu je 200 Rechnungen aufgeteilt. CSV-Dateien öffnen sich in Excel (Semikolon, Euro mit Komma). Das Paket enthält personenbezogene Daten – nur an die Rechnungsprüfer weitergeben; jedes erstellte Paket steht im Änderungsprotokoll.
+- **Monatsbericht** (Start → „Monatsbericht“ → Monat wählen → „PDF öffnen“): PDF für den Landesvorstand zum Monatsende (im laufenden Monat: heute) – Saldo der gebuchten Bankbewegungen (ein Anfangsbestand nur, wenn er gebucht ist), Umsätze im Parkkonto und nicht zugeordnete Umsätze, Ein- und Ausgänge des Monats mit den größten Ausgaben nach Haushaltstitel, Haushalt Plan/Ist bis zum Stichtag mit 10-%-Hinweis, offene Forderungen und Verbindlichkeiten (aktueller Stand), Kreisverbände und Schüler Union mit Plan, Übertrag, FFK, Beitragsanteil, Zugängen, Ausgaben, Stand am Stichtag und nächstem Verfall, Spenden und die anstehenden Aufgaben. Nur so aktuell wie der zuletzt importierte Kontoauszug.
+- **Kassenprüfer-Paket** (Start → „Kassenprüfer-Paket JJJJ“ – das Erstellen kann einige Sekunden dauern): ZIP für die Rechnungsprüfer (Satzung § 19 Abs. 2) mit Übersicht und automatischen Prüfhinweisen (fehlende Belege, ohne Freigabe bezahlt, nicht protokollierte Quartalsprüfung, offene Umsätze, Barspenden, Budgetabschluss), Buchungsjournal, Haushalt-PDF, Kontoumsätze mit den Original-Kontoauszugsdateien, Ausgangsrechnungen (Liste und alle PDFs), Eingangsrechnungen mit Belegen, Freigaben, Prüfprotokollen, E-Mail-Protokoll, Liste der Lastschriften und Mandate (IBAN gekürzt, keine hochladbare Lastschriftdatei), KV-Budgets, Spenden, Barspenden und Änderungsprotokoll. Das Paket wird Datei für Datei auf die Platte geschrieben; bei vielen Rechnungen ist das Sammel-PDF in Teile zu je 200 Rechnungen aufgeteilt. CSV-Dateien öffnen sich in Excel (Semikolon, Euro mit Komma). Das Paket enthält personenbezogene Daten – nur an die Rechnungsprüfer weitergeben; jedes erstellte Paket steht im Änderungsprotokoll.
 - Ist-Werte beruhen auf Ergebnisbuchungen einschließlich offener Rechnungen; CDU-Verrechnung, Rücklagen und Abschlussbuchungen fehlen noch – kein fertiger Jahresabschluss.
 
 ## Noch nicht enthalten
@@ -476,7 +450,3 @@ Reiter **Spenden** unter Haushalt & Budgets:
 - Mahngebühren und Erinnerungsbriefe per Post, Ablage versendeter E-Mails im Ordner „Gesendet“, eigene Rechnungen als E-Rechnung ausstellen, Mehrbenutzerrollen.
 
 Vor echtem Einsatz sind fachliche Abnahme durch die zuständige Buchhaltung und eine Prüfung der Ergebnisse nötig.
-
-## Windows
-
-`Finanzen starten.cmd` startet das Programm mit einer installierten Python-Version (`py -3 -m pip install -r requirements.txt` einmalig). Daten liegen dann im Ordner `Daten` neben dem Programm.

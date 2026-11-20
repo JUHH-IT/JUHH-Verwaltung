@@ -821,7 +821,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check(await page.locator('main tbody tr').count() >= 1, 'Filter „mit Rückstand“');
   await page.selectOption('#member-state', '');
 
-  // 0.37: Mitgliederstatus – Austritt eintragen und zurücknehmen, Seite Wahlberechtigung (auch im Mac-Betrieb)
+  // 0.37: Mitgliederstatus – Austritt eintragen und zurücknehmen, Seite Wahlberechtigung
   await page.locator('main [data-member]').first().click();
   await page.waitForSelector('#modal [data-leave]');
   check(/aktiv|wahlberechtigt/.test(await page.locator('#modal [data-status]').textContent()), 'Geöffnetes Mitglied zeigt den Status');
