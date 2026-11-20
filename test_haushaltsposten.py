@@ -1,6 +1,4 @@
 """Haushaltsposten: Titel ergibt sich aus dem Konto; Kontenbezeichnungen wie im Haushalt (Entscheidung 29.10.2026)."""
-import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import sqlite3
 import tempfile
 import unittest

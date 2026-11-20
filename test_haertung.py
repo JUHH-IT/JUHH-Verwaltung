@@ -947,6 +947,15 @@ class HaertenTests(unittest.TestCase):
 
     # ---------------------------------------------------------------- einzelne Maßnahmen
 
+    def test_zweiter_lauf_in_derselben_sekunde_wartet_auf_die_naechste(self):
+        ordner = self.s.w / 'var/backups/ju-haertung'
+        jetzt = int(time.time())
+        for sekunde in (jetzt, jetzt + 1):                                               # diese Ordnernamen sind schon vergeben
+            (ordner / datetime.fromtimestamp(sekunde, ZoneInfo('Europe/Berlin')).strftime('%Y%m%d-%H%M%S')).mkdir(parents=True)
+        r = self.s.lauf('--ohne-rueckfrage')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(list(ordner.glob('*/MANIFEST'))), 1)                        # eigener Ordner, nichts in den fremden
+
     def test_fehler_in_einer_massnahme_nimmt_nur_sie_zurueck(self):
         self.s.zustand('scheitert-sshd', '-t')
         r = self.s.lauf('--ohne-rueckfrage')

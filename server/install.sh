@@ -132,8 +132,8 @@ mkdir "$RELEASE"    # ohne -p: zwei Läufe in derselben Sekunde teilen sich kein
 # scheitert ein Schritt bis zum Selbsttest (z. B. PyPI nicht erreichbar, Sitzung abgerissen), bleibt kein halber Ordner zurück
 trap 'rm -rf -- "$RELEASE"' ERR
 trap 'rm -rf -- "$RELEASE"; exit 130' INT TERM HUP
-# nur Programmdateien – keine Daten, keine Mac-App, kein Git
-tar -C "$SRC" --exclude='./.git' --exclude='./.github' --exclude='./mac' --exclude='./Finanzen starten.cmd' --exclude='*/__pycache__' --exclude='./Daten' --exclude='./Sicherungen' \
+# nur Programmdateien – keine Daten, kein Git
+tar -C "$SRC" --exclude='./.git' --exclude='./.github' --exclude='*/__pycache__' --exclude='./Daten' --exclude='./Sicherungen' \
     --exclude='./server/wheels' --exclude='*.sqlite3' --exclude='*.zip' -cf - . | tar -C "$RELEASE" -xf -
 # Installation aus einem Git-Checkout (GitHub): den Stand festhalten, damit er sich mit dem freigegebenen vergleichen lässt
 if [ ! -f "$RELEASE/server/GIT-STAND" ] && [ -d "$SRC/.git" ] && command -v git >/dev/null 2>&1; then
@@ -235,7 +235,7 @@ con = sqlite3.connect(f'file:{sys.argv[1]}?mode=ro', uri=True)
 sys.exit(0 if any(zugang.is_set(r[0]) for r in con.execute('SELECT password FROM users')) else 1)
 PY
   info "Nächste Schritte:"
-  info "  1. Daten vom Mac übernehmen (ZIP aus Stammdaten → Sicherung):  sudo ju-finanzen uebernehmen /pfad/JU-Sicherung.zip"
+  info "  1. Daten aus einer Sicherung übernehmen (ZIP):                 sudo ju-finanzen uebernehmen /pfad/JU-Sicherung.zip"
   info "  2. Passwort setzen:                                             sudo ju-finanzen passwort \"Lennert-Gust\""
 fi
 info "Adresse(n): $(env_value JU_FINANZEN_ADRESSEN | sed 's/^$/noch keine – mit --tailscale oder --adresse festlegen/')"

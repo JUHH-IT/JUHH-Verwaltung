@@ -1,6 +1,5 @@
 """Anmeldung über Keycloak im Programm (ab 0.36) gegen den nachgebildeten Keycloak aus test_keycloak.py – nur erfundene Daten."""
 import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import hashlib
 import http.client
 import io
@@ -507,11 +506,11 @@ class KeycloakAppTests(unittest.TestCase):
                 unittest.mock.patch.dict(os.environ, {'JU_FINANZEN_ANMELDUNG': 'keycloak'}):
             for k in [k for k in os.environ if k.startswith('JU_FINANZEN_KEYCLOAK_')]:
                 del os.environ[k]
-            saved = (app.DATA, app.DB, app.BACKUPS, app.MODE, app.ADDRESSES, app.THROTTLE, app.KEYCLOAK, app.KC_ADMIN)
+            saved = (app.DATA, app.DB, app.BACKUPS, app.ADDRESSES, app.THROTTLE, app.KEYCLOAK, app.KC_ADMIN)
             try:
                 self.assertEqual(app.main(['--modus', 'server', '--adresse', test_server.ADRESSE, '--data', f'{tmp}/D', '--no-browser']), 5)
             finally:
-                app.DATA, app.DB, app.BACKUPS, app.MODE, app.ADDRESSES, app.THROTTLE, app.KEYCLOAK, app.KC_ADMIN = saved
+                app.DATA, app.DB, app.BACKUPS, app.ADDRESSES, app.THROTTLE, app.KEYCLOAK, app.KC_ADMIN = saved
         self.assertIn('nicht eingerichtet', out.getvalue())
 
     def test_verwaltungsbefehl_keycloak_verbinden(self):

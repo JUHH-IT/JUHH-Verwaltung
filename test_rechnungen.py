@@ -1,6 +1,5 @@
 """Rechnungen, Stammdaten und E-Mail-Versand – nur erfundene Testdaten, Versand nur an einen lokalen Testserver."""
 import email
-import os
 import sys
 import tempfile
 import time
@@ -9,7 +8,6 @@ from datetime import date, timedelta
 from email import policy
 from pathlib import Path
 
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'  # Tests berühren nie den echten Schlüsselbund
 sys.path.insert(0, str(Path(__file__).parent / 'tests'))
 
 import geheimnis
@@ -350,10 +348,11 @@ class ReviewFindingTests(MailTests):
         self.assertIn('nicht protokolliert', job['errors'][-1]['error'])
 
 
-class FakeKeyring:
+class FakeAblage:
+    label = 'datei'
+
     def __init__(self):
         self.store, self.reads, self.deleted = {}, 0, 0
-        self.backends = [1]
 
     def get_password(self, service, account):
         self.reads += 1
@@ -367,26 +366,27 @@ class FakeKeyring:
         self.store.pop((service, account), None)
 
 
-class KeychainTests(unittest.TestCase):
+class AblageTests(unittest.TestCase):
+    """Passwort in der Ablage (auf dem Server: Datei aus JU_FINANZEN_GEHEIMNISSE, geprüft in test_server.py)."""
     def setUp(self):
-        self.fake = FakeKeyring()
-        self.original = geheimnis._keyring
-        geheimnis._keyring = lambda: self.fake
+        self.fake = FakeAblage()
+        self.original = geheimnis._ablage
+        geheimnis._ablage = lambda: self.fake
         geheimnis._cache.clear()
 
     def tearDown(self):
-        geheimnis._keyring = self.original
+        geheimnis._ablage = self.original
         geheimnis._cache.clear()
 
-    def test_keychain_read_once(self):
+    def test_read_once(self):
         self.fake.store[(geheimnis.SERVICE, 'k@example.org')] = 'pw'
         for _ in range(5):
-            self.assertEqual(geheimnis.where('k@example.org'), 'schluesselbund')
+            self.assertEqual(geheimnis.where('k@example.org'), 'datei')
         self.assertEqual(geheimnis.load('k@example.org'), 'pw')
         self.assertEqual(self.fake.reads, 1)
 
-    def test_session_only_removes_old_keychain_entry(self):
-        self.assertEqual(geheimnis.save('k@example.org', 'alt'), 'schluesselbund')
+    def test_session_only_removes_old_entry(self):
+        self.assertEqual(geheimnis.save('k@example.org', 'alt'), 'datei')
         self.assertEqual(geheimnis.save('k@example.org', 'neu', remember=False), 'sitzung')
         self.assertNotIn((geheimnis.SERVICE, 'k@example.org'), self.fake.store)
         self.assertEqual((geheimnis.load('k@example.org'), geheimnis.where('k@example.org')), ('neu', 'sitzung'))

@@ -10,7 +10,7 @@
                        Anmeldename in Keycloak (z. B. bei Leerzeichen im Benutzernamen)
   notzugang            Keycloak-Betrieb: Passwort-Anmeldung der Verwaltung (Notzugang) für --minuten N freischalten
                        (Standard 60, höchstens 240); --aus schließt ihn wieder
-  uebernehmen DATEI    Daten aus der Mac-App übernehmen: ZIP aus „Sicherung herunterladen“ oder eine .sqlite3-Datei;
+  uebernehmen DATEI    Daten aus einer Sicherung übernehmen: ZIP aus „Sicherung herunterladen“ oder eine .sqlite3-Datei;
                        nur bei gestopptem Dienst; vorhandene Daten nur mit --ersetzen (werden vorher gesichert)
 
 Ordner aus --data/--backups bzw. JU_FINANZEN_DATEN/JU_FINANZEN_SICHERUNGEN (siehe /etc/ju-finanzen/ju-finanzen.env).
@@ -507,7 +507,7 @@ def main(argv=None):
     p.add_argument('--aus', action='store_true', help='Notzugang sofort schließen')
     sub.add_parser('sicherung', help='Sicherung jetzt anlegen')
     sub.add_parser('pruefen', help='Datenbank prüfen (nur Anzahlen)')
-    p = sub.add_parser('uebernehmen', help='Daten aus der Mac-App übernehmen (ZIP aus „Sicherung herunterladen“)')
+    p = sub.add_parser('uebernehmen', help='Daten aus einer Sicherung übernehmen (ZIP aus „Sicherung herunterladen“)')
     p.add_argument('datei')
     p.add_argument('--ersetzen', action='store_true', help='vorhandene Daten ersetzen (werden vorher gesichert)')
     args = parser.parse_args(argv)

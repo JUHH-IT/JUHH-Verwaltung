@@ -1,6 +1,4 @@
 """Rollen und Rechte im Serverbetrieb (ab 0.34) – nur erfundene Daten."""
-import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import json
 import re
 import tempfile
@@ -255,7 +253,7 @@ class RollenTests(unittest.TestCase):
         source = (ROOT / 'app.py').read_text(encoding='utf-8')
         get_part, post_part = source.split('    def do_POST(self):')
         get_part = get_part.split('    def do_GET(self):')[1]
-        post_part = post_part.split('\ndef new_login_code')[0]
+        post_part = post_part.split('\ndef write_private')[0]
         paths = lambda text: set(re.findall(r"'(/api/[A-Za-z0-9._-]+)'", text))
         get_paths, post_paths = paths(get_part), paths(post_part)
         self.assertGreater(len(get_paths), 60)
@@ -404,16 +402,6 @@ class RollenHttpTests(unittest.TestCase):
         self.assertEqual(self.call('/api/login', {'name': 'Wechsel', 'password': PASSWORT})[0], 401)
         self.assertEqual(self.post(self.chefin, '/api/benutzer', {**P('Wechsel'), 'id': user['id'], 'roles': user['roles'], 'active': True, 'password': PASSWORT + '-neu'})[0], 200)
         self.assertEqual(self.call('/api/login', {'name': 'Wechsel', 'password': PASSWORT + '-neu'})[0], 200)
-
-    def test_management_only_in_server_mode(self):
-        app.MODE = 'mac'
-        try:
-            self.assertEqual(self.get(self.chefin, '/api/benutzer')[0], 404)
-            for path in ('/api/benutzer', '/api/rolle', '/api/rolle-loeschen'):
-                self.assertEqual(self.post(self.chefin, path, {'name': 'Neu', 'password': PASSWORT, 'roles': []})[0], 404, path)
-        finally:
-            app.MODE = 'server'
-        self.assertEqual(self.get(self.chefin, '/api/benutzer')[0], 200)
 
     def test_ending_sessions_and_expiry_end_the_session(self):
         who = self.person('sitzung', 'Landesvorsitzender')

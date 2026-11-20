@@ -26,7 +26,7 @@ jobs:
           # Zielsystem des Servers: Ubuntu 24.04 mit Python 3.12 und genau den Paketen des Servers (Prüfsummen)
           - python: '3.12'
             install: 'pip install --require-hashes --only-binary=:all: -r server/requirements-server.txt'
-          # Python der Mac-App
+          # neuere Python-Version mit den Paketen aus requirements.txt (Entwicklung)
           - python: '3.13'
             install: 'pip install -r requirements.txt'
     steps:
@@ -63,7 +63,7 @@ jobs:
       - run: node tests/html_escape.mjs
 
   browser:
-    name: Browser-Durchläufe (Mac- und Serverbetrieb)
+    name: Browser-Durchläufe (fachliche Abläufe und Serverbetrieb)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:

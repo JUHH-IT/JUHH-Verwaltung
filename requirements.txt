@@ -4,4 +4,3 @@ openpyxl>=3.1,<4
 msoffcrypto-tool>=5.4,<7   # kennwortgeschützte Excel-Dateien (Export der Mitgliederverwaltung), bringt cryptography mit
 certifi>=2024.2.2
 pypdf>=6.1,<7               # Begleitzettel (PDF) zur SEPA-Lastschriftdatei lesen (nur Text)
-keyring>=25.6,<26; sys_platform == "darwin" or sys_platform == "win32"

@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from http.cookies import SimpleCookie
-import json, re, secrets, time, sqlite3, io, csv, base64, zipfile, tempfile, webbrowser, sys, argparse, threading, os, shutil, getpass, signal, traceback, ipaddress, gzip, hashlib, platform
+import json, re, secrets, time, sqlite3, io, csv, base64, zipfile, tempfile, sys, argparse, threading, os, shutil, signal, traceback, ipaddress, gzip, hashlib, platform
 from datetime import date
 from html import escape as html_escape
 from core import Store, money, KVS
@@ -40,15 +40,12 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.41'
+VERSION='0.42'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
 DATA=Path(os.environ.get('JU_FINANZEN_DATEN') or ROOT/'Daten'); DB=DATA/'finanzen.sqlite3'
 BACKUPS=None  # Standard: Sicherungen neben dem Datenordner
-# Betriebsart: 'mac' = Mac-App (Anmeldung über macOS, nur 127.0.0.1) oder 'server' = Ubuntu-Server hinter Tailscale
-# (Anmeldung mit Benutzername und Passwort, Adressen aus ADDRESSES, Dienst über systemd, kein „Programm beenden“).
-MODE='mac'
 ADDRESSES=[]           # Servermodus: Adressen, unter denen die Oberfläche aufgerufen wird, z. B. https://ju-finanzen.beispiel.ts.net
 THROTTLE=zugang.Throttle()   # im Serverbetrieb mit Datei im Datenordner (main)
 # Anmeldung über Keycloak (0.36, JU_FINANZEN_ANMELDUNG=keycloak): Einstellungen und Admin-API; None = Anmeldung mit Passwort
@@ -56,7 +53,6 @@ KEYCLOAK=None; KC_ADMIN=None
 KC_VORGAENGE={}        # begonnene Anmeldungen (state, nonce, PKCE) nur im Arbeitsspeicher; der Browser hat nur eine zufällige Kennung
 KC_MAX_VORGAENGE=200   # alle zusammen; darüber neue Starts ablehnen statt fremde Vorgänge zu verdrängen
 KC_JE_GERAET=5         # je Gerät (Handler.device); verdrängt wird nur innerhalb desselben Geräts
-MAC_PATHS=('/api/stop','/api/login-code','/api/login-device','/api/shutdown')
 NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltung (Benutzer und Rollen).'
 # Serverbetrieb (0.35): kritische Aktionen nur mit frischer Passwortbestätigung (POST /api/bestaetigen, gilt 5 Minuten)
 # Regel (AGENTS.md): alles, was alle Daten ausliefert, löscht, Zugänge/Rechte ändert oder Mail und Bankverbindung umlenken kann
@@ -71,14 +67,12 @@ CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-lis
 CONFIRM_SECONDS=300
 # im Notfall/Wartung auch ohne „Sicherheit ändern“ – bewusst ohne /api/password: ein übernommenes Konto soll die echte Person nicht aussperren
 SPERRE_FREI_POST=('/api/logout','/api/bestaetigen','/api/notfall-an')
-PUBLIC_PATHS=('/api/login','/api/stop','/api/login-code','/api/login-device')   # ohne Sitzung erreichbar
+PUBLIC_PATHS=('/api/login',)   # ohne Sitzung erreichbar
 UPLOAD_PATHS=('/api/members-preview','/api/gliederung-vorschau','/api/sepa-vorschau','/api/sepa-begleitzettel','/api/rpj-import-vorschau','/api/einvoice','/api/bill','/api/kasse-beleg','/api/preview-bank','/api/preview-master','/api/preview-kv-master')
 TAILNET=[ipaddress.ip_network('100.64.0.0/10'),ipaddress.ip_network('fd7a:115c:a1e0::/48')]
 SESSION_HOURS=8        # höchstens so lange gilt eine Anmeldung
 IDLE_MINUTES=120       # Servermodus: Abmeldung nach so langer Untätigkeit
-SESSIONS={}; PREVIEWS={}; LOGIN_CODES={}; LOGIN_LOCK=threading.Lock(); STOP_TOKEN=secrets.token_urlsafe(32)  # STOP_TOKEN: Steuerschlüssel für Starter und Fenster (Daten/.steuerung)
-LOGIN_CODE_SECONDS=60
-INSTANCE=secrets.token_hex(8)  # Kennung dieses Serverstarts (kein Geheimnis): Programmfenster beendet nur „seinen“ Server
+SESSIONS={}; PREVIEWS={}; LOGIN_LOCK=threading.Lock()
 IMPORT_SUFFIXES={'.csv','.txt','.xls','.xlsx'}
 MASTER_ROW_FIELDS=('sheet','row_no','booked','amount','name','reference','code','kst','status','note')
 
@@ -97,8 +91,7 @@ def save_receipt(store,table,rid,number,filename,suffix,raw):
         with store.db: store.db.execute(f'UPDATE {table} SET attachment=NULL WHERE id=?',(rid,))
         raise ValueError(f'{number} ist erfasst, der Beleg konnte aber nicht gespeichert werden.')
 
-def server_mode(): return MODE=='server'
-def keycloak_mode(): return server_mode() and KEYCLOAK is not None
+def keycloak_mode(): return KEYCLOAK is not None
 
 def notzugang(db,name):
     """Keycloak-Betrieb: Anmeldung mit lokalem Passwort nur als Notzugang – solange auf dem Server freigeschaltet
@@ -198,9 +191,7 @@ def keep_original(preview,raw):
     (DATA/'Importe'/(preview['hash']+(suffix if suffix in IMPORT_SUFFIXES else '.csv'))).write_bytes(raw)
 
 class LocalServer(ThreadingHTTPServer):
-    # Windows: SO_REUSEADDR erlaubt dort mehrere Listener auf einem Port, daher nur auf macOS/Linux
-    # (verhindert dort „Port belegt“ direkt nach dem Beenden).
-    allow_reuse_address = os.name != 'nt'
+    allow_reuse_address = True   # verhindert „Port belegt“ direkt nach dem Beenden (unter Linux sicher, anders als unter Windows)
     daemon_threads = True
     MAX_CONNECTIONS = 48   # gleichzeitige Verbindungen; weitere werden sofort geschlossen (Schutz vor Überlastung)
     def __init__(self,*args,**kwargs):
@@ -391,7 +382,7 @@ class Handler(BaseHTTPRequestHandler):
     def session(self):
         if hasattr(self,'_session'): return self._session
         sid=self.session_id();s=SESSIONS.get(sid) if sid else None;now=time.time()
-        if s and (s['expires']<=now or (server_mode() and now-s['seen']>IDLE_MINUTES*60) or (server_mode() and (s.get('fp') is None or s.get('fp')!=user_fingerprint(s['actor'])))):
+        if s and (s['expires']<=now or now-s['seen']>IDLE_MINUTES*60 or s.get('fp') is None or s.get('fp')!=user_fingerprint(s['actor'])):
             SESSIONS.pop(sid,None);s=None   # abgelaufen, untätig oder Passwort inzwischen neu gesetzt
         if s: s['seen']=now
         self._session=s
@@ -399,9 +390,9 @@ class Handler(BaseHTTPRequestHandler):
     def new_session(self,actor):
         now=time.time()
         for k,v in list(SESSIONS.items()):   # abgelaufene Sitzungen aufräumen
-            if v['expires']<=now or (server_mode() and now-v['seen']>IDLE_MINUTES*60): SESSIONS.pop(k,None)
+            if v['expires']<=now or now-v['seen']>IDLE_MINUTES*60: SESSIONS.pop(k,None)
         sid=secrets.token_urlsafe(32);SESSIONS[sid]={'actor':actor,'csrf':secrets.token_urlsafe(32),'expires':now+SESSION_HOURS*3600,'seen':now,
-                                                     'fp':user_fingerprint(actor) if server_mode() else None,'created':now,'geraet':self.device()}
+                                                     'fp':user_fingerprint(actor),'created':now,'geraet':self.device()}
         self._session=SESSIONS[sid]
         return sid,SESSIONS[sid]
     def sitzungen(self):
@@ -426,14 +417,12 @@ class Handler(BaseHTTPRequestHandler):
                 'daten_frei_gb':round(du.free/1e9,1),'daten_gesamt_gb':round(du.total/1e9,1),'datenbank_mb':round(DB.stat().st_size/1e6,1),
                 'letzte_sicherung':sicherung.last_daily(auto),'sicherungen':len(list(auto.glob('*.sqlite3'))) if auto.is_dir() else 0}
     def verweigert(self,store,path):
-        if server_mode():
-            s=self.session();now=time.time()
-            if s and now-s.get('verweigert_zeit',0)>=60:   # höchstens ein Eintrag je Sitzung und Minute (sonst ließe sich das Protokoll fluten)
-                s['verweigert_zeit']=now;sicherheit.ereignis(store.db,'verweigert',s['actor'],self.device(),{'adresse':path[:120]})
+        s=self.session();now=time.time()
+        if s and now-s.get('verweigert_zeit',0)>=60:   # höchstens ein Eintrag je Sitzung und Minute (sonst ließe sich das Protokoll fluten)
+            s['verweigert_zeit']=now;sicherheit.ereignis(store.db,'verweigert',s['actor'],self.device(),{'adresse':path[:120]})
         return self.send(403,{'error':NO_RIGHT})
     def gesperrt(self,store,rights,method,path):
         """Notfall/Wartung: 503 für alle ohne „Sicherheit ändern“, außer den wenigen erlaubten Wegen. True = Antwort gesendet."""
-        if not server_mode(): return False
         sp=sicherheit.sperre(store.db)
         if not sp or sicherheit.darf_trotz_sperre(rights): return False
         frei=SPERRE_FREI_POST if method=='POST' else (('/api/sicherheit',) if rollen.can(rights,'sicherheit') else ())
@@ -442,22 +431,22 @@ class Handler(BaseHTTPRequestHandler):
         return True
     def braucht_bestaetigung(self,method,path):
         s=self.session()
-        if server_mode() and (method,path) in CONFIRM and time.time()-s.get('confirmed',0)>CONFIRM_SECONDS:
+        if (method,path) in CONFIRM and time.time()-s.get('confirmed',0)>CONFIRM_SECONDS:
             self.send(428,{'error':'Bitte zur Bestätigung dein Passwort eingeben.','confirm':True});return True
         return False
     def sperre_info(self,store,s):
         """Sperre für /api/status: nur für Angemeldete; Grund und Auslöser nur mit „Sicherheit lesen“."""
-        sp=sicherheit.sperre(store.db) if server_mode() and s else None
+        sp=sicherheit.sperre(store.db) if s else None
         if not sp: return None
         r=self.rights(store);info={'art':sp['art'],'seit':sp['seit'],'fuer_mich':not sicherheit.darf_trotz_sperre(r)}
         if sp['art']=='wartung': info['text']=sp.get('text','')
         if rollen.can(r,'sicherheit'): info.update(grund=sp.get('grund',''),von=sp.get('von',''))
         return info
     def rights(self,store):
-        """Rechte der angemeldeten Person (rollen.py); die Mac-App hat eine Person und prüft keine Rechte."""
+        """Rechte der angemeldeten Person (rollen.py)."""
         s=self.session()
         if not s: return {}
-        return rollen.rights_of(store.db,s['actor']) if server_mode() else dict(rollen.ALL)
+        return rollen.rights_of(store.db,s['actor'])
     def from_proxy(self): return self.client_address[0] in ('127.0.0.1','::1')
     def adresse(self):
         """Adresse des Aufrufers – nur über schutz.aufrufer (X-Forwarded-For zählt allein von 127.0.0.1); None = unlesbar.
@@ -472,7 +461,6 @@ class Handler(BaseHTTPRequestHandler):
         """Der eine Einstieg der Abwehr (schutz.py) vor jeder Anfrage im Serverbetrieb – auch für statische Dateien und unbekannte
         Pfade; mit `daten` die JSON-Werte einer Anfrage ohne Anmeldung. True = abgewiesen und beantwortet (knapp, ohne Details).
         Ein Fehler in der Abwehr hält keine Anfrage auf."""
-        if not server_mode(): return False
         try:
             if daten is None: status,art=schutz.eingang(DB,self.adresse(),self.path,self.headers.get('User-Agent',''),bool(self.session()),not self.same_site())
             else: status,art=schutz.inhalt(DB,self.adresse(),daten)
@@ -488,7 +476,7 @@ class Handler(BaseHTTPRequestHandler):
     def send_response(self,code,message=None):
         """Jede Antwort – auch Fehler der Basisklasse – läuft hier durch: Fehlerbremse und Live-Verkehr (schutz.nachher)."""
         super().send_response(code,message)
-        if server_mode() and not getattr(self,'_gezaehlt',False):
+        if not getattr(self,'_gezaehlt',False):
             self._gezaehlt=True
             try:
                 kopf=getattr(self,'headers',None)
@@ -519,11 +507,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path=='/api/status':
                 s=self.session()
-                configured=any(zugang.is_set(u['password']) for u in store.rows('SELECT password FROM users')) if server_mode() else bool(store.rows('SELECT id FROM users'))
-                auth='keycloak' if keycloak_mode() else 'password' if server_mode() else 'macos'
+                configured=any(zugang.is_set(u['password']) for u in store.rows('SELECT password FROM users'))
+                auth='keycloak' if keycloak_mode() else 'password'
                 # passwort_lokal: eigenes Passwort im Programm (Passwortbetrieb; im Keycloak-Betrieb nur der Notzugang)
-                lokal=bool(s) and server_mode() and (not keycloak_mode() or notzugang(store.db,s['actor']))
-                return self.send(200,{'app':APP_NAME,'version':VERSION,'instance':INSTANCE,'mode':MODE,'auth':auth,'configured':configured,'passwort_lokal':lokal,
+                lokal=bool(s) and (not keycloak_mode() or notzugang(store.db,s['actor']))
+                return self.send(200,{'app':APP_NAME,'version':VERSION,'mode':'server','auth':auth,'configured':configured,'passwort_lokal':lokal,
                                       'mail_busy':versand.busy(),'user':s['actor'] if s else None,'csrf':s['csrf'] if s else None,
                                       'rights':self.rights(store) if s else {},'sperre':self.sperre_info(store,s)})
             if path in ('/api/keycloak/start','/api/keycloak/rueckkehr'):   # ohne Sitzung (rollen.OUTSIDE)
@@ -534,7 +522,6 @@ class Handler(BaseHTTPRequestHandler):
                 rights=self.rights(store)
                 if not rollen.allowed(rights,rollen.required('GET',path)): return self.verweigert(store,path)
                 if self.gesperrt(store,rights,'GET',path) or self.braucht_bestaetigung('GET',path): return
-                if path.startswith(('/api/sicherheit','/api/schutz')) and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
                 if path=='/api/sicherheit':
                     lage=sicherheit.lagebild(store.db,self.sitzungen(),self.sperren(store),sicherung.last_daily(backups_dir()/'Automatisch'),ROOT)
                     bericht=schutz.serverschutz();https=bool(ADDRESSES) and all(a.startswith('https://') for a in ADDRESSES)
@@ -550,8 +537,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200,{'sitzungen':self.sitzungen(),'sperren':self.sperren(store),'system':self.system_info(),
                                           'konten':[{k:v for k,v in x.items() if k!='rechte'} for x in sicherheit.konten(store.db)]})
                 if path=='/api/data': return self.send(200,rollen.filter_snapshot({**store.snapshot(int(query.get('year',[time.localtime().tm_year])[0])),'last_backup':sicherung.last_daily(backups_dir()/'Automatisch'),'address_data':__import__('adressen').status(DATA)['available']},rights))
-                if path=='/api/benutzer':   # Personen und Rollen (ohne Passwörter) – die Mac-App hat nur eine Person
-                    return self.send(200,rollen.overview(store.db)) if server_mode() else self.send(404,{'error':'Nur im Serverbetrieb.'})
+                if path=='/api/benutzer': return self.send(200,rollen.overview(store.db))   # Personen und Rollen (ohne Passwörter)
                 if path=='/api/workflow':
                     # die Oberfläche lädt das immer: ohne Recht gleiche Form ohne Inhalt (Parkkonto/Lernbeispiele: Buchhaltung; KV-Budgets: Verband)
                     details=workflow.details(store,int(query['year'][0]))
@@ -757,7 +743,6 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Origin') not in allowed_origins(self.server.server_port) or self.headers.get('Content-Type','').split(';')[0]!='application/json' or not self.same_site():
             return self.send(403,{'error':'Ungültige Anfrageherkunft.'})
         path=urlparse(self.path).path
-        if server_mode() and path in MAC_PATHS: return self.send(404,{'error':'Im Serverbetrieb nicht verfügbar.'})
         s=None
         if path not in PUBLIC_PATHS:   # Sitzung und CSRF-Token prüfen, bevor größere Anfragedaten gelesen werden
             s=self.session()
@@ -776,8 +761,7 @@ class Handler(BaseHTTPRequestHandler):
         store=Store(DB)
         try:
             if path=='/api/login':
-                # Servermodus: Benutzername und Passwort; Sperre je Gerät und Benutzername (Versuch wird vorgemerkt), neue Sitzung
-                if not server_mode(): return self.send(404,{'error':'Nicht gefunden.'})
+                # Benutzername und Passwort; Sperre je Gerät und Benutzername (Versuch wird vorgemerkt), neue Sitzung
                 keys=('geraet:'+self.device(),'name:'+' '.join(str(data.get('name') or '').split()).lower()[:80])
                 wait=THROTTLE.attempt(keys)
                 if wait: return self.send(429,{'error':f'Zu viele Fehlversuche. Bitte {wait_text(wait)} warten.','wait':wait})
@@ -791,39 +775,10 @@ class Handler(BaseHTTPRequestHandler):
                 THROTTLE.succeeded(keys);log(f'Angemeldet: {actor} ({self.who()})')
                 sicherheit.ereignis(store.db,'notzugang' if keycloak_mode() else 'anmeldung',actor,self.device())
                 sid,s=self.new_session(actor);return self.send(200,{'csrf':s['csrf'],'user':actor},cookie=self.cookie(sid))
-            if path=='/api/stop':
-                # Beenden durch den Mac-Starter bei Updates; Schlüssel liegt nur lesbar für den Benutzer in Daten/.steuerung
-                if not secrets.compare_digest(str(data.get('token','')),STOP_TOKEN): return self.send(403,{'error':'Nicht erlaubt.'})
-                if versand.busy(): return self.send(409,{'error':'Gerade läuft ein E-Mail-Versand.'})
-                self.send(200,{'ok':True})
-                threading.Thread(target=self.server.shutdown,daemon=True).start()
-                return
-            if path=='/api/login-code':
-                # Anmeldung über macOS: Starter/Fenster haben Touch ID bzw. das Mac-Passwort geprüft und holen mit dem
-                # Steuerschlüssel (nur für den Benutzer lesbar) einen einmaligen, kurzlebigen Anmeldecode
-                if not secrets.compare_digest(str(data.get('token','')),STOP_TOKEN): return self.send(403,{'error':'Nicht erlaubt.'})
-                return self.send(200,{'code':new_login_code()})
-            if path=='/api/login-device':
-                with LOGIN_LOCK: entry=LOGIN_CODES.pop(str(data.get('code','')),None)
-                if not entry or time.time()-entry['created']>LOGIN_CODE_SECONDS:
-                    return self.send(401,{'error':'Anmeldung abgelaufen. Bitte in der App erneut mit Touch ID oder Mac-Passwort anmelden.'})
-                with store.db:
-                    store.db.execute('BEGIN IMMEDIATE')
-                    user=store.db.execute('SELECT name FROM users ORDER BY id LIMIT 1').fetchone()
-                    if not user:   # erster Start: Benutzer mit dem Namen des Mac-Benutzers anlegen (kein Passwort)
-                        name=mac_user_name()
-                        created=store.db.execute("INSERT INTO users(name,password) VALUES(?,'')",(name,)).lastrowid
-                        rollen._grant_owner(store.db,created)   # die eine Person der Mac-App darf alles
-                        store.audit(name,'Benutzer eingerichtet (Anmeldung über macOS)',{})
-                    actor=user['name'] if user else name
-                sid,s=self.new_session(actor);return self.send(200,{'csrf':s['csrf']},cookie=self.cookie(sid))
             actor=s['actor'];result={'ok':True}
             rights=self.rights(store)
             if not rollen.allowed(rights,rollen.required('POST',path)): return self.verweigert(store,path)
             if self.gesperrt(store,rights,'POST',path) or self.braucht_bestaetigung('POST',path): return
-            if path in ('/api/bestaetigen','/api/notfall-an','/api/notfall-aus','/api/wartung','/api/sitzung-beenden','/api/sperre-aufheben','/api/dateipruefung',
-                        '/api/schutz-einstellungen','/api/schutz-sperren','/api/schutz-freigeben','/api/schutz-liste-laden','/api/schutz-mitschnitt') and not server_mode():
-                return self.send(404,{'error':'Nur im Serverbetrieb.'})
             if path in ('/api/mail-send','/api/mail-test') and (sicherheit.sperre(store.db) or {}).get('art')=='notfall':
                 return self.send(503,{'error':'Notfallmodus: Der E-Mail-Versand ist angehalten.'})
             if path=='/api/logout':
@@ -832,8 +787,7 @@ class Handler(BaseHTTPRequestHandler):
                 kc_abmelden(store.db,actor)   # auch bei Keycloak abmelden (Keycloak-Betrieb)
                 return self.send(200,result,cookie=self.cookie())
             elif path=='/api/password':
-                # eigenes Passwort ändern (Servermodus): altes Passwort nötig; andere Sitzungen dieses Benutzers enden
-                if not server_mode(): return self.send(404,{'error':'Nicht gefunden.'})
+                # eigenes Passwort ändern: altes Passwort nötig; andere Sitzungen dieses Benutzers enden
                 if keycloak_mode() and not notzugang(store.db,actor):
                     raise ValueError('Dein Passwort änderst du bei Keycloak: Einstellungen → Anmeldung → „Passwort ändern“.')
                 keys=('geraet:'+self.device(),'name:'+actor.lower())
@@ -848,7 +802,6 @@ class Handler(BaseHTTPRequestHandler):
                     if v['actor']==actor and v is not s: SESSIONS.pop(k,None)
                 s['fp']=user_fingerprint(actor)   # eigene Sitzung bleibt gültig
                 log(f'Passwort geändert: {actor}')
-            elif path in ('/api/benutzer','/api/rolle','/api/rolle-loeschen') and not server_mode(): return self.send(404,{'error':'Nur im Serverbetrieb.'})
             elif path in ('/api/benutzer-abgleichen','/api/benutzer-startpasswort','/api/benutzer-app-zuruecksetzen') and not keycloak_mode():
                 return self.send(404,{'error':'Nur bei Anmeldung über Keycloak.'})
             elif path=='/api/bestaetigen':
@@ -914,11 +867,6 @@ class Handler(BaseHTTPRequestHandler):
                 if u['name']==actor: s['fp']=user_fingerprint(actor)   # die eigene, gerade bestätigte Sitzung bleibt
             elif path=='/api/rolle': result['id']=rollen.save_role(store.db,data,actor)
             elif path=='/api/rolle-loeschen': rollen.delete_role(store.db,data.get('id') or 0,actor)
-            elif path=='/api/shutdown':
-                if versand.busy(): raise ValueError('Gerade läuft ein E-Mail-Versand. Bitte abwarten oder den Versand abbrechen, dann beenden.')
-                self.send(200,result)
-                threading.Thread(target=self.server.shutdown,daemon=True).start()
-                return
             elif path=='/api/settings': store.save_settings(data,actor)
             elif path=='/api/haushalt-plan': haushalt.save_plan(store,int(data['year']),data['title'],data.get('amount'),actor)
             elif path=='/api/haushalt-import': result={'count':haushalt.import_reference(store,int(data['year']),actor)}
@@ -1155,38 +1103,12 @@ class Handler(BaseHTTPRequestHandler):
             log_error('POST '+path);self.send(500,{'error':'Interner Fehler. Die Aktion konnte nicht abgeschlossen werden.'})
         finally: store.db.close()
 
-def new_login_code():
-    """Einmaliger Anmeldecode (60 Sekunden gültig) – nur nach Prüfung durch macOS bzw. beim Start im Terminal."""
-    now=time.time();code=secrets.token_urlsafe(32)
-    with LOGIN_LOCK:
-        for old in [c for c,v in LOGIN_CODES.items() if now-v['created']>LOGIN_CODE_SECONDS]: LOGIN_CODES.pop(old,None)
-        LOGIN_CODES[code]={'created':now}
-    return code
-
-def mac_user_name():
-    """Name des Mac-Benutzers, unter dem der Server läuft (vollständiger Name, sonst Kurzname) –
-    wird beim ersten Start als Name im Änderungsprotokoll übernommen."""
-    name=''
-    try:
-        import pwd
-        name=pwd.getpwuid(os.getuid()).pw_gecos.split(',')[0].strip()
-    except Exception: pass
-    if not name:
-        try: name=getpass.getuser()
-        except Exception: pass
-    return ' '.join(str(name or '').split())[:80] or 'Schatzmeister'
-
 def write_private(name,text):
     """Datei im Datenordner anlegen, die nur der Benutzer lesen kann."""
     target=DATA/name
     fd=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
     with os.fdopen(fd,'w',encoding='utf-8') as f: f.write(text)
     os.chmod(target,0o600)
-
-def write_start_url(url):
-    """Adresse und Steuerschlüssel (Beenden, Anmeldecode) für den Mac-Starter hinterlegen."""
-    write_private('.start-url',url)
-    write_private('.steuerung',STOP_TOKEN)
 
 def env_list(name): return [x.strip() for x in os.environ.get(name,'').replace(';',',').split(',') if x.strip()]
 
@@ -1236,30 +1158,33 @@ def keycloak_from_env(env):
     return cfg
 
 def main(argv=None):
-    global DATA,DB,BACKUPS,MODE,ADDRESSES,THROTTLE,KEYCLOAK,KC_ADMIN
+    global DATA,DB,BACKUPS,ADDRESSES,THROTTLE,KEYCLOAK,KC_ADMIN
     parser=argparse.ArgumentParser(description=f'{APP_NAME} {VERSION}')
-    parser.add_argument('--no-browser',action='store_true');parser.add_argument('--port',type=int,default=int(os.environ.get('JU_FINANZEN_PORT') or 8769))
+    parser.add_argument('--no-browser',action='store_true',help=argparse.SUPPRESS)   # ohne Wirkung; Dienstdateien bis 0.41 übergeben es
+    parser.add_argument('--port',type=int,default=int(os.environ.get('JU_FINANZEN_PORT') or 8769))
     parser.add_argument('--data',help='Ordner für Datenbank und importierte Kontoauszüge')
     parser.add_argument('--backups',help='Ordner für automatische Sicherungen (Standard: Sicherungen neben dem Datenordner)')
-    parser.add_argument('--modus',choices=('mac','server'),default=os.environ.get('JU_FINANZEN_MODUS') or 'mac',help='server = Anmeldung mit Passwort, Betrieb als Dienst')
+    # Einstellungsdateien bis 0.41 setzen JU_FINANZEN_MODUS=server (ältere Versionen nach install.sh --zurueck brauchen es weiter)
+    parser.add_argument('--modus',default=os.environ.get('JU_FINANZEN_MODUS') or 'server',help=argparse.SUPPRESS)
     parser.add_argument('--host',default=os.environ.get('JU_FINANZEN_HOST') or '127.0.0.1',help='Servermodus: Adresse, an die der Server bindet (Standard 127.0.0.1)')
     parser.add_argument('--adresse',action='append',default=None,help='Servermodus: Adresse der Oberfläche, z. B. https://ju-finanzen.beispiel.ts.net (mehrfach möglich)')
     args=parser.parse_args(argv)
-    MODE=args.modus
+    if args.modus!='server':
+        print(f'Start abgebrochen: Betriebsart „{args.modus[:20]}“ gibt es nicht mehr – seit Version 0.42 läuft das Programm nur noch als Server. '
+              'Bitte JU_FINANZEN_MODUS=server setzen bzw. --modus weglassen.',flush=True)
+        return 6
     if args.data: DATA=Path(args.data); DB=DATA/'finanzen.sqlite3'
     BACKUPS=Path(args.backups) if args.backups else (Path(os.environ['JU_FINANZEN_SICHERUNGEN']) if os.environ.get('JU_FINANZEN_SICHERUNGEN') else None)
-    host='127.0.0.1'
-    if server_mode():
-        THROTTLE=zugang.Throttle(path=DATA/'.anmeldesperre')   # Fehlversuche überstehen einen Neustart
-        try: ADDRESSES=sorted({clean_address(a) for a in (args.adresse if args.adresse is not None else env_list('JU_FINANZEN_ADRESSEN'))})
-        except ValueError as e: print(str(e),flush=True);return 4
-        host=check_bind(args.host)
-        try: KEYCLOAK=keycloak_from_env(os.environ)
-        except ValueError as e: print('Start abgebrochen: '+str(e),flush=True);return 5
-        KC_ADMIN=keycloak.Verwaltung(KEYCLOAK) if KEYCLOAK else None
+    THROTTLE=zugang.Throttle(path=DATA/'.anmeldesperre')   # Fehlversuche überstehen einen Neustart
+    try: ADDRESSES=sorted({clean_address(a) for a in (args.adresse if args.adresse is not None else env_list('JU_FINANZEN_ADRESSEN'))})
+    except ValueError as e: print(str(e),flush=True);return 4
+    host=check_bind(args.host)
+    try: KEYCLOAK=keycloak_from_env(os.environ)
+    except ValueError as e: print('Start abgebrochen: '+str(e),flush=True);return 5
+    KC_ADMIN=keycloak.Verwaltung(KEYCLOAK) if KEYCLOAK else None
     backups=backups_dir()
     DATA.mkdir(parents=True,exist_ok=True);(DATA/'Importe').mkdir(exist_ok=True)
-    print(f'{APP_NAME} {VERSION} – Start {time.strftime("%Y-%m-%d %H:%M:%S")} – Daten: {DATA}'+(' – Serverbetrieb' if server_mode() else ''),flush=True)
+    print(f'{APP_NAME} {VERSION} – Start {time.strftime("%Y-%m-%d %H:%M:%S")} – Daten: {DATA} – Serverbetrieb',flush=True)
     run_backups(backups)
     marker=DATA/'.version'
     try: last=marker.read_text(encoding='utf-8').strip()
@@ -1277,38 +1202,32 @@ def main(argv=None):
     except OSError:
         print('Das Programm läuft bereits oder der Port ist belegt.',flush=True)
         return 2
-    if server_mode():
-        stop=threading.Event()
-        def every_hour():
-            while not stop.wait(3600): run_backups(backups);schutz_stuendlich()
-        threading.Thread(target=every_hour,daemon=True,name='sicherung').start()
-        # systemd beendet mit SIGTERM: laufenden E-Mail-Versand nach der aktuellen Nachricht anhalten (wird protokolliert),
-        # höchstens 25 s warten (TimeoutStopSec=30), dann den Server herunterfahren
-        def terminate(*_):
-            def run():
-                if versand.busy():
-                    log('Beenden: E-Mail-Versand wird nach der aktuellen Nachricht angehalten.')
-                    versand.cancel()
-                    for _ in range(250):
-                        if not versand.busy(): break
-                        time.sleep(0.1)
-                server.shutdown()
-            threading.Thread(target=run,daemon=True).start()
-        signal.signal(signal.SIGTERM,terminate)
-        store=Store(DB)
-        try: ready=any(zugang.is_set(u['password']) for u in store.rows('SELECT password FROM users'))
-        finally: store.db.close()
-        print(f'Serverbetrieb auf {host}:{args.port} – Adressen: {", ".join(ADDRESSES) or "nur lokal (127.0.0.1)"}',flush=True)
-        if not ready: print('Noch kein Passwort gesetzt: auf dem Server „sudo ju-finanzen passwort <Name>“ ausführen.',flush=True)
-    else:
-        url=f'http://127.0.0.1:{args.port}/'
-        write_start_url(url)
-        print('Läuft unter http://127.0.0.1:'+str(args.port)+'/ – Beenden über die Schaltfläche „Beenden“ oder Strg+C.',flush=True)
-        if not args.no_browser: webbrowser.open(url+'?login='+new_login_code())   # Start im Terminal (Entwicklung)
+    stop=threading.Event()
+    def every_hour():
+        while not stop.wait(3600): run_backups(backups);schutz_stuendlich()
+    threading.Thread(target=every_hour,daemon=True,name='sicherung').start()
+    # systemd beendet mit SIGTERM: laufenden E-Mail-Versand nach der aktuellen Nachricht anhalten (wird protokolliert),
+    # höchstens 25 s warten (TimeoutStopSec=30), dann den Server herunterfahren
+    def terminate(*_):
+        def run():
+            if versand.busy():
+                log('Beenden: E-Mail-Versand wird nach der aktuellen Nachricht angehalten.')
+                versand.cancel()
+                for _ in range(250):
+                    if not versand.busy(): break
+                    time.sleep(0.1)
+            server.shutdown()
+        threading.Thread(target=run,daemon=True).start()
+    signal.signal(signal.SIGTERM,terminate)
+    store=Store(DB)
+    try: ready=any(zugang.is_set(u['password']) for u in store.rows('SELECT password FROM users'))
+    finally: store.db.close()
+    print(f'Serverbetrieb auf {host}:{args.port} – Adressen: {", ".join(ADDRESSES) or "nur lokal (127.0.0.1)"}',flush=True)
+    if not ready: print('Noch kein Passwort gesetzt: auf dem Server „sudo ju-finanzen passwort <Name>“ ausführen.',flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally:
-        if server_mode(): stop.set()
+        stop.set()
         server.server_close()
     print('Beendet '+time.strftime('%Y-%m-%d %H:%M:%S'),flush=True)
     return 0

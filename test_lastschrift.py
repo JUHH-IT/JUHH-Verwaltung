@@ -1,12 +1,9 @@
 """SEPA-Lastschrift für Mitgliedsbeiträge – nur erfundene Testdaten (Beispiel-Gläubiger-ID der Bundesbank, Beispiel-IBANs)."""
 import json
-import os
 import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
-
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 
 import lastschrift as l
 import rechnung_pdf

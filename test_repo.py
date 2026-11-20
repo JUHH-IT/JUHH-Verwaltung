@@ -1,6 +1,6 @@
 """Wächter für das Repository (ab 0.33, GitHub): im Quellcode stehen nie Daten, Schlüssel oder echte Kontoangaben.
 
-Geprüft werden alle von Git verwalteten Dateien. Ohne Git (Serverpaket, Mac-App) wird der Test übersprungen.
+Geprüft werden alle von Git verwalteten Dateien. Ohne Git (Serverpaket) wird der Test übersprungen.
 Fehlermeldungen nennen nur Datei und Zeile, nie den gefundenen Wert – sie stehen sonst im Protokoll von GitHub.
 Der Wächter ist ein Netz gegen Versehen, kein Ersatz für die Datenregel in AGENTS.md.
 """
@@ -122,7 +122,7 @@ class RepositoryTests(unittest.TestCase):
     def setUpClass(cls):
         files = tracked_files()
         if files is None:
-            raise unittest.SkipTest('kein Git-Stand (Serverpaket oder Mac-App)')
+            raise unittest.SkipTest('kein Git-Stand (Serverpaket)')
         # gelöschte, aber noch gelistete Dateien können nichts mehr enthalten
         cls.files = [name for name in files if (ROOT / name).is_file()]
 

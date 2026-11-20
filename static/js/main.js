@@ -2,7 +2,7 @@
 import { api, setCsrf, onUnauthorized, onConfirm, onLocked } from './api.js';
 import { html, mount } from './html.js';
 import { store, onChange, refresh, go, can, yearBank } from './store.js';
-import { dialog, overlay, icon, safe, toast, closeTop } from './ui.js';
+import { overlay, icon, safe, toast, closeTop } from './ui.js';
 import { dateTime } from './format.js';
 import { overview } from './views/overview.js';
 import { bank, bankKeys } from './views/bank.js';
@@ -25,8 +25,6 @@ import { benutzer } from './views/benutzer.js';
 import { sicherheit } from './views/sicherheit.js';
 
 const root = document.getElementById('root');
-const app = () => window.webkit?.messageHandlers?.ju;   // eigenes Programmfenster der Mac-App (mac/fenster.py)
-const server = () => store.mode === 'server';           // Serverbetrieb (Ubuntu hinter Tailscale): Anmeldung mit Passwort
 
 // Aufbau nach Aufgabenbereichen (0.31, Wunsch Lennert Gust 10.11.2026): Mitgliederverwaltung, Buchhaltung, Verband, Verwaltung –
 // später sieht jede Rolle nur ihren Bereich. Start = Aufgaben je Bereich (ohne Gruppenüberschrift).
@@ -48,14 +46,14 @@ const PAGES = [
   { id: 'budgets', label: 'Haushalt & Budgets', icon: 'chart', view: budgets, group: 'Verband', area: 'verband' },
   { id: 'rpj', label: 'RPJ-Mittel', icon: 'layers', view: rpj, group: 'Verband', area: 'verband' },
   { id: 'auswertung', label: 'Auswertung', icon: 'trend', view: auswertung, group: 'Verband', area: 'auswertung' },
-  { id: 'users', label: 'Benutzer & Rollen', icon: 'users', view: benutzer, group: 'Verwaltung', area: 'verwaltung', serverOnly: true },
-  { id: 'security', label: 'Sicherheit', icon: 'shield', view: sicherheit, group: 'Verwaltung', area: 'sicherheit', serverOnly: true },
-  // Einstellungen: im Serverbetrieb für alle (eigenes Passwort ändern), die Reiter richten sich nach dem Recht „Einstellungen“
-  { id: 'settings', label: 'Einstellungen', icon: 'settings', view: settings, group: 'Verwaltung', area: 'einstellungen', always: 'server' },
+  { id: 'users', label: 'Benutzer & Rollen', icon: 'users', view: benutzer, group: 'Verwaltung', area: 'verwaltung' },
+  { id: 'security', label: 'Sicherheit', icon: 'shield', view: sicherheit, group: 'Verwaltung', area: 'sicherheit' },
+  // Einstellungen: für alle (eigenes Passwort ändern), die Reiter richten sich nach dem Recht „Einstellungen“
+  { id: 'settings', label: 'Einstellungen', icon: 'settings', view: settings, group: 'Verwaltung', area: 'einstellungen', always: true },
 ];
 const GROUPS = [...new Set(PAGES.map((p) => p.group))];
 /** Seiten, die die angemeldete Person sieht (der Server prüft jede Anfrage unabhängig davon). */
-const visiblePages = () => PAGES.filter((p) => (!p.serverOnly || server()) && (!p.area || can(p.area) || (p.always === 'server' && server())));
+const visiblePages = () => PAGES.filter((p) => !p.area || can(p.area) || p.always);
 
 function years() {
   const now = new Date().getFullYear();
@@ -65,14 +63,13 @@ function years() {
   return list;
 }
 
-// Kompakte Ansicht (Seitenleiste als Menü): im Mac-Fenster bis 900 px wie bisher, im Browser (Serverbetrieb) bis 1100 px
-const NARROW = { mac: window.matchMedia('(max-width: 900px)'), server: window.matchMedia('(max-width: 1100px)') };
+// Kompakte Ansicht (Seitenleiste als Menü) bis 1100 px
+const NARROW = window.matchMedia('(max-width: 1100px)');
 function layout() {
-  const compact = NARROW[server() ? 'server' : 'mac'].matches;
-  document.documentElement.classList.toggle('compact', compact);
-  if (!compact) setMenu(false);
+  document.documentElement.classList.toggle('compact', NARROW.matches);
+  if (!NARROW.matches) setMenu(false);
 }
-Object.values(NARROW).forEach((q) => q.addEventListener('change', layout));
+NARROW.addEventListener('change', layout);
 
 // Seitenleiste auf kleinen Bildschirmen als Menü (öffnet über den Knopf in der Kopfzeile)
 function setMenu(open) {
@@ -113,8 +110,7 @@ function renderShell() {
       <div class="sidebar-foot">
         <div class="user"><span class="avatar" aria-hidden="true">${(store.user || '?').slice(0, 1).toUpperCase()}</span><span class="who">${store.user}</span>
           <button type="button" class="link-button" id="logout">Abmelden</button></div>
-        ${server() ? '' : html`<button type="button" class="btn small" id="shutdown">${icon('power', 16)} Programm beenden</button>`}
-        <span class="where">${server() ? 'Server' : 'Lokal auf diesem Mac'} · Version ${store.version}</span>
+        <span class="where">Server · Version ${store.version}</span>
       </div>
     </aside>
     <main class="main" id="main"></main>
@@ -138,22 +134,7 @@ function renderShell() {
     await api('/api/logout', {});
     location.href = '/';
   });
-  const stop = root.querySelector('#shutdown');
-  if (stop) stop.onclick = shutdown;
   Promise.resolve(page.view(root.querySelector('#main'))).catch((e) => toast(e.message || String(e), true));
-}
-
-function shutdown() {
-  const el = dialog('Programm beenden', html`<p>Alle Daten bleiben gespeichert. Zum erneuten Öffnen die App „JU Hamburg Finanzen“ unter Programme starten.</p>
-    <div class="form-actions"><button type="button" class="btn ghost" data-cancel>Abbrechen</button><button type="button" class="btn dark" data-stop>Jetzt beenden</button></div>`);
-  el.querySelector('[data-cancel]').onclick = () => el.close();
-  el.querySelector('[data-stop]').onclick = () => safe(async () => {
-    await api('/api/shutdown', {});
-    el.close();
-    if (app()) return app().postMessage('quit');
-    mount(root, html`<div class="login"><img src="/JU-Hamburg-Finanzen.svg" alt="Junge Union Hamburg – Finanzen">
-      <div class="login-card"><h1>Programm beendet</h1><p class="muted">Deine Daten sind gespeichert. Du kannst dieses Fenster schließen.</p></div></div>`);
-  });
 }
 
 async function start(user) {
@@ -228,23 +209,13 @@ function passwordLogin(status, notice) {
 
 async function boot(notice = '') {
   const params = new URLSearchParams(location.search);
-  const code = params.get('login');
   // Rückkehr von Keycloak: Fehlerkürzel bzw. Bestätigung einmal auswerten, dann aus der Adresse nehmen
   const kcError = params.get('anmeldung');
   const confirmed = params.has('bestaetigt');
   if (kcError || confirmed) history.replaceState({}, '', '/');
   if (kcError) notice = KEYCLOAK_ERRORS[kcError] || KEYCLOAK_ERRORS.fehler;
-  if (code) {
-    history.replaceState({}, '', '/');                     // Code ist einmalig – nicht in Verlauf oder Neuladen
-    try {
-      setCsrf((await api('/api/login-device', { code })).csrf);
-    } catch (e) {
-      toast(e.message, true);
-    }
-  }
   const status = await api('/api/status');
   store.version = status.version || '';
-  store.mode = status.mode || 'mac';
   store.auth = status.auth || '';
   store.passwortLokal = !!status.passwort_lokal;
   layout();
@@ -253,18 +224,7 @@ async function boot(notice = '') {
   if (status.user && !status.sperre?.fuer_mich) return start(status.user);
   onChange(() => {});
   if (status.user) return lockScreen(status.sperre);
-  if (status.auth === 'password' || status.auth === 'keycloak') return passwordLogin(status, notice);
-  mount(root, html`<div class="login">
-    <img src="/JU-Hamburg-Finanzen.svg" alt="Junge Union Hamburg – Finanzen">
-    <div class="login-card">
-      <div><h1>Anmelden</h1>
-        <p class="muted" style="margin-top:4px">Mit Touch ID, Apple Watch oder dem Passwort deines Mac.</p></div>
-      ${app() ? html`<button class="btn primary large" type="button" id="login-mac">Anmelden</button>`
-        : html`<p class="notice">Bitte die App „JU Hamburg Finanzen“ öffnen. Für die Anzeige im Browser die App mit gedrückter Wahltaste (⌥) öffnen.</p>`}
-    </div>
-    <p class="small muted">Nur auf diesem Mac erreichbar · keine Cloud-Verbindung</p>
-  </div>`);
-  root.querySelector('#login-mac')?.addEventListener('click', () => app().postMessage('login'));
+  return passwordLogin(status, notice);
 }
 
 /** Notfallmodus oder Wartung (ab 0.35): statt der Oberfläche nur Hinweis, Abmelden und erneut prüfen. */
@@ -354,9 +314,7 @@ function restart(notice = '') {
 onUnauthorized(() => restart('Die Sitzung ist abgelaufen. Bitte erneut anmelden.'));
 onLocked(() => restart());
 
-// Esc schließt immer die oberste Ebene (Liste/Vorschau vor Dialog) – auch im Programmfenster, wo WebKit Esc nicht
-// zuverlässig an <dialog> weitergibt. ⌘W ruft im Fenster dieselbe Funktion auf (mac/fenster.py) und schließt nie das Programm.
-window.juCloseTop = closeTop;
+// Esc schließt immer die oberste Ebene (Liste/Vorschau vor Dialog)
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || e.isComposing) return;
   if (closeTop() || (menuOpen() && (setMenu(false), true))) {

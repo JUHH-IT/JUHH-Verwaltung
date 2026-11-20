@@ -1,6 +1,5 @@
 """Modul Sicherheit (ab 0.35): Ereignisse, Notfall, Wartung, Passwortbestätigung, Sitzungen, Sperren, Dateiprüfung – nur erfundene Daten."""
 import os
-os.environ['JU_FINANZEN_OHNE_SCHLUESSELBUND'] = '1'
 import hashlib
 import json
 import tempfile
@@ -250,14 +249,6 @@ class SicherheitHttpTests(unittest.TestCase):
         who = self.login('Chefin', confirm=False)
         self.assertEqual(self.post(who, '/api/settings', {'smtp_host': 'smtp.fremd.example'})[0], 428)
         self.assertEqual(self.get(who, '/api/pruefpaket.zip?year=2026')[0], 428)
-
-    def test_nur_im_serverbetrieb(self):
-        app.MODE = 'mac'
-        try:
-            self.assertEqual(self.get(self.chefin, '/api/sicherheit')[0], 404)
-            self.assertEqual(self.post(self.chefin, '/api/notfall-an', {'grund': 'Test'})[0], 404)
-        finally:
-            app.MODE = 'server'
 
 
 if __name__ == '__main__':

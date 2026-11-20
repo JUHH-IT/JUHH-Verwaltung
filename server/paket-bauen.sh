@@ -14,7 +14,7 @@ OUT="$DEST/$NAME-server.tar.gz"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 git archive --format=tar --prefix="$NAME/" HEAD | tar -C "$tmp" -xf -
-rm -rf "$tmp/$NAME/mac" "$tmp/$NAME/Finanzen starten.cmd" "$tmp/$NAME/.github"
+rm -rf "$tmp/$NAME/.github"
 if [ "${OHNE_WHEELS:-}" != "1" ]; then
   mkdir -p "$tmp/$NAME/server/wheels"
   for arch in x86_64 aarch64; do   # Ubuntu 24.04 (glibc 2.39) nimmt manylinux 2014/2_17 bis 2_28
