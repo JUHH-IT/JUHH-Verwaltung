@@ -298,7 +298,7 @@ export function account(id, { back = null, tab = null } = {}) {
           ${f.email_work ? html`<dt>E-Mail dienstl.</dt><dd>${f.email_work}</dd>` : ''}
           ${[['Handy', f.mobile], ['Telefon', f.phone], ['Handy dienstl.', f.mobile_work], ['Telefon dienstl.', f.phone_work]].filter(([, v]) => v)
             .map(([k, v]) => html`<dt>${k}</dt><dd><a href="${telLink(v)}">${v}</a></dd>`)}
-          <dt>Anschrift</dt><dd>${m.address.split('\n').map((l, i) => html`${i ? html`<br>` : ''}${l}`)}${m.zip ? '' : html` ${badge('prüfen', 'warn')}`}</dd></dl></section>
+          <dt>Anschrift</dt><dd>${m.address.split('\n').map((l, i) => html`${i ? html`<br>` : ''}${l}`)}${anschriftVollstaendig(m) ? '' : html` ${badge('prüfen', 'warn')}`}</dd></dl></section>
         <section class="akte-card"><h4>Mitgliedschaft</h4><dl>
           <dt>Eintritt</dt><dd>${date(m.joined)}${m.left_on ? '' : ` (${years(m.joined)} Jahre)`}</dd>
           ${m.kv_joined ? html`<dt>Eintritt KV</dt><dd>${date(m.kv_joined)}</dd>` : ''}
@@ -542,8 +542,7 @@ function letterDialog(ids, post) {
     e.preventDefault();
     safe(async () => {
       const f = e.target;
-      await download('/api/mitglieder-liste', `Anschreiben-${todayIso()}.pdf`, { art: 'anschreiben', ids, betreff: f.betreff.value, text: f.text.value });
-      el.close();
+      if (await download('/api/mitglieder-liste', `Anschreiben-${todayIso()}.pdf`, { art: 'anschreiben', ids, betreff: f.betreff.value, text: f.text.value })) el.close();
     });
   };
 }
@@ -623,7 +622,7 @@ export function members(main) {
           <td class="ml-pick"><input type="checkbox" class="ml-check" data-pick="${m.id}" ${selected.has(m.id) ? 'checked' : ''} aria-label="${sortName(m)} auswählen"></td>
           <td><strong style="font-weight:600">${sortName(m)}</strong>${statusBadges(m)}<span class="sub">${m.number}${
             m.left_on ? ` · ${m.left_on > today ? 'Austritt zum' : 'ausgetreten'} ${date(m.left_on)}` : m.joined ? ` · seit ${m.joined.slice(0, 4)}` : ''}</span></td>
-          <td class="small">${m.zip ? addressLine(m) : html`${addressLine(m)} ${badge('Anschrift prüfen', 'warn')}`}</td>
+          <td class="small">${anschriftVollstaendig(m) ? addressLine(m) : html`${addressLine(m)} ${badge('Anschrift prüfen', 'warn')}`}</td>
           <td>${kvName(m.kv)}${m.ov_id ? html`<span class="sub">${ovLabel(ovById(m.ov_id))}</span>` : ''}</td><td class="small">${m.email || badge('E-Mail fehlt', 'warn')}</td>
           <td class="num">${age ?? '—'}${age !== null && m.birth && Number(m.birth.slice(0, 4)) === store.year - 35 ? html`<span class="sub">wird 35</span>` : ''}</td>
           <td title="${m.dues_basis || ''}">${state}${activeMandate(m.id) ? html` ${badge('Lastschrift', 'navy')}` : ''}${hint ? html`<span class="sub">${hint}</span>` : ''}</td>

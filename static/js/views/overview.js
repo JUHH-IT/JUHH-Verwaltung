@@ -6,6 +6,7 @@ import { eur, date, shortDate, todayIso } from '../format.js';
 import { store, go, can, yearBank, openBills, daysOverdue } from '../store.js';
 import { pageHead, icon, safe, toast, dialog } from '../ui.js';
 import { reviewDialog } from './bills.js';
+import { anschriftVollstaendig } from '../mitglieder-listen.js';
 import { reminderDialog } from './mailing.js';
 import { sepaDialog } from './sepa.js';
 
@@ -76,7 +77,7 @@ function tasks() {
   // ---- Mitgliederverwaltung
   const c = d.cases;
   if (c.active) add('mv', 'Klärfälle Beitragszahlungen', `Zahlungen von Personen, die nicht (mehr) in der Mitgliederliste stehen${c.unassigned ? ` – ${c.unassigned} ohne Zuordnung` : ''}${c.rueckfrage ? ` · ${c.rueckfrage} in Rückfrage` : ''}`, c.active, 'warn', ['cases']);
-  const noMail = active.filter((m) => !m.email).length, noZip = active.filter((m) => !m.zip).length;
+  const noMail = active.filter((m) => !m.email).length, noZip = active.filter((m) => !anschriftVollstaendig(m)).length;
   if (noZip) add('mv', 'Anschrift unvollständig', 'Straße, PLZ und Ort beim Mitglied ergänzen', noZip, 'warn', ['members']);
   if (noMail) add('mv', 'Ohne E-Mail-Adresse', 'Rechnungen gehen an sie nur per Post', noMail, '', ['members']);
 

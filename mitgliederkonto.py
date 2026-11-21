@@ -193,22 +193,16 @@ def overview(store, year=None, today=None):
     return rows
 
 
-def stand(row, m):
-    """Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): wie jahr_stand – Zahlungen decken die ältesten
-    fälligen Beiträge zuerst; row aus overview. Gast und beitragsfrei: frei."""
-    if row['soll'] is not None and (m['guest'] or m['dues_free']):
-        return 'frei'
-    return jahr_stand(row)
-
-
 def jahr_stand(y):
-    """Stand eines Beitragsjahres aus account ohne Betrag (Akte, 0.43): klaeren / frei / spaeter (noch nicht fällig) / offen / bezahlt."""
+    """Stand eines Beitragsjahres ohne Betrag (Akte und Mitgliederliste, 0.43): klaeren / frei / spaeter (noch nicht fällig) / offen /
+    bezahlt – Zahlungen decken die ältesten fälligen Beiträge zuerst; y = Jahr aus account oder Zeile aus overview."""
     if y['soll'] is None:
         return 'klaeren'
     if not y['soll']:
         return 'frei'
     if not y['due_now']:
-        return 'spaeter'
+        # shortcut: eine vorzeitige Zahlung zählt hier für ihr Jahr, auch wenn ältere Jahre noch offen sind – über den Pool rechnen, wenn das stört
+        return 'bezahlt' if (y['paid'] or 0) >= y['soll'] else 'spaeter'
     return 'offen' if y['open'] else 'bezahlt'
 
 
