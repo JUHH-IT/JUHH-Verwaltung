@@ -16,7 +16,7 @@ const pct = (part, all) => (all ? Math.round((part / all) * 100) : 100);
 export function mitgliederUeberblick(main) {
   mount(main, html`<div class="page wide"><p class="small muted">Wird geladen …</p></div>`);
   safe(async () => {
-    const [regeln, doppelte] = await Promise.all([api('/api/regelwerk'), api('/api/doppelte')]);
+    const [regeln, doppelte] = await Promise.all([api('/api/regelwerk'), api('/api/doppelte').catch(() => ({ gruppen: [] }))]);   // Hinweis darf die Seite nie blockieren
     draw(main, regeln.termine, doppelte.gruppen.length);
   });
 }
@@ -58,7 +58,7 @@ function draw(main, termine, doubles) {
           ${cases ? html`<li><button type="button" data-go-cases><span class="mu-count warn">${cases}</span>
             <span><strong>Klärfälle</strong><span class="sub">Beitragszahlungen, die keinem Mitglied zugeordnet sind</span></span>${icon('right', 16)}</button></li>` : ''}
           ${doubles ? html`<li><button type="button" data-doubles><span class="mu-count warn">${doubles}</span>
-            <span><strong>Mögliche Doppelte</strong><span class="sub">Gleicher Name mit gleichem Geburtsdatum oder gleicher Anschrift – prüfen</span></span>${icon('right', 16)}</button></li>` : ''}
+            <span><strong>Mögliche Doppelte</strong><span class="sub">Gleicher Name, gleiche E-Mail oder ähnlicher Vorname – prüfen</span></span>${icon('right', 16)}</button></li>` : ''}
           ${todo.map((l) => html`<li><button type="button" data-list="${l.id}"><span class="mu-count ${['anschrift', 'beitrag-offen', 'nicht-wahlberechtigt'].includes(l.id) ? 'warn' : ''}">${l.n}</span>
             <span><strong>${l.label}</strong><span class="sub">${l.hint || ''}${l.soon ? ` · ${l.soon} zum Monatsende` : ''}</span></span>${icon('right', 16)}</button></li>`)}
         </ul>` : html`<p class="muted">Nichts offen.</p>`}

@@ -682,7 +682,8 @@ export function members(main) {
   });
   const pickedIds = picked.map((m) => m.id);
   main.querySelector('[data-csv]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Mitgliederliste-${todayIso()}.csv`, { art: 'csv', ids: pickedIds })));
-  main.querySelector('[data-excel]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Mitgliederliste-${todayIso()}.xlsx`, { art: 'excel', ids: pickedIds })));
+  const zipped = new Set(picked.map((m) => m.kv)).size > 1;   // je Kreisverband eine Datei, mehrere als ZIP (mitgliederlisten.excel)
+  main.querySelector('[data-excel]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Mitgliederliste-${todayIso()}.${zipped ? 'zip' : 'xlsx'}`, { art: 'excel', ids: pickedIds })));
   main.querySelector('[data-labels]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Adressetiketten-${todayIso()}.pdf`, { art: 'etiketten', ids: pickedIds })));
   main.querySelector('[data-letter]')?.addEventListener('click', () => letterDialog(pickedIds, post));
   main.querySelector('[data-unpick]')?.addEventListener('click', () => { selected = new Set(); redraw(); });

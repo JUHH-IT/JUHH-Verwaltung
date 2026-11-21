@@ -36,6 +36,17 @@ class DoppelteTests(unittest.TestCase):
         self.member('Jonas', 'Müller', birth='2001-05-01', street='Vierter Weg 9')   # anderes Geburtsdatum: kein Treffer
         self.assertEqual(self.groups(), [([a, b, c], ['gleicher Name und Geburtsdatum'])])
 
+    def test_umlaut_ohne_e_und_zerlegte_zeichen(self):
+        a = self.member('Jonas', 'Müller')
+        b = self.member('Jonas', 'Muller', street='Anderer Weg 5')
+        c = self.member('Jonas', 'Mu\u0308ller', street='Dritter Weg 7')               # „ü“ als u + Trema (eingefügter Text)
+        self.assertEqual(self.groups(), [([a, b, c], ['gleicher Name und Geburtsdatum'])])
+
+    def test_name_und_anschrift_nur_mit_hausnummer(self):
+        self.member('Lea', 'Probe', street='Musterweg')
+        self.member('Lea', 'Probe', street='Musterweg', birth='1999-01-01')
+        self.assertEqual(self.groups(), [])
+
     def test_name_und_anschrift(self):
         a = self.member('Lea', 'Probe', street='Musterstraße 12')
         b = self.member('Lea', 'Probe', street='Musterstr. 12', birth='1999-01-01')
@@ -54,6 +65,20 @@ class DoppelteTests(unittest.TestCase):
         self.member('Anna', 'Beispiel', street='Dritter Weg 7')               # Zwilling mit anderem Vornamen
         self.member('Mia', 'Beispiel', street='Vierter Weg 9')
         self.assertEqual(self.groups(), [([a, b], ['ähnlicher Vorname, gleicher Nachname und Geburtsdatum'])])
+
+    def test_vornamen_unabhaengig_von_der_reihenfolge(self):
+        pairs = (('Anna Maria', 'Maria'), ('Peter Max', 'Peter'), ('Max Peter', 'Max'), ('Maximilian', 'Max'))
+        expected = []
+        for n, (long, short) in enumerate(pairs):
+            last = f'Familie{chr(65 + n)}'
+            a = self.member(long, last, street=f'Weg {n} 1')
+            b = self.member(short, last, street=f'Gasse {n} 2')
+            expected.append(([a, b], ['ähnlicher Vorname, gleicher Nachname und Geburtsdatum']))
+        self.member('Jo', 'Kurz')                                                          # zwei Buchstaben: zu kurz
+        self.member('Jonas', 'Kurz', street='Anderer Weg 5')
+        self.member('Anna Maria', 'Zwilling', street='Dritter Weg 7')                      # nur ein gemeinsamer Vorname
+        self.member('Maria Sophie', 'Zwilling', street='Vierter Weg 9')
+        self.assertEqual(sorted(self.groups()), sorted(expected))
 
     def test_mehrere_gruende_und_gruppen(self):
         a = self.member('Erika', 'Muster', email='erika@example.org')
@@ -75,9 +100,11 @@ class DoppelteTests(unittest.TestCase):
         doppelte.kein_duplikat(self.s, [a, b], 'Test')                                     # zweimal: kein Fehler
         row = self.s.db.execute("SELECT detail FROM audit WHERE action='Kein Duplikat bestätigt' ORDER BY id DESC").fetchone()
         self.assertEqual(json.loads(row[0]), {'ids': [a, b]})
-        for bad in (None, [a], [a, a], [a, 'x'], [a, True], [a, 999], list(range(1, doppelte.MAX_GRUPPE + 2))):
+        for bad in (None, [a], [a, a], [a, 'x'], [a, True], [a, 999], [a, 2 ** 70]):
             with self.assertRaises(ValueError, msg=bad):
                 doppelte.kein_duplikat(self.s, bad, 'Test')
+        with self.assertRaisesRegex(ValueError, 'Höchstens'):
+            doppelte.kein_duplikat(self.s, list(range(1, doppelte.MAX_GRUPPE + 2)), 'Test')
 
     def test_tabelle_bleibt_beim_neuen_start(self):
         a = self.member('Erika', 'Muster')

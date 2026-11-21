@@ -315,7 +315,7 @@ Tests: test_mitgliederverwaltung.py
 - `postfaehig(m)` – Bekommt Post: vollständige Anschrift (Straße, PLZ, Ort) und kein Postausschluss.
 - `anschrift(m)` – Zeilen für Etikett und Anschriftfeld: Anrede, Titel und Name, Adresszusätze, Straße, PLZ Ort, Land.
 - `csv(store, members)` – Mitglieder der Auswahl mit Anschrift und Kontakt als CSV (Semikolon, Formelschutz wie die anderen Listen).
-- `excel(store, members)` – Auswahl als Excel-Datei zum Weiterleiten an die Kreisverbände (ab 0.45): ein Blatt je Kreisverband, Spalten wie die CSV.
+- `excel(store, members)` – Auswahl als Excel zum Weiterleiten an die Kreisverbände (ab 0.45): je Kreisverband eine eigene Datei – so bekommt kein
 - `etiketten(members)` – Adressetiketten (Zweckform 3474: 3 × 8 Etiketten à 70 × 37 mm auf A4) – nur Mitglieder, die Post bekommen.
 - `anschreiben(cfg, members, betreff, text, today=…)` – Ein Brief je Mitglied (DIN 5008): Absender, Anschriftfeld, Datum, Betreff, Briefanrede (sonst „Hallo Vorname,“), Text, Gruß.
 - `datei(store, data, actor)` – Abruf der Oberfläche: {art, ids, betreff?, text?} → (Inhalt, Medientyp, Dateiname); im Protokoll nur Art und Anzahl.
