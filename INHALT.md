@@ -485,8 +485,7 @@ Tests: test_beitraege.py, test_bereinigung.py, test_kasse.py, test_klaerfaelle.p
 - `member_years(m, ctx_first, this_year)` – Mögliche Beitragsjahre eines Mitglieds: ab Datenbeginn bzw. Eintritt bis zum laufenden Jahr bzw. Austrittsjahr.
 - `account(store, member_id, today=…)` – Beitragskonto eines Mitglieds: Jahre (Soll, Grundlage, gezahlt, offen, Stand 31.12.) und Buchungen mit laufendem Saldo.
 - `overview(store, year=…, today=…)` – Alle Mitglieder: Soll und gezahlt im Jahr, Saldo (heute) – für die Mitgliederliste, Rückstände und Abstimmung.
-- `stand(row, m)` – Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): wie jahr_stand – Zahlungen decken die ältesten
-- `jahr_stand(y)` – Stand eines Beitragsjahres aus account ohne Betrag (Akte, 0.43): klaeren / frei / spaeter (noch nicht fällig) / offen / bezahlt.
+- `jahr_stand(y)` – Stand eines Beitragsjahres ohne Betrag (Akte und Mitgliederliste, 0.43): klaeren / frei / spaeter (noch nicht fällig) / offen /
 - `returned_after(store, after, years, today=…)` – Mitglieder, bei denen nach dem Tag `after` (bis heute) eine Rücklastschrift oder Rückzahlung für eines der Beitragsjahre gebucht ist.
 - `reconciliation(store, year, until=…)` – Abstimmung Hauptbuch ↔ Mitgliederkonten für ein Haushaltsjahr (nur Zahlungen, ohne Stornos; until: Zahlungen bis zu diesem Tag).
 - `summary(store, year=…, today=…, rows=…)` – Kennzahlen der Mitgliederbuchhaltung für ein Jahr.

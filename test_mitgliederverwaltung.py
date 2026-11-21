@@ -94,17 +94,19 @@ class ListenTests(Basis):
             mitgliederlisten.datei(self.s, {'art': 'alles', 'ids': [self.a]}, 'Test')
 
     def test_stand_des_beitrags_ohne_betrag(self):
-        m, row = {'guest': 0, 'dues_free': 0}, {'soll': 3000, 'due_now': True, 'open': 0}
-        self.assertEqual(mitgliederkonto.stand({**row, 'soll': None, 'open': None}, m), 'klaeren')
-        self.assertEqual(mitgliederkonto.stand({**row, 'soll': 0}, m), 'frei')
-        self.assertEqual(mitgliederkonto.stand(row, {'guest': 1, 'dues_free': 0}), 'frei')
-        self.assertEqual(mitgliederkonto.stand({**row, 'open': 2000}, m), 'offen')
-        self.assertEqual(mitgliederkonto.stand(row, m), 'bezahlt')
-        self.assertEqual(mitgliederkonto.stand({**row, 'due_now': False}, m), 'spaeter')     # Rechnung noch nicht fällig
+        row = {'soll': 3000, 'due_now': True, 'open': 0, 'paid': 3000}
+        self.assertEqual(mitgliederkonto.jahr_stand({**row, 'soll': None, 'open': None}), 'klaeren')
+        self.assertEqual(mitgliederkonto.jahr_stand({**row, 'soll': 0}), 'frei')
+        self.assertEqual(mitgliederkonto.jahr_stand({**row, 'open': 2000}), 'offen')
+        self.assertEqual(mitgliederkonto.jahr_stand(row), 'bezahlt')
+        self.assertEqual(mitgliederkonto.jahr_stand({**row, 'due_now': False, 'paid': 0}), 'spaeter')   # Rechnung noch nicht fällig
+        self.assertEqual(mitgliederkonto.jahr_stand({**row, 'due_now': False}), 'bezahlt')             # vor der Fälligkeit bezahlt
+        guest = self.s.member({**BASE, 'number': 'T-9', 'first_name': 'Gina', 'last_name': 'Gast', 'guest': '1'}, 'Test')
+        self.assertEqual(next(x for x in self.s.snapshot(2026)['members'] if x['id'] == guest)['dues_state'], 'frei')
         member = next(x for x in self.s.snapshot(2026)['members'] if x['id'] == self.a)
         self.assertEqual(member['dues_state'], 'offen')
         mitglieder.notiz(self.s, self.a, 'vertraulich', 'Test')
-        self.assertFalse(any('note' in r for r in self.s.dues_preview(2026)))   # Buchhaltung sieht die Notiz nicht
+        self.assertFalse(any(k in r for r in self.s.dues_preview(2026) for k in ('note', 'mobile', 'gender')))   # wie die Gesamtliste
         self.assertIn(2026, member['dues_open_years'])                      # fällig und nicht eingegangen (ab 2027 auch Folgejahre)
 
 
@@ -158,12 +160,7 @@ class AkteTests(Basis):
                          ('T-2', '01.03.1995', 'ja', 'Altona / Elbvororte'))
         self.assertNotIn('Gastmitglied', rows)                                                # Nein-Angaben fallen weg
         self.assertNotIn('Austritt', rows)
-
-    def test_stand_je_jahr(self):
-        self.assertEqual([mitgliederkonto.jahr_stand(y) for y in (
-            {'soll': None, 'due_now': True, 'open': None}, {'soll': 0, 'due_now': True, 'open': 0}, {'soll': 3000, 'due_now': False, 'open': 0},
-            {'soll': 3000, 'due_now': True, 'open': 3000}, {'soll': 3000, 'due_now': True, 'open': 0})],
-            ['klaeren', 'frei', 'spaeter', 'offen', 'bezahlt'])
+        self.assertNotIn('Ortsverband', dict(mitglieder.angaben(self.s, {**m, 'ov_id': 999})))   # unbekannter Ortsverband: keine leere Zeile
 
 
 class ListenHttpTests(unittest.TestCase):
