@@ -45,7 +45,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Verband ändern oder Buchhaltung ändern:** `POST /api/cash-donation`, `POST /api/rpj-zuordnen-mehrere`, `POST /api/rpj-zuordnen`
 
-**angemeldet:** `GET /api/data`, `GET /api/haushalt`, `GET /api/karte-gebiete`, `GET /api/workflow`, `POST /api/bestaetigen`, `POST /api/logout`, `POST /api/password`
+**angemeldet:** `GET /api/data`, `GET /api/haushalt`, `GET /api/karte-gebiete`, `GET /api/regelwerk`, `GET /api/workflow`, `POST /api/bestaetigen`, `POST /api/logout`, `POST /api/password`
 
 **ohne Anmeldung** (`rollen.OUTSIDE`): `/api/keycloak/rueckkehr`, `/api/keycloak/start`, `/api/login`, `/api/status`
 
@@ -83,6 +83,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
 - `static/js/views/overview.js`: overview → /api/monatsbericht.pdf, /api/pruefpaket.zip
 - `static/js/views/reconcile.js`: reconcileDialog → /api/abgleich
+- `static/js/views/regelwerk.js`: regelwerk → /api/regelwerk
 - `static/js/views/rpj.js`: assignDialog, projectDialog, rpj → /api/rpj, /api/rpj-abruf, /api/rpj-abruf-loeschen, /api/rpj-buchungen.csv, /api/rpj-import, /api/rpj-import-vorschau, /api/rpj-jahr, /api/rpj-offen, /api/rpj-projekt, /api/rpj-projekt-loeschen, /api/rpj-projekt.pdf, /api/rpj-vorlage.csv, /api/rpj-zuordnen, /api/rpj-zuordnen-mehrere, /api/rpj.csv, /api/rpj.pdf
 - `static/js/views/sepa-datei.js`: sepaFileDialog → /api/sepa-aufteilen, /api/sepa-begleitzettel, /api/sepa-vorschau
 - `static/js/views/sepa.js`: activeMandate, bindMandateSection, mandateSection, sepaDialog → /api/debit-notice, /api/mandate, /api/mandate-revoke, /api/mandate.pdf, /api/sepa, /api/sepa-batch, /api/sepa-batch-status, /api/sepa-debit-reject, /api/sepa-debit-remove, /api/sepa.xml
@@ -169,7 +170,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -229,7 +230,7 @@ Tests: test_import.py
 
 Stammdaten (Einstellungen): erlaubte Felder, Standardwerte und Prüfung an einer Stelle.
 
-Tests: test_rechnungen.py
+Tests: test_rechnungen.py, test_regelwerk.py
 
 - `unknown_placeholders(text)`
 - `clean(data, current)` – Prüft geänderte Felder; liefert {Schlüssel: Text}. current = bisherige Stammdaten (mit Standards).
@@ -254,6 +255,16 @@ Tests: test_konten.py
 - `ledger(store, code, year, kv=…)` – Kontenblatt eines Kontos für ein Jahr; kv filtert auf einen Bereich.
 - `source_label(source)`
 - `ledger_csv(store, code, year, kv=…)` – Kontenblatt als CSV (Semikolon, Euro mit Komma, wie die übrigen Exporte).
+
+### regelwerk.py
+
+Regelwerk (ab 0.43, Wunsch Lennert Gust 21.11.2026): die Regeln aus Satzung und Finanzordnung, die das Programm anwendet.
+
+Tests: test_regelwerk.py
+
+- `zweiter_freitag_dezember(year)` – Rechnungsausgang (Satzung § 49 Abs. 4): bis zum zweiten Freitag im Dezember.
+- `termine(cfg, today=…)` – Nächste Termine der Mitgliederverwaltung: Beitrittsstichtag, Rechnungsausgang, Beitragsstichtag, Liste an den LMA (§ 17).
+- `regeln(cfg, today=…)` – Regelwerk für die Seite: Quellen, Bereiche, Regeln mit heutigem Wert und Stand, Termine, offene Fragen.
 
 ## Mitgliederverwaltung
 

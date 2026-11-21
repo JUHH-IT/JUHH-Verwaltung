@@ -69,7 +69,7 @@ def _r(*areas): return tuple((area, 'lesen') for area in areas)
 _B, _M, _V = 'buchhaltung', 'mitglieder', 'verband'
 GET = {
     # die Oberfläche lädt Gesamtdaten, Haushalt und Arbeitsdaten immer – der Server leert, wofür das Recht fehlt
-    '/api/data': FREE, '/api/haushalt': FREE, '/api/workflow': FREE, '/api/karte-gebiete': FREE,
+    '/api/data': FREE, '/api/haushalt': FREE, '/api/workflow': FREE, '/api/karte-gebiete': FREE, '/api/regelwerk': FREE,
     **{path: _r(_B) for path in (
         '/api/suggestions', '/api/dues-preview', '/api/invoice.pdf', '/api/invoices.pdf', '/api/preview.pdf',
         '/api/mail-preview', '/api/kasse', '/api/kasse.pdf', '/api/kasse.csv', '/api/kasse-datei', '/api/bill-file',

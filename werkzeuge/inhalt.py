@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 # Teilbereich → Module (Reihenfolge = Reihenfolge im Verzeichnis). Ein neues Modul hier eintragen – sonst steht es unter „Nicht zugeordnet“.
 BEREICHE = (
-    ('Kern', 'app core formate stammdaten kontenrahmen'),
+    ('Kern', 'app core formate stammdaten kontenrahmen regelwerk'),
     ('Mitgliederverwaltung', 'mitglieder gliederung klaerfaelle wahlrecht karte adressen auswertung'),
     ('Mitgliedsbeiträge', 'beitraege mitgliederkonto opliste sepadatei lastschrift'),
     ('Buchhaltung', 'bankimport uebernahme workflow kasse verbindlichkeiten erstattung erechnung freigabe berichte'),

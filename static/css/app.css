@@ -359,6 +359,27 @@ html.compact .nav button { min-height: 44px; font-size: 15px; }
 html.compact .main { padding: 24px 24px 56px; }
 html.compact .worklist .detail { top: 72px; scroll-margin-top: 64px; }
 
+/* Regelwerk (0.43) */
+.rw-intro { max-width: 72ch; }
+.rw-group { padding: 0; overflow: hidden; }
+.rw-group h2 { padding: 16px 24px; border-bottom: 1px solid var(--line-2); background: var(--surface-2); }
+.rw-head, .rw-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) minmax(0, 0.8fr) 104px; gap: 8px 20px; padding: 12px 24px; align-items: start; }
+.rw-head { font-size: 12px; font-weight: 500; color: var(--muted); padding-bottom: 0; }
+.rw-row + .rw-row { border-top: 1px solid var(--line-2); }
+.rw-row strong { font-weight: 600; }
+.rw-source { justify-self: start; font-size: 12px; font-weight: 600; color: var(--navy); background: var(--navy-50); border-radius: 6px; padding: 3px 8px; }
+.rw-value { font-size: 14px; display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.rw-label { display: none; font-size: 12px; color: var(--muted); }
+.rw-open { margin: 8px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--ink-2); }
+@media (max-width: 900px) {
+  .rw-head { display: none; }
+  .rw-row { grid-template-columns: minmax(0, 1fr) auto; padding: 14px 16px; }
+  .rw-row > :nth-child(2), .rw-row > .rw-value { grid-column: 1 / -1; }
+  .rw-row > :last-child { grid-row: 1; grid-column: 2; }
+  .rw-label { display: block; }
+  .rw-group h2 { padding: 14px 16px; }
+}
+
 /* ---------- Kleine Bildschirme (Tablet hochkant, Handy) ---------- */
 @media (max-width: 900px) {
   .main { padding: 20px 16px 48px; }

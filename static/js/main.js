@@ -23,6 +23,7 @@ import { konten } from './views/konten.js';
 import { settings } from './views/settings.js';
 import { benutzer } from './views/benutzer.js';
 import { sicherheit } from './views/sicherheit.js';
+import { regelwerk } from './views/regelwerk.js';
 
 const root = document.getElementById('root');
 
@@ -46,6 +47,7 @@ const PAGES = [
   { id: 'budgets', label: 'Haushalt & Budgets', icon: 'chart', view: budgets, group: 'Verband', area: 'verband' },
   { id: 'rpj', label: 'RPJ-Mittel', icon: 'layers', view: rpj, group: 'Verband', area: 'verband' },
   { id: 'auswertung', label: 'Auswertung', icon: 'trend', view: auswertung, group: 'Verband', area: 'auswertung' },
+  { id: 'regelwerk', label: 'Regelwerk', icon: 'book', view: regelwerk, group: 'Verband' },   // für alle Angemeldeten (0.43)
   { id: 'users', label: 'Benutzer & Rollen', icon: 'users', view: benutzer, group: 'Verwaltung', area: 'verwaltung' },
   { id: 'security', label: 'Sicherheit', icon: 'shield', view: sicherheit, group: 'Verwaltung', area: 'sicherheit' },
   // Einstellungen: für alle (eigenes Passwort ändern), die Reiter richten sich nach dem Recht „Einstellungen“

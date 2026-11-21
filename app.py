@@ -639,6 +639,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200,beitraege.entries(store,year) if query.get('all',[''])[0]=='1' else beitraege.open_list(store,year))
                 if path=='/api/karte': return self.send(200,__import__('karte').data(store,DATA))   # Lage der Mitglieder (karte.py), nur Kennung und Koordinate
                 if path=='/api/karte-gebiete': return self.send(200,__import__('karte').gebiete())   # Bezirke/Stadtteile (öffentliche Daten)
+                if path=='/api/regelwerk': return self.send(200,__import__('regelwerk').regeln(store.config()))   # Regelwerk für alle Angemeldeten (0.43)
                 if path=='/api/adressen-status': return self.send(200,__import__('adressen').status(DATA))
                 if path=='/api/klaerfaelle':   # Klärfälle der Mitgliederverwaltung (klaerfaelle.py)
                     import klaerfaelle
