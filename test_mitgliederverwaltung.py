@@ -53,20 +53,24 @@ class ListenTests(Basis):
         self.assertIn("'=Hamburg", text)
         self.assertEqual(len(lines), 3)
 
-    def test_excel_ein_blatt_je_kreisverband(self):
+    def test_excel_je_kreisverband_eine_datei(self):
         import openpyxl
+        import zipfile
         from io import BytesIO
-        other = self.s.member({**BASE, 'kv': '5300', 'number': 'T-4', 'first_name': '=HYPERLINK("x")', 'last_name': 'Formel'}, 'Test')
-        body, kind, name = mitgliederlisten.datei(self.s, {'art': 'excel', 'ids': [self.a, self.b, other]}, 'Test')
+        body, kind, name = mitgliederlisten.datei(self.s, {'art': 'excel', 'ids': [self.a, self.b]}, 'Test')   # ein Kreisverband
         self.assertTrue(name.endswith('.xlsx') and kind.endswith('spreadsheetml.sheet'))
-        book = openpyxl.load_workbook(BytesIO(body))
-        self.assertEqual(book.sheetnames, ['Altona - Elbvororte', 'Eimsbüttel'])            # „/“ ist im Blattnamen nicht erlaubt
-        first = book['Altona - Elbvororte']
-        self.assertEqual([c.value for c in first[1]][:5], ['Mitgliedsnummer', 'Anrede', 'Titel', 'Vorname', 'Nachname'])
-        self.assertEqual([r[0].value for r in first.iter_rows(min_row=2)], ['T-2', 'T-1'])
-        self.assertTrue(first['A1'].font.bold)
-        cell = book['Eimsbüttel']['D2']
-        self.assertEqual((cell.value, cell.data_type), ('=HYPERLINK("x")', 's'))             # Text, keine Formel
+        sheet = openpyxl.load_workbook(BytesIO(body)).active
+        self.assertEqual([c.value for c in sheet[1]][:5], ['Mitgliedsnummer', 'Anrede', 'Titel', 'Vorname', 'Nachname'])
+        self.assertEqual([r[0].value for r in sheet.iter_rows(min_row=2)], ['T-2', 'T-1'])
+        self.assertTrue(sheet['A1'].font.bold)
+        other = self.s.member({**BASE, 'kv': '5300', 'number': 'T-4', 'first_name': '=HYPERLINK("x")', 'last_name': 'Formel\x07'}, 'Test')
+        body, kind, name = mitgliederlisten.datei(self.s, {'art': 'excel', 'ids': [self.a, self.b, other]}, 'Test')
+        self.assertEqual((kind, name.endswith('.zip')), ('application/zip', True))
+        files = zipfile.ZipFile(BytesIO(body))
+        self.assertEqual(files.namelist(), ['Mitgliederliste-Altona-Elbvororte.xlsx', 'Mitgliederliste-Eimsbüttel.xlsx'])   # kein KV sieht die anderen
+        sheet = openpyxl.load_workbook(BytesIO(files.read('Mitgliederliste-Eimsbüttel.xlsx'))).active
+        self.assertEqual([r[0].value for r in sheet.iter_rows(min_row=2)], ['T-4'])
+        self.assertEqual((sheet['D2'].value, sheet['D2'].data_type, sheet['E2'].value), ('=HYPERLINK("x")', 's', 'Formel'))   # Text, Steuerzeichen weg
         row = self.s.db.execute("SELECT detail FROM audit WHERE action='Mitgliederliste ausgegeben' ORDER BY id DESC").fetchone()
         self.assertEqual(json.loads(row[0]), {'art': 'excel', 'anzahl': 3})
 

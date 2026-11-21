@@ -1,5 +1,5 @@
 """Listen der Mitgliederverwaltung (ab 0.43, Wunsch Lennert Gust 21.11.2026): eine Auswahl aus der Mitgliederliste als CSV, als
-Excel mit einem Blatt je Kreisverband (ab 0.45, zum Weiterleiten), als Adressetiketten (Zweckform 3474, 70 × 37 mm, 24 je Blatt) oder als
+Excel mit einer Datei je Kreisverband (ab 0.45, zum Weiterleiten; mehrere als ZIP), als Adressetiketten (Zweckform 3474, 70 × 37 mm, 24 je Blatt) oder als
 Anschreiben (PDF, ein Brief je Mitglied).
 
 Enthält Kontaktdaten – vertraulich: Abruf mit „Mitglieder lesen“ und Passwortbestätigung (app.CONFIRM), im Änderungsprotokoll nur Art und
@@ -23,7 +23,7 @@ MAX_BETREFF, MAX_TEXT = 200, 5000
 
 def auswahl(store, ids):
     """Mitglieder zu den Kennungen der Auswahl (sortiert nach Name) – prüft die Eingabe: Liste ganzer Zahlen, höchstens MAX, alle vorhanden."""
-    if not isinstance(ids, list) or not ids or len(ids) > MAX or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+    if not isinstance(ids, list) or not ids or len(ids) > MAX or not all(isinstance(i, int) and not isinstance(i, bool) and 0 < i < 2 ** 62 for i in ids):
         raise ValueError('Bitte Mitglieder auswählen.')
     ids = sorted(set(ids))
     rows = []
@@ -69,35 +69,48 @@ def csv(store, members):
     return berichte._csv(_zeilen(store, members), KOPF)
 
 
-def excel(store, members):
-    """Auswahl als Excel-Datei zum Weiterleiten an die Kreisverbände (ab 0.45): ein Blatt je Kreisverband, Spalten wie die CSV.
-    Jede Zelle ist Text – nichts wird als Formel gelesen."""
+def _xlsx(rows):
+    """Eine Excel-Datei (ein Blatt) mit Kopfzeile, Filter und Spaltenbreiten; jede Zelle Text, Steuerzeichen entfallen."""
     import openpyxl
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
     from openpyxl.styles import Font
     book = openpyxl.Workbook()
-    book.remove(book.active)
-    kv = KOPF.index('Kreisverband')
-    blaetter = {}
-    for row in _zeilen(store, members):
-        blaetter.setdefault(row[kv] or 'ohne Kreisverband', []).append(row)
-    for name in sorted(blaetter):
-        sheet = book.create_sheet(re.sub(r'[\\/*?:\[\]]', '-', name)[:31])
-        sheet.append(KOPF)
-        for row in blaetter[name]:
-            sheet.append([v or '' for v in row])
-        for cells in sheet.iter_rows():
-            for cell in cells:
-                cell.data_type = 's'
-        for cell in sheet[1]:
-            cell.font = Font(bold=True)
-        sheet.freeze_panes = 'A2'
-        sheet.auto_filter.ref = sheet.dimensions
-        for i, title in enumerate(KOPF, 1):
-            width = max(len(str(sheet.cell(r, i).value or '')) for r in range(1, sheet.max_row + 1))
-            sheet.column_dimensions[openpyxl.utils.get_column_letter(i)].width = min(max(width, len(title)) + 2, 40)
+    sheet = book.active
+    sheet.title = 'Mitglieder'
+    sheet.append(KOPF)
+    for row in rows:
+        sheet.append([ILLEGAL_CHARACTERS_RE.sub('', str(v)) if v else '' for v in row])
+    for cells in sheet.iter_rows():
+        for cell in cells:
+            cell.data_type = 's'
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    sheet.freeze_panes = 'A2'
+    sheet.auto_filter.ref = sheet.dimensions
+    for i, title in enumerate(KOPF, 1):
+        width = max(len(str(sheet.cell(r, i).value or '')) for r in range(1, sheet.max_row + 1))
+        sheet.column_dimensions[openpyxl.utils.get_column_letter(i)].width = min(max(width, len(title)) + 2, 40)
     out = io.BytesIO()
     book.save(out)
     return out.getvalue()
+
+
+def excel(store, members):
+    """Auswahl als Excel zum Weiterleiten an die Kreisverbände (ab 0.45): je Kreisverband eine eigene Datei – so bekommt kein
+    Kreisverband die Daten eines anderen; mehrere Kreisverbände als ZIP. → (Inhalt, Endung 'xlsx' oder 'zip')."""
+    import zipfile
+    kv = KOPF.index('Kreisverband')
+    groups = {}
+    for row in _zeilen(store, members):
+        groups.setdefault(row[kv], []).append(row)
+    if len(groups) == 1:
+        return _xlsx(next(iter(groups.values()))), 'xlsx'
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
+        for name, rows in sorted(groups.items()):
+            teil = re.sub(r'\W+', '-', name).strip('-')   # „Altona / Elbvororte“ → „Altona-Elbvororte“
+            z.writestr(f'Mitgliederliste-{teil}.xlsx', _xlsx(rows))
+    return out.getvalue(), 'zip'
 
 
 @exclusive
@@ -218,10 +231,12 @@ def datei(store, data, actor):
     if art not in ARTEN:
         raise ValueError('Unbekannte Liste.')
     members = auswahl(store, data.get('ids'))
+    zipped = False
     if art == 'csv':
         body = csv(store, members)
     elif art == 'excel':
-        body = excel(store, members)
+        body, ext = excel(store, members)
+        zipped = ext == 'zip'
     elif art == 'etiketten':
         body = etiketten(members)
     else:
@@ -229,5 +244,5 @@ def datei(store, data, actor):
     post = len(members) if art in ('csv', 'excel') else sum(1 for m in members if postfaehig(m))
     with store.db:
         store.audit(actor, 'Mitgliederliste ausgegeben', {'art': art, 'anzahl': post})
-    kind, ext = ARTEN[art]
+    kind, ext = ('application/zip', 'zip') if zipped else ARTEN[art]
     return body, kind, f'{NAMEN[art]}-{date.today().isoformat()}.{ext}'

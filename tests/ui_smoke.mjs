@@ -955,6 +955,8 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.waitForSelector('#modal .dp-group');
   check(true, 'Doppelte: Akte öffnen und zurück');
   await page.click('#modal .dp-group [data-nein]');
+  await page.waitForSelector('#preview[open] [data-ok]');                       // Rückfrage: gilt dauerhaft für die ganze Gruppe
+  await page.click('#preview [data-ok]');
   check((await toast()).includes('kein Duplikat'), 'Doppelte: kein Duplikat bestätigt');
   check(await page.waitForFunction(() => (document.querySelector('#modal [data-doppelte]')?.textContent || '').includes('Keine möglichen Doppelten'), null, { timeout: 5000 })
     .then(() => true, () => false), 'Doppelte: Gruppe danach ausgeblendet');
@@ -963,7 +965,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('main [data-liste=aktiv]');
   await page.check('main [data-check-all]');
   const [excel] = await Promise.all([page.waitForEvent('download'), page.click('main .ml-bar [data-excel]')]);
-  check(excel.suggestedFilename().endsWith('.xlsx') && readFileSync(await excel.path()).subarray(0, 2).toString() === 'PK', 'Auswahl als Excel je Kreisverband');
+  check(/\.(zip|xlsx)$/.test(excel.suggestedFilename()) && readFileSync(await excel.path()).subarray(0, 2).toString() === 'PK', 'Auswahl als Excel je Kreisverband (mehrere als ZIP)');
   await page.click('main .ml-bar [data-unpick]');
 
   // 0.29: Auswertung der Mitgliederdaten

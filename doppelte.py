@@ -4,10 +4,12 @@ Nur Hinweise, nichts wird zusammengeführt oder gelöscht. Zwei Mitglieder gelte
   - gleichem Namen und gleichem Geburtsdatum,
   - gleichem Namen und gleicher Anschrift (Straße mit Hausnummer und PLZ),
   - gleicher E-Mail-Adresse und gleichem Geburtsdatum,
-  - gleichem Nachnamen und Geburtsdatum, wenn ein Vorname den anderen abkürzt („Max“ / „Maximilian“).
-Namen vergleichen ohne Groß-/Kleinschreibung, Akzente und Satzzeichen, „ü“ = „ue“, Reihenfolge egal („Berg Anna“ = „Anna Berg“);
-Straßen wie die Adressprüfung („Musterstr.“ = „Musterstraße“). Paare, die jemand als „kein Duplikat“ bestätigt hat, fallen weg
-(`mitglieder_keine_doppelten`). Zwillinge mit verschiedenen Vornamen fallen nicht auf.
+  - gleichem Nachnamen und Geburtsdatum, wenn ein Vorname den anderen abkürzt („Max“ / „Maximilian“) oder die Vornamen des einen
+    alle im anderen stehen („Anna Maria“ / „Maria“).
+Namen vergleichen ohne Groß-/Kleinschreibung, Akzente und Satzzeichen, „Müller“ = „Mueller“ = „Muller“, Reihenfolge egal
+(„Berg Anna“ = „Anna Berg“); Straßen wie die Adressprüfung („Musterstr.“ = „Musterstraße“). Paare, die jemand als „kein Duplikat“
+bestätigt hat, fallen weg (`mitglieder_keine_doppelten`). Zwillinge fallen nur auf, wenn ihre Vornamen sich so ähneln oder sie
+dieselbe E-Mail-Adresse haben – dann „kein Duplikat“.
 """
 import re
 from collections import defaultdict
@@ -26,10 +28,7 @@ def init(db):
 
 def _fold(text):
     import gliederung
-    text = str(text or '').casefold()
-    for umlaut, ersatz in (('ä', 'ae'), ('ö', 'oe'), ('ü', 'ue')):
-        text = text.replace(umlaut, ersatz)
-    return gliederung.fold(text)
+    return re.sub(r'([aou])e', r'\1', gliederung.fold(text))   # ü → u (fold), ue → u: „Müller“ = „Mueller“ = „Muller“
 
 
 def _woerter(text):
@@ -40,6 +39,13 @@ def _anschrift(m):
     import adressen
     name, nr, rest = adressen.split_street(m['street'])
     return (adressen.norm_street(name), nr, _fold(rest), (m['zip'] or '').strip()) if name and nr and m['zip'] else None
+
+
+def _vornamen_passen(fa, fb):
+    """Vornamen (Wortmengen) verschieden, aber einer steckt im anderen („Anna Maria“/„Maria“) oder ein Wort kürzt eins des anderen ab
+    („Max“/„Maximilian“, mindestens drei Buchstaben)."""
+    return fa != fb and (fa < fb or fb < fa or any(x != y and min(len(x), len(y)) >= 3 and (x.startswith(y) or y.startswith(x))
+                                                   for x in fa for y in fb))
 
 
 def paare(members):
@@ -54,7 +60,7 @@ def paare(members):
             keys[('name_anschrift', name, _anschrift(m))].append(m['id'])
         if mail and birth:
             keys[('mail_geburt', mail, birth)].append(m['id'])
-        first, last = ''.join(_woerter(m['first_name'])), _woerter(m['last_name'])
+        first, last = frozenset(_woerter(m['first_name'])), _woerter(m['last_name'])
         if first and last and birth:
             nachnamen[(last, birth)].append((first, m['id']))
     out = defaultdict(set)
@@ -63,7 +69,7 @@ def paare(members):
             out[pair].add(grund)
     for leute in nachnamen.values():
         for (fa, a), (fb, b) in combinations(leute, 2):
-            if fa != fb and min(len(fa), len(fb)) >= 3 and (fa.startswith(fb) or fb.startswith(fa)):
+            if _vornamen_passen(fa, fb):
                 out[tuple(sorted((a, b)))].add('vorname')
     return out
 
@@ -93,8 +99,10 @@ def gruppen(store):
 
 def kein_duplikat(store, ids, actor):
     """Mitglieder einer Gruppe als „kein Duplikat“ bestätigen (alle Paare untereinander); im Protokoll nur die Kennungen."""
-    if not isinstance(ids, list) or not 2 <= len(set(ids)) <= MAX_GRUPPE or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+    if not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) and 0 < i < 2 ** 62 for i in ids) or len(set(ids)) < 2:
         raise ValueError('Bitte mindestens zwei Mitglieder angeben.')
+    if len(set(ids)) > MAX_GRUPPE:
+        raise ValueError(f'Höchstens {MAX_GRUPPE} Mitglieder auf einmal.')
     ids = sorted(set(ids))
     if store.db.execute(f"SELECT COUNT(*) FROM members WHERE id IN ({','.join('?' * len(ids))})", ids).fetchone()[0] != len(ids):
         raise ValueError('Mitglied nicht gefunden.')
