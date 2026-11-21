@@ -324,7 +324,7 @@ class Store:
         today=date.today().isoformat()
         for m in self.rows('SELECT * FROM members ORDER BY name'):
             existing=self.db.execute('SELECT number FROM invoices WHERE member_id=? AND year=? AND kind=?',(m['id'],year,'dues')).fetchone()
-            item=dict(m)
+            item={k:v for k,v in dict(m).items() if k!='note'}   # Notiz der Mitgliederverwaltung (0.43) gehört nicht in die Buchhaltung
             try:
                 r=self.dues_for_invoice(m,year,cfg)
                 item.update(amount=r and r['amount'],basis=r and r['basis'],due=r and self.dues_due(m,year,today,cfg),error=blocked)

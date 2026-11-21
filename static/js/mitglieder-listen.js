@@ -7,8 +7,10 @@ import { store } from './store.js';
 export const isActive = (m, today = todayIso()) => !m.left_on || m.left_on > today;
 const birthYear = (m) => (m.birth ? Number(m.birth.slice(0, 4)) : 0);
 
+/** Anschrift vollständig (Straße, PLZ, Ort) – dieselbe Regel wie mitgliederlisten.postfaehig ohne den Postausschluss. */
+export const anschriftVollstaendig = (m) => !!(m.street && m.zip && m.city);
 /** Was in den Stammdaten fehlt (ohne Kontaktdaten, die erst die Akte lädt). */
-export const fehlt = (m) => [!m.zip && 'Anschrift', !m.email && 'E-Mail', !m.birth && 'Geburtsdatum', !m.ov_id && 'Ortsverband'].filter(Boolean);
+export const fehlt = (m) => [!anschriftVollstaendig(m) && 'Anschrift', !m.email && 'E-Mail', !m.birth && 'Geburtsdatum', !m.ov_id && 'Ortsverband'].filter(Boolean);
 
 /** Feste Listen: id, Bezeichnung, Prüfung, Hinweis für den Überblick. year = gewähltes Haushaltsjahr. */
 export function listen(year = store.year, today = todayIso()) {
@@ -19,7 +21,7 @@ export function listen(year = store.year, today = todayIso()) {
     { id: 'aktiv', label: 'Alle aktiven', test: (m) => isActive(m, today) },
     { id: 'neu', label: `Neu ${year}`, test: (m) => (m.joined || '').startsWith(y), hint: `Eintritte seit 01.01.${year}` },
     { id: 'ohne-mail', label: 'Ohne E-Mail', test: (m) => isActive(m, today) && !m.email, hint: 'Für Einladungen und Rechnungen per E-Mail' },
-    { id: 'anschrift', label: 'Anschrift prüfen', test: (m) => isActive(m, today) && !m.zip, hint: 'Straße, PLZ oder Ort fehlen' },
+    { id: 'anschrift', label: 'Anschrift prüfen', test: (m) => isActive(m, today) && !anschriftVollstaendig(m), hint: 'Straße, PLZ oder Ort fehlen' },
     { id: 'werden-35', label: `Werden ${year} 35`, test: (m) => isActive(m, today) && birthYear(m) === year - 35, hint: 'Altersgrenze nach Satzung § 2 Abs. 1 Nr. 4' },
     { id: 'beitrag-offen', label: 'Beitrag offen', test: (m) => isActive(m, today) && (m.dues_open_years || []).length > 0, hint: 'Fällige Beiträge nicht eingegangen' },
     ...(wahl ? [{ id: 'wahlberechtigt', label: 'Wahlberechtigt', test: (m) => isActive(m, today) && m.wahl?.status === 'wahlberechtigt' },

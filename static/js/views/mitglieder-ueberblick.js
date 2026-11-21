@@ -4,7 +4,7 @@
 import { api } from '../api.js';
 import { html, mount } from '../html.js';
 import { date, weekdayDate, todayIso } from '../format.js';
-import { store, go } from '../store.js';
+import { store, go, can } from '../store.js';
 import { pageHead, icon, safe, table, meter } from '../ui.js';
 import { listen, isActive, fehlt } from '../mitglieder-listen.js';
 import { memberDialog, importMembersDialog, openList } from './members.js';
@@ -34,14 +34,14 @@ function draw(main, termine) {
       allowed: act.filter((m) => m.wahl?.status === 'wahlberechtigt').length, complete: act.filter((m) => !fehlt(m).length).length };
   }).filter((k) => k.active);
   mount(main, html`<div class="page wide mu-page">
-    ${pageHead(`Mitgliederverwaltung · Stand ${date(today)}`, 'Überblick', html`
+    ${pageHead(`Mitgliederverwaltung · Stand ${date(today)}`, 'Überblick', can('mitglieder', 'schreiben') ? html`
       <button type="button" class="btn" data-import>${icon('upload', 16)} Liste importieren</button>
-      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>`)}
+      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>` : '')}
     <section class="cards" aria-label="Kennzahlen">
       <div class="card"><span class="label">Aktive Mitglieder</span><span class="value">${active.length}</span>
         <span class="note">${kvs.length} ${kvs.length === 1 ? 'Kreisverband' : 'Kreisverbände'}</span></div>
       <div class="card"><span class="label">Eintritte ${year}</span><span class="value">${joined}</span>
-        <span class="note">Austritte ${left} · Saldo ${joined - left >= 0 ? '+' : ''}${joined - left}</span></div>
+        <span class="note">Austritte bis heute ${left} · Saldo ${joined - left >= 0 ? '+' : ''}${joined - left}</span></div>
       <div class="card"><span class="label">Wahlberechtigt</span><span class="value">${wahl ? allowed : '—'}</span>
         <span class="note">${wahl ? `von ${active.length} aktiven Mitgliedern` : `wird ab ${store.data.wahl?.ab || 2027} berechnet`}</span></div>
       <div class="card"><span class="label">Daten vollständig</span><span class="value">${pct(complete, active.length)} %</span>
@@ -73,8 +73,8 @@ function draw(main, termine) {
         : html`<p class="muted">Noch keine Mitglieder.</p>`}
     </section>
   </div>`);
-  main.querySelector('[data-new]').onclick = () => memberDialog();
-  main.querySelector('[data-import]').onclick = importMembersDialog;
+  main.querySelector('[data-new]')?.addEventListener('click', () => memberDialog());
+  main.querySelector('[data-import]')?.addEventListener('click', importMembersDialog);
   main.querySelector('[data-go-cases]')?.addEventListener('click', () => go('cases'));
   main.querySelector('[data-rules]').onclick = () => go('regelwerk');
   main.querySelectorAll('[data-list]').forEach((b) => (b.onclick = () => openList(b.dataset.list)));

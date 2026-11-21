@@ -187,19 +187,18 @@ def overview(store, year=None, today=None):
         acc = _account(store, m, ctx)
         y = next((r for r in acc['years'] if r['year'] == year), None)
         rows[m['id']] = {'soll': y['soll'] if y else 0, 'basis': y['basis'] if y else 'kein Beitrag', 'issue': y['issue'] if y else None,
-                         'paid': y['paid'] if y else 0, 'open': y['open'] if y else 0, 'balance': acc['balance'], 'arrears': acc['arrears'],
+                         'paid': y['paid'] if y else 0, 'open': y['open'] if y else 0, 'due_now': bool(y and y['due_now']), 'balance': acc['balance'], 'arrears': acc['arrears'],
                          'credit': acc['credit'], 'issues': acc['issues'], 'last_payment': acc['last_payment'], 'arrear_years': acc['arrear_years'],
                          'unclear_years': acc['unclear_years'], 'mandate': m['id'] in mandates}
     return rows
 
 
 def stand(row, m):
-    """Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): klaeren / frei / bezahlt / offen; row aus overview."""
-    if row['soll'] is None:
-        return 'klaeren'
-    if m['guest'] or m['dues_free'] or not row['soll']:
+    """Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): wie jahr_stand – Zahlungen decken die ältesten
+    fälligen Beiträge zuerst; row aus overview. Gast und beitragsfrei: frei."""
+    if row['soll'] is not None and (m['guest'] or m['dues_free']):
         return 'frei'
-    return 'bezahlt' if (row['paid'] or 0) >= row['soll'] else 'offen'
+    return jahr_stand(row)
 
 
 def jahr_stand(y):

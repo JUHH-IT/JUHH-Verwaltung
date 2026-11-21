@@ -259,7 +259,9 @@ def angaben(store, m):
         elif key == 'kv':
             value = dict(KVS).get(value, value)
         elif key == 'ov_id':
-            value = ovs.get(value, '')
+            value = ovs.get(value)
+            if not value:
+                continue
         out.append((label, str(value)))
     return out
 

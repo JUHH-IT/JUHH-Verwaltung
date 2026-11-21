@@ -13,7 +13,7 @@ import { kvOvFields, bindKvOv, ovById, ovLabel, ovsOf } from '../gliederung.js';
 import { invoiceBadge } from './invoices.js';
 import { mandateSection, bindMandateSection, activeMandate } from './sepa.js';
 import { matchMembers, sortName, addressLine } from '../member-picker.js';
-import { listen, isActive, fehlt, gespeichert, speichern } from '../mitglieder-listen.js';
+import { listen, isActive, fehlt, anschriftVollstaendig, gespeichert, speichern } from '../mitglieder-listen.js';
 
 let search = '';
 let kvFilter = '';
@@ -503,15 +503,16 @@ export function importMembersDialog() {
 
 /** Stand des Beitrags im gewählten Haushaltsjahr – nur als Kennzeichen (Server: mitgliederkonto.stand, auch ohne Buchhaltung);
  * Beträge und Konten stehen in der Buchhaltung. */
-const DUES = { klaeren: ['klären', 'warn'], frei: ['beitragsfrei', ''], bezahlt: ['bezahlt', 'ok'], offen: ['offen', 'warn'] };
+const DUES = { klaeren: ['klären', 'warn'], frei: ['beitragsfrei', ''], spaeter: ['noch nicht fällig', ''], bezahlt: ['bezahlt', 'ok'], offen: ['offen', 'warn'] };
 function duesState(m) {
   const [label, kind] = DUES[m.dues_state] || DUES.frei;
   const older = (m.dues_open_years || []).filter((y) => y !== store.year);
   const hint = m.dues_state === 'klaeren' ? 'Beitrag nicht berechenbar' : m.dues_state === 'frei' ? (m.guest ? 'Gastmitglied' : m.dues_basis || '')
-    : older.length ? `offen: ${older.join(', ')}` : m.dues_state === 'offen' && (m.paid || 0) > 0 ? 'teilweise bezahlt' : '';
+    : older.length ? `offen: ${older.join(', ')}` : m.dues_state === 'offen' && (m.paid || 0) > 0
+      ? ((m.paid || 0) >= (m.dues_soll || 0) ? 'Zahlung deckt ältere Jahre' : 'teilweise bezahlt') : '';
   return [badge(label, kind), hint];
 }
-const postfaehig = (m) => !!(m.street && m.zip && m.city) && !m.no_mail;   // wie mitgliederlisten.postfaehig
+const postfaehig = (m) => anschriftVollstaendig(m) && !m.no_mail;   // wie mitgliederlisten.postfaehig
 
 /** Gespeicherte Ansicht anlegen (Liste, Kreis-/Ortsverband, Suche) – nur in diesem Browser. */
 function saveView(redraw) {
@@ -584,12 +585,13 @@ export function members(main) {
   const kvs = store.data.kv.filter((k) => all.some((m) => m.kv === k.code));
   const cases = store.data.cases?.active || 0;
   const wahl = all.some((m) => m.wahl);
-  const ids = list.slice(0, LIMIT).map((m) => m.id);
+  const ids = list.map((m) => m.id);   // „alle auswählen“: die ganze Liste, auch über die angezeigten LIMIT Zeilen hinaus
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
+  const write = can('mitglieder', 'schreiben');
   mount(main, html`<div class="page wide">
-    ${pageHead('Mitgliederverwaltung', 'Mitglieder', html`
+    ${pageHead('Mitgliederverwaltung', 'Mitglieder', write ? html`
       <button type="button" class="btn" data-import>${icon('upload', 16)} Liste importieren</button>
-      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>`)}
+      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>` : '')}
     <section class="cards" aria-label="Mitgliederbestand">
       <div class="card"><span class="label">Aktive Mitglieder</span><span class="value">${active.length}</span>
         <span class="note">${kvs.length} ${kvs.length === 1 ? 'Kreisverband' : 'Kreisverbände'}${all.length > active.length ? ` · ${all.length - active.length} ausgetreten` : ''}</span></div>
@@ -639,8 +641,8 @@ export function members(main) {
         <button type="button" class="btn small ghost" data-unpick>Auswahl aufheben</button></span></div>` : ''}
   </div>`);
   const redraw = () => members(main);
-  main.querySelector('[data-new]').onclick = () => memberDialog();
-  main.querySelector('[data-import]').onclick = importMembersDialog;
+  main.querySelector('[data-new]')?.addEventListener('click', () => memberDialog());
+  main.querySelector('[data-import]')?.addEventListener('click', importMembersDialog);
   main.querySelector('[data-go-cases]')?.addEventListener('click', () => go('cases'));
   main.querySelectorAll('[data-liste]').forEach((b) => (b.onclick = () => { liste = b.dataset.liste; ansicht = ''; redraw(); }));
   main.querySelectorAll('[data-saved]').forEach((b) => (b.onclick = () => {

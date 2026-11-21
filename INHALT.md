@@ -59,7 +59,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/html.js`: esc, html, mount, raw
 - `static/js/main.js` → /api/bestaetigen, /api/keycloak, /api/login, /api/logout, /api/status
 - `static/js/member-picker.js`: CASE_REASON, EXTERNAL_REASON, addressLine, caseLabel, externalLabel, fold, matchMembers, membersLabel, membersPayload, pickMembers, sortName, suggestMembers
-- `static/js/mitglieder-listen.js`: fehlt, gespeichert, isActive, listen, speichern
+- `static/js/mitglieder-listen.js`: anschriftVollstaendig, fehlt, gespeichert, isActive, listen, speichern
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
@@ -485,7 +485,7 @@ Tests: test_beitraege.py, test_bereinigung.py, test_kasse.py, test_klaerfaelle.p
 - `member_years(m, ctx_first, this_year)` – Mögliche Beitragsjahre eines Mitglieds: ab Datenbeginn bzw. Eintritt bis zum laufenden Jahr bzw. Austrittsjahr.
 - `account(store, member_id, today=…)` – Beitragskonto eines Mitglieds: Jahre (Soll, Grundlage, gezahlt, offen, Stand 31.12.) und Buchungen mit laufendem Saldo.
 - `overview(store, year=…, today=…)` – Alle Mitglieder: Soll und gezahlt im Jahr, Saldo (heute) – für die Mitgliederliste, Rückstände und Abstimmung.
-- `stand(row, m)` – Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): klaeren / frei / bezahlt / offen; row aus overview.
+- `stand(row, m)` – Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): wie jahr_stand – Zahlungen decken die ältesten
 - `jahr_stand(y)` – Stand eines Beitragsjahres aus account ohne Betrag (Akte, 0.43): klaeren / frei / spaeter (noch nicht fällig) / offen / bezahlt.
 - `returned_after(store, after, years, today=…)` – Mitglieder, bei denen nach dem Tag `after` (bis heute) eine Rücklastschrift oder Rückzahlung für eines der Beitragsjahre gebucht ist.
 - `reconciliation(store, year, until=…)` – Abstimmung Hauptbuch ↔ Mitgliederkonten für ein Haushaltsjahr (nur Zahlungen, ohne Stornos; until: Zahlungen bis zu diesem Tag).

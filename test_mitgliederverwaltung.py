@@ -69,12 +69,14 @@ class ListenTests(Basis):
 
     def test_anschreiben_je_mitglied(self):
         members = mitgliederlisten.auswahl(self.s, [self.a, self.b, self.c])
-        pages = pdf_text(mitgliederlisten.anschreiben(self.s.config(), members, 'Einladung', 'Erster Absatz.\n\nZweiter <b>Absatz</b>.'))
+        self.s.db.execute("UPDATE members SET letter_salutation='Liebe <i>Erika</i> & Co' WHERE id=?", (self.a,))
+        members = mitgliederlisten.auswahl(self.s, [self.a, self.b, self.c])
+        pages = pdf_text(mitgliederlisten.anschreiben(self.s.config(), members, 'Einladung <font size=40>', 'Erster Absatz.\n\nZweiter <b>Absatz</b>.'))
         self.assertEqual(len(pages), 2)                                  # Max hat Postausschluss
-        self.assertIn('Liebe Erika,', pages[0])
+        self.assertIn('Liebe <i>Erika</i> & Co,', pages[0])                     # Briefanrede und Betreff bleiben Text
+        self.assertIn('Einladung <font size=40>', pages[0])
         self.assertIn('Hallo Ole,', pages[1])
         self.assertIn('Zweiter <b>Absatz</b>.', pages[1])               # Text bleibt Text, kein Markup
-        self.assertIn('Einladung', pages[0])
         for betreff, text in (('', 'x'), ('x', ''), ('x' * 201, 'x'), ('x', 'x' * 5001), (None, 'x'), ('x', 3)):
             with self.assertRaises(ValueError):
                 mitgliederlisten.anschreiben(self.s.config(), members, betreff, text)
@@ -85,19 +87,44 @@ class ListenTests(Basis):
         self.assertTrue(name.startswith('Adressetiketten-'))
         row = self.s.db.execute("SELECT detail FROM audit WHERE action='Mitgliederliste ausgegeben'").fetchone()
         self.assertEqual(json.loads(row[0]), {'art': 'etiketten', 'anzahl': 1})
+        mitgliederlisten.datei(self.s, {'art': 'csv', 'ids': [self.a, self.b]}, 'Test')
+        row = self.s.db.execute("SELECT detail FROM audit WHERE action='Mitgliederliste ausgegeben' ORDER BY id DESC").fetchone()
+        self.assertEqual(json.loads(row[0]), {'art': 'csv', 'anzahl': 2})                  # CSV: alle, auch ohne Post
         with self.assertRaises(ValueError):
             mitgliederlisten.datei(self.s, {'art': 'alles', 'ids': [self.a]}, 'Test')
 
     def test_stand_des_beitrags_ohne_betrag(self):
-        m = {'guest': 0, 'dues_free': 0}
-        self.assertEqual(mitgliederkonto.stand({'soll': None, 'paid': 0}, m), 'klaeren')
-        self.assertEqual(mitgliederkonto.stand({'soll': 0, 'paid': 0}, m), 'frei')
-        self.assertEqual(mitgliederkonto.stand({'soll': 3000, 'paid': 0}, {'guest': 1, 'dues_free': 0}), 'frei')
-        self.assertEqual(mitgliederkonto.stand({'soll': 3000, 'paid': 1000}, m), 'offen')
-        self.assertEqual(mitgliederkonto.stand({'soll': 3000, 'paid': 3000}, m), 'bezahlt')
+        m, row = {'guest': 0, 'dues_free': 0}, {'soll': 3000, 'due_now': True, 'open': 0}
+        self.assertEqual(mitgliederkonto.stand({**row, 'soll': None, 'open': None}, m), 'klaeren')
+        self.assertEqual(mitgliederkonto.stand({**row, 'soll': 0}, m), 'frei')
+        self.assertEqual(mitgliederkonto.stand(row, {'guest': 1, 'dues_free': 0}), 'frei')
+        self.assertEqual(mitgliederkonto.stand({**row, 'open': 2000}, m), 'offen')
+        self.assertEqual(mitgliederkonto.stand(row, m), 'bezahlt')
+        self.assertEqual(mitgliederkonto.stand({**row, 'due_now': False}, m), 'spaeter')     # Rechnung noch nicht fällig
         member = next(x for x in self.s.snapshot(2026)['members'] if x['id'] == self.a)
         self.assertEqual(member['dues_state'], 'offen')
+        mitglieder.notiz(self.s, self.a, 'vertraulich', 'Test')
+        self.assertFalse(any('note' in r for r in self.s.dues_preview(2026)))   # Buchhaltung sieht die Notiz nicht
         self.assertIn(2026, member['dues_open_years'])                      # fällig und nicht eingegangen (ab 2027 auch Folgejahre)
+
+
+class ZahlungTests(Basis):
+    """Stand des Beitrags in Liste und Akte gleich: Zahlungen decken die ältesten fälligen Beiträge zuerst."""
+    def setUp(self):
+        super().setUp()
+        self.s.save_settings({'fo_start': '2025'}, 'Test')
+        with self.s.db:
+            self.s.db.execute("INSERT INTO settings VALUES('data_start','2025-01-01')")
+
+    def test_zahlung_deckt_erst_das_vorjahr(self):
+        raw = 'Datum;Betrag;Name;Verwendungszweck;Bankreferenz\n2026-03-01;30;Zahler;Beitrag;k1\n'.encode()
+        self.s.import_bank(self.s.preview_bank(raw, 'k1.csv'), [2], 'Test')
+        bid = self.s.db.execute('SELECT MAX(id) FROM bank').fetchone()[0]
+        self.s.book(bid, [{'account': '8100', 'kv': 'LV', 'amount': '30', 'members': [{'member_id': self.a}]}], 'Test')
+        member = next(x for x in self.s.snapshot(2026)['members'] if x['id'] == self.a)
+        jahre = {y['year']: mitgliederkonto.jahr_stand(y) for y in mitgliederkonto.account(self.s, self.a)['years']}
+        self.assertEqual(jahre, {2025: 'bezahlt', 2026: 'offen'})
+        self.assertEqual((member['dues_state'], member['dues_open_years']), ('offen', [2026]))   # Liste wie Akte, nicht „bezahlt“
 
 
 class AkteTests(Basis):
@@ -115,6 +142,9 @@ class AkteTests(Basis):
         texts = [x['text'] for x in mitglieder.verlauf(self.s, self.a)]
         self.assertEqual(texts, ['Notiz gelöscht', 'Austritt zum 31.12.2026 eingetragen', 'Geändert: E-Mail privat', 'Notiz geändert', 'Mitglied angelegt'])
         self.assertEqual([x['text'] for x in mitglieder.verlauf(self.s, self.b)], ['Mitglied angelegt'])   # nur Einträge dieses Mitglieds
+        with self.s.db:
+            self.s.audit('Test', 'Rechnung storniert', {'id': self.a})                         # andere Art mit derselben Kennung
+        self.assertEqual(len(mitglieder.verlauf(self.s, self.a)), 5)
         details = ' '.join(r[0] for r in self.s.db.execute("SELECT detail FROM audit WHERE action='Notiz zum Mitglied geändert'"))
         self.assertNotIn('Rückruf', details)                                                  # der Text steht nie im Protokoll
         for bad in ((self.a, 'x' * 1001), ('1', 'x'), (True, 'x'), (self.a, None), (999, 'x')):

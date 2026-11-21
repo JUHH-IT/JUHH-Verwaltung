@@ -394,7 +394,8 @@ try {
   await page.fill('#mandate-form input[name=iban]', 'DE02 1203 0000 0000 2020 51');
   await page.click('#mandate-form button[type=submit]');
   check((await toast()).includes('Mandat JUHH-T-2-1'), 'SEPA-Mandat erfassen');
-  check((await page.locator('#modal').textContent()).includes('DE02 •••• 2051'), 'Mandat im Mitgliedskonto');
+  check(await page.waitForFunction(() => document.querySelector('#modal')?.textContent.includes('DE02 •••• 2051'), null, { timeout: 5000 }).then(() => true, () => false),
+    'Mandat im Mitgliedskonto');
   await shot('28-mandat');
   await dialogClose();
   await page.click('[data-page=invoices]');
