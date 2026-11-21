@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.44'
+VERSION='0.45'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -640,6 +640,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/karte': return self.send(200,__import__('karte').data(store,DATA))   # Lage der Mitglieder (karte.py), nur Kennung und Koordinate
                 if path=='/api/karte-gebiete': return self.send(200,__import__('karte').gebiete())   # Bezirke/Stadtteile (öffentliche Daten)
                 if path=='/api/regelwerk': return self.send(200,__import__('regelwerk').regeln(store.config()))   # Regelwerk für alle Angemeldeten (0.43)
+                if path=='/api/doppelte': return self.send(200,{'gruppen':__import__('doppelte').gruppen(store)})   # mögliche doppelte Mitglieder (0.45)
                 if path=='/api/adressen-status': return self.send(200,__import__('adressen').status(DATA))
                 if path=='/api/klaerfaelle':   # Klärfälle der Mitgliederverwaltung (klaerfaelle.py)
                     import klaerfaelle
@@ -876,6 +877,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/haushalt-import': result={'count':haushalt.import_reference(store,int(data['year']),actor)}
             elif path=='/api/member': result={'id':store.member(data,actor)}
             elif path=='/api/member-notiz': mitglieder.notiz(store,data.get('id'),data.get('text'),actor)
+            elif path=='/api/kein-duplikat': __import__('doppelte').kein_duplikat(store,data.get('ids'),actor)
             elif path=='/api/mitglieder-liste':   # Auswahl als CSV, Etiketten oder Anschreiben (mitgliederlisten.py, 0.43) – enthält Kontaktdaten
                 body,kind,name=__import__('mitgliederlisten').datei(store,data,actor);return self.send(200,body,kind,attachment=name)
             elif path=='/api/members-preview':

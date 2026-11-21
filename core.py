@@ -68,6 +68,7 @@ class Store:
         gliederung.init(self.db)   # Ortsverbände und Nummer der Mitgliederverwaltung je Kreisverband (0.27)
         import mitglieder
         mitglieder.init(self.db)   # Vorname/Nachname, Straße/PLZ/Ort (vorhandene Mitglieder einmalig aufgeteilt)
+        __import__('doppelte').init(self.db)   # bestätigte „kein Duplikat“-Paare (0.45)
         gliederung.link_legacy(self.db)   # Ortsverband-Texte aus 0.24 einmalig in Ortsverbände überführen
         import beitraege
         beitraege.init(self.db)    # Zuordnung von 8100-Zahlungen zu Mitgliedern

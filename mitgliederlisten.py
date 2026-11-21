@@ -1,11 +1,13 @@
 """Listen der Mitgliederverwaltung (ab 0.43, Wunsch Lennert Gust 21.11.2026): eine Auswahl aus der Mitgliederliste als CSV, als
-Adressetiketten (Zweckform 3474, 70 × 37 mm, 24 je Blatt) oder als Anschreiben (PDF, ein Brief je Mitglied).
+Excel mit einem Blatt je Kreisverband (ab 0.45, zum Weiterleiten), als Adressetiketten (Zweckform 3474, 70 × 37 mm, 24 je Blatt) oder als
+Anschreiben (PDF, ein Brief je Mitglied).
 
 Enthält Kontaktdaten – vertraulich: Abruf mit „Mitglieder lesen“ und Passwortbestätigung (app.CONFIRM), im Änderungsprotokoll nur Art und
 Anzahl. Post (Etiketten, Anschreiben) bekommt nur, wer eine vollständige Anschrift und keinen Postausschluss hat; die Oberfläche nennt die
 übrigen vorher. Welche Mitglieder in einer Liste stehen, entscheidet die Oberfläche (static/js/mitglieder-listen.js).
 """
 import io
+import re
 from datetime import date
 from xml.sax.saxutils import escape
 
@@ -13,8 +15,9 @@ from formate import german_date
 from pdfschrift import exclusive
 
 MAX = 5000
-ARTEN = {'csv': ('text/csv; charset=utf-8', 'csv'), 'etiketten': ('application/pdf', 'pdf'), 'anschreiben': ('application/pdf', 'pdf')}
-NAMEN = {'csv': 'Mitgliederliste', 'etiketten': 'Adressetiketten', 'anschreiben': 'Anschreiben'}
+ARTEN = {'csv': ('text/csv; charset=utf-8', 'csv'), 'excel': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'),
+         'etiketten': ('application/pdf', 'pdf'), 'anschreiben': ('application/pdf', 'pdf')}
+NAMEN = {'csv': 'Mitgliederliste', 'excel': 'Mitgliederliste', 'etiketten': 'Adressetiketten', 'anschreiben': 'Anschreiben'}
 MAX_BETREFF, MAX_TEXT = 200, 5000
 
 
@@ -45,19 +48,56 @@ def anschrift(m):
     return [x for x in [m['salutation'], first, *address.splitlines()] if x and x.strip()]
 
 
-def csv(store, members):
-    """Mitglieder der Auswahl mit Anschrift und Kontakt als CSV (Semikolon, Formelschutz wie die anderen Listen)."""
-    import berichte
+KOPF = ['Mitgliedsnummer', 'Anrede', 'Titel', 'Vorname', 'Nachname', 'Briefanrede', 'Adresszusatz', 'Straße', 'PLZ', 'Ort', 'Land',
+        'E-Mail', 'Telefon', 'Handy', 'Kreisverband', 'Ortsverband', 'Geburtsdatum', 'Eintritt', 'Austritt', 'Postausschluss']
+
+
+def _zeilen(store, members):
+    """Zeilen für CSV und Excel in der Spaltenfolge von KOPF."""
     import gliederung
     from core import KVS
     names, ovs = dict(KVS), {o['id']: gliederung.label(o) for o in gliederung.ovs(store)}
-    return berichte._csv([[m['number'], m['salutation'], m['title'], m['first_name'], m['last_name'], m['letter_salutation'],
-                           m['address_extra'], m['street'], m['zip'], m['city'], m['country'], m['email'], m['phone'], m['mobile'],
-                           names.get(m['kv'], m['kv']), ovs.get(m['ov_id'], ''), german_date(m['birth']), german_date(m['joined']),
-                           german_date(m['left_on']), 'ja' if m['no_mail'] else ''] for m in members],
-                         ['Mitgliedsnummer', 'Anrede', 'Titel', 'Vorname', 'Nachname', 'Briefanrede', 'Adresszusatz', 'Straße', 'PLZ', 'Ort',
-                          'Land', 'E-Mail', 'Telefon', 'Handy', 'Kreisverband', 'Ortsverband', 'Geburtsdatum', 'Eintritt', 'Austritt',
-                          'Postausschluss'])
+    return [[m['number'], m['salutation'], m['title'], m['first_name'], m['last_name'], m['letter_salutation'], m['address_extra'],
+             m['street'], m['zip'], m['city'], m['country'], m['email'], m['phone'], m['mobile'], names.get(m['kv'], m['kv']),
+             ovs.get(m['ov_id'], ''), german_date(m['birth']), german_date(m['joined']), german_date(m['left_on']),
+             'ja' if m['no_mail'] else ''] for m in members]
+
+
+def csv(store, members):
+    """Mitglieder der Auswahl mit Anschrift und Kontakt als CSV (Semikolon, Formelschutz wie die anderen Listen)."""
+    import berichte
+    return berichte._csv(_zeilen(store, members), KOPF)
+
+
+def excel(store, members):
+    """Auswahl als Excel-Datei zum Weiterleiten an die Kreisverbände (ab 0.45): ein Blatt je Kreisverband, Spalten wie die CSV.
+    Jede Zelle ist Text – nichts wird als Formel gelesen."""
+    import openpyxl
+    from openpyxl.styles import Font
+    book = openpyxl.Workbook()
+    book.remove(book.active)
+    kv = KOPF.index('Kreisverband')
+    blaetter = {}
+    for row in _zeilen(store, members):
+        blaetter.setdefault(row[kv] or 'ohne Kreisverband', []).append(row)
+    for name in sorted(blaetter):
+        sheet = book.create_sheet(re.sub(r'[\\/*?:\[\]]', '-', name)[:31])
+        sheet.append(KOPF)
+        for row in blaetter[name]:
+            sheet.append([v or '' for v in row])
+        for cells in sheet.iter_rows():
+            for cell in cells:
+                cell.data_type = 's'
+        for cell in sheet[1]:
+            cell.font = Font(bold=True)
+        sheet.freeze_panes = 'A2'
+        sheet.auto_filter.ref = sheet.dimensions
+        for i, title in enumerate(KOPF, 1):
+            width = max(len(str(sheet.cell(r, i).value or '')) for r in range(1, sheet.max_row + 1))
+            sheet.column_dimensions[openpyxl.utils.get_column_letter(i)].width = min(max(width, len(title)) + 2, 40)
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
 
 
 @exclusive
@@ -180,11 +220,13 @@ def datei(store, data, actor):
     members = auswahl(store, data.get('ids'))
     if art == 'csv':
         body = csv(store, members)
+    elif art == 'excel':
+        body = excel(store, members)
     elif art == 'etiketten':
         body = etiketten(members)
     else:
         body = anschreiben(store.config(), members, data.get('betreff'), data.get('text'))
-    post = len(members) if art == 'csv' else sum(1 for m in members if postfaehig(m))
+    post = len(members) if art in ('csv', 'excel') else sum(1 for m in members if postfaehig(m))
     with store.db:
         store.audit(actor, 'Mitgliederliste ausgegeben', {'art': art, 'anzahl': post})
     kind, ext = ARTEN[art]

@@ -8,16 +8,20 @@ import { store, go, can } from '../store.js';
 import { pageHead, icon, safe, table, meter } from '../ui.js';
 import { listen, isActive, fehlt } from '../mitglieder-listen.js';
 import { memberDialog, importMembersDialog, openList } from './members.js';
+import { doppelteDialog } from './doppelte.js';
 
 const TODO = ['ohne-mail', 'anschrift', 'werden-35', 'beitrag-offen', 'nicht-wahlberechtigt', 'austritt-bald'];
 const pct = (part, all) => (all ? Math.round((part / all) * 100) : 100);
 
 export function mitgliederUeberblick(main) {
   mount(main, html`<div class="page wide"><p class="small muted">Wird geladen …</p></div>`);
-  safe(async () => draw(main, (await api('/api/regelwerk')).termine));
+  safe(async () => {
+    const [regeln, doppelte] = await Promise.all([api('/api/regelwerk'), api('/api/doppelte')]);
+    draw(main, regeln.termine, doppelte.gruppen.length);
+  });
 }
 
-function draw(main, termine) {
+function draw(main, termine, doubles) {
   const today = todayIso(), year = store.year, y = String(year);
   const all = store.data.members, active = all.filter((m) => isActive(m, today));
   const lists = listen(year, today);
@@ -50,9 +54,11 @@ function draw(main, termine) {
     <div class="mu-grid">
       <section class="panel mu-todo" aria-labelledby="mu-todo"><div class="panel-head"><h2 id="mu-todo">Zu tun</h2>
         <span class="small muted">Jede Zeile öffnet die Liste</span></div>
-        ${cases || todo.length ? html`<ul class="mu-list">
+        ${cases || doubles || todo.length ? html`<ul class="mu-list">
           ${cases ? html`<li><button type="button" data-go-cases><span class="mu-count warn">${cases}</span>
             <span><strong>Klärfälle</strong><span class="sub">Beitragszahlungen, die keinem Mitglied zugeordnet sind</span></span>${icon('right', 16)}</button></li>` : ''}
+          ${doubles ? html`<li><button type="button" data-doubles><span class="mu-count warn">${doubles}</span>
+            <span><strong>Mögliche Doppelte</strong><span class="sub">Gleicher Name mit gleichem Geburtsdatum oder gleicher Anschrift – prüfen</span></span>${icon('right', 16)}</button></li>` : ''}
           ${todo.map((l) => html`<li><button type="button" data-list="${l.id}"><span class="mu-count ${['anschrift', 'beitrag-offen', 'nicht-wahlberechtigt'].includes(l.id) ? 'warn' : ''}">${l.n}</span>
             <span><strong>${l.label}</strong><span class="sub">${l.hint || ''}${l.soon ? ` · ${l.soon} zum Monatsende` : ''}</span></span>${icon('right', 16)}</button></li>`)}
         </ul>` : html`<p class="muted">Nichts offen.</p>`}
@@ -76,6 +82,7 @@ function draw(main, termine) {
   main.querySelector('[data-new]')?.addEventListener('click', () => memberDialog());
   main.querySelector('[data-import]')?.addEventListener('click', importMembersDialog);
   main.querySelector('[data-go-cases]')?.addEventListener('click', () => go('cases'));
+  main.querySelector('[data-doubles]')?.addEventListener('click', () => doppelteDialog());
   main.querySelector('[data-rules]').onclick = () => go('regelwerk');
   main.querySelectorAll('[data-list]').forEach((b) => (b.onclick = () => openList(b.dataset.list)));
   main.querySelectorAll('[data-kv]').forEach((row) => {

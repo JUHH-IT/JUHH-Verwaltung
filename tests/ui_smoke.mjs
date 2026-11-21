@@ -929,6 +929,43 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.fill('#rw-search', '');
   await shot('52-regelwerk');
 
+  // 0.45: doppelte Mitglieder finden, Excel je Kreisverband
+  const created = await page.evaluate(async () => {
+    const { csrf } = await (await fetch('/api/status')).json();
+    const m = (await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json()).members.find((x) => x.last_name === 'Musterfrau');
+    const r = await fetch('/api/member', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ number: 'D-1', first_name: m.first_name, last_name: 'Musterfrau', birth: m.birth, joined: m.joined, kv: m.kv,
+        street: 'Doppelweg 3', zip: '20095', city: 'Hamburg' }) });
+    return r.status;
+  });
+  check(created === 200, 'Zweites Mitglied mit gleichem Namen und Geburtsdatum angelegt');
+  await page.reload();
+  await page.waitForSelector('.sidebar');
+  await page.click('[data-page=mv-overview]');
+  await page.waitForSelector('.mu-page [data-doubles]');
+  check((await page.locator('.mu-page [data-doubles]').textContent()).includes('Mögliche Doppelte'), 'Überblick: mögliche Doppelte unter Zu tun');
+  await page.click('.mu-page [data-doubles]');
+  await page.waitForSelector('#modal .dp-group');
+  check(await page.locator('#modal .dp-group tr[data-akte]').count() === 2 && (await page.locator('#modal .dp-group').textContent()).includes('gleicher Name und Geburtsdatum'),
+    'Doppelte: Gruppe mit beiden Mitgliedern und Grund');
+  await shot('53-doppelte');
+  await page.locator('#modal .dp-group tr[data-akte]').first().click();
+  await page.waitForSelector('#modal .akte-head');
+  await page.click('#modal [data-back]');
+  await page.waitForSelector('#modal .dp-group');
+  check(true, 'Doppelte: Akte öffnen und zurück');
+  await page.click('#modal .dp-group [data-nein]');
+  check((await toast()).includes('kein Duplikat'), 'Doppelte: kein Duplikat bestätigt');
+  check(await page.waitForFunction(() => (document.querySelector('#modal [data-doppelte]')?.textContent || '').includes('Keine möglichen Doppelten'), null, { timeout: 5000 })
+    .then(() => true, () => false), 'Doppelte: Gruppe danach ausgeblendet');
+  await dialogClose();
+  await page.click('[data-page=members]');
+  await page.click('main [data-liste=aktiv]');
+  await page.check('main [data-check-all]');
+  const [excel] = await Promise.all([page.waitForEvent('download'), page.click('main .ml-bar [data-excel]')]);
+  check(excel.suggestedFilename().endsWith('.xlsx') && readFileSync(await excel.path()).subarray(0, 2).toString() === 'PK', 'Auswahl als Excel je Kreisverband');
+  await page.click('main .ml-bar [data-unpick]');
+
   // 0.29: Auswertung der Mitgliederdaten
   await page.click('[data-page=auswertung]');
   await page.waitForSelector('.aw-page .cards');
