@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.46'
+VERSION='0.47'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -58,7 +58,7 @@ NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltun
 # Regel (AGENTS.md): alles, was alle Daten ausliefert, löscht, Zugänge/Rechte ändert oder Mail und Bankverbindung umlenken kann
 CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-listen.zip'),('GET','/api/sepa.xml'),
          ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
-         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
+         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/zusammenfuehren'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
          ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
@@ -878,6 +878,13 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/member': result={'id':store.member(data,actor)}
             elif path=='/api/member-notiz': mitglieder.notiz(store,data.get('id'),data.get('text'),actor)
             elif path=='/api/kein-duplikat': __import__('doppelte').kein_duplikat(store,data.get('ids'),actor)
+            elif path in ('/api/zusammenfuehren-vorschau','/api/zusammenfuehren'):   # doppelte Mitglieder zusammenführen (doppelte.py, 0.47)
+                import doppelte;bh=rollen.can(rights,'buchhaltung','schreiben')
+                if path=='/api/zusammenfuehren':
+                    doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh)   # erst prüfen, dann sichern, dann zusammenführen (erneut geprüft)
+                    saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-zusammenfuehren')
+                    doppelte.zusammenfuehren(store,data.get('keep'),data.get('drop'),actor,bh);result={'backup':saved.name}
+                else: result={k:v for k,v in doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh).items() if k!='neu'}
             elif path=='/api/mitglieder-liste':   # Auswahl als CSV, Etiketten oder Anschreiben (mitgliederlisten.py, 0.43) – enthält Kontaktdaten
                 body,kind,name=__import__('mitgliederlisten').datei(store,data,actor);return self.send(200,body,kind,attachment=name)
             elif path=='/api/members-preview':
@@ -1141,6 +1148,16 @@ def schutz_stuendlich():
     except Exception as e:
         log('Bedrohungsliste nicht geladen: '+(str(e) if isinstance(e,ValueError) else type(e).__name__))
 
+def notizen_stuendlich():
+    """Notizen ausgetretener Mitglieder löschen (mitglieder.notizen_bereinigen, DSGVO) – Fehler nur protokollieren."""
+    try:
+        store=Store(DB)
+        try: n=mitglieder.notizen_bereinigen(store)
+        finally: store.db.close()
+        if n: log(f'{n} Notizen ausgetretener Mitglieder gelöscht.')
+    except Exception as e:
+        log('Notizen nicht bereinigt: '+type(e).__name__)
+
 def check_bind(host):
     """Servermodus: nur eine bestimmte Adresse (127.0.0.1 hinter Tailscale Serve oder die Tailscale-Adresse 100.x),
     nie alle Netzwerkkarten – so ist das Programm aus dem Internet nicht erreichbar."""
@@ -1205,6 +1222,7 @@ def main(argv=None):
             print('Sicherung vor dem Update fehlgeschlagen – Start abgebrochen, um die Daten zu schützen: '+str(e),flush=True)
             return 3
     Store(DB).db.close()
+    notizen_stuendlich()
     write_private('.version',VERSION)
     try:
         server=(LocalServer6 if ':' in host else LocalServer)((host,args.port),Handler)
@@ -1213,7 +1231,7 @@ def main(argv=None):
         return 2
     stop=threading.Event()
     def every_hour():
-        while not stop.wait(3600): run_backups(backups);schutz_stuendlich()
+        while not stop.wait(3600): run_backups(backups);schutz_stuendlich();notizen_stuendlich()
     threading.Thread(target=every_hour,daemon=True,name='sicherung').start()
     # systemd beendet mit SIGTERM: laufenden E-Mail-Versand nach der aktuellen Nachricht anhalten (wird protokolliert),
     # höchstens 25 s warten (TimeoutStopSec=30), dann den Server herunterfahren

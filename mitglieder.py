@@ -198,11 +198,13 @@ def austritt(store, member_id, left_on, reason, actor):
         store.audit(actor, 'Austritt eingetragen' if left else 'Austritt zurückgenommen',
                     {'id': m['id'], 'number': m['number'], 'vorher': {'austritt': m['left_on'], 'grund': bool(m['left_reason'])},
                      'nachher': {'austritt': left, 'grund': bool(reason)}})
+    notizen_bereinigen(store)   # Austritt heute oder früher: die Notiz entfällt sofort
     return m['id']
 
 
 MAX_NOTE = 1000
-VERLAUF = ('Mitglied angelegt', 'Mitglied geändert', 'Austritt eingetragen', 'Austritt zurückgenommen', 'Notiz zum Mitglied geändert')
+VERLAUF = ('Mitglied angelegt', 'Mitglied geändert', 'Austritt eingetragen', 'Austritt zurückgenommen', 'Notiz zum Mitglied geändert',
+           'Mitglieder zusammengeführt')
 
 
 def notiz(store, member_id, text, actor):
@@ -212,14 +214,27 @@ def notiz(store, member_id, text, actor):
     text = text.replace('\r\n', '\n').strip() or None
     if text and len(text) > MAX_NOTE:
         raise ValueError(f'Notiz: höchstens {MAX_NOTE} Zeichen.')
-    m = store.db.execute('SELECT id,number,note FROM members WHERE id=?', (member_id,)).fetchone()
+    m = store.db.execute('SELECT id,number,note,left_on FROM members WHERE id=?', (member_id,)).fetchone()
     if not m:
         raise ValueError('Mitglied nicht gefunden.')
+    if text and m['left_on'] and m['left_on'] <= date.today().isoformat():
+        raise ValueError('Für ausgetretene Mitglieder werden keine Notizen gespeichert (Datenschutz).')
     if text == m['note']:
         return
     with store.db:
         store.db.execute('UPDATE members SET note=? WHERE id=?', (text, member_id))
         store.audit(actor, 'Notiz zum Mitglied geändert', {'id': member_id, 'number': m['number'], 'leer': not text})
+
+
+def notizen_bereinigen(store, today=None):
+    """Notizen ausgetretener Mitglieder löschen (ab 0.47, DSGVO: der Zweck endet mit der Mitgliedschaft, keine Aufbewahrungspflicht)
+    – am Tag des Austritts; läuft stündlich und nach „Austritt eintragen“. → Anzahl gelöschter Notizen."""
+    day = (today or date.today()).isoformat()
+    with store.db:
+        n = store.db.execute('UPDATE members SET note=NULL WHERE note IS NOT NULL AND left_on IS NOT NULL AND left_on<=?', (day,)).rowcount
+        if n:
+            store.audit('Programm', 'Notizen ausgetretener Mitglieder gelöscht', {'anzahl': n})
+    return n
 
 
 def verlauf(store, member_id, limit=50):
@@ -236,6 +251,10 @@ def verlauf(store, member_id, limit=50):
             text = f"Austritt zum {german_date(detail['nachher']['austritt'])} eingetragen"
         elif action == 'Notiz zum Mitglied geändert':
             text = 'Notiz gelöscht' if detail.get('leer') else 'Notiz geändert'
+        elif action == 'Mitglieder zusammengeführt':
+            text = f"Zusammengeführt mit Nr. {(detail.get('entfaellt') or {}).get('number', '?')}"
+            if detail.get('ergaenzt'):
+                text += ' – ergänzt: ' + ', '.join(LABELS.get(f, 'Notiz' if f == 'note' else f) for f in detail['ergaenzt'])
         out.append({'time': time, 'actor': actor, 'text': text})
     return out
 
@@ -792,6 +811,7 @@ def apply(store, prev, selected, actor):
                     record_dues(store.db, r['member_id'], before[0], v['dues'])
                 updated += 1
         store.audit(actor, 'Mitgliederliste importiert', {'datei': prev['filename'], 'neu': new, 'aktualisiert': updated, 'ortsverbaende_neu': created})
+    notizen_bereinigen(store)   # mit der Datei eingetragene Austritte
     return {'new': new, 'updated': updated, 'ov_created': created}
 
 

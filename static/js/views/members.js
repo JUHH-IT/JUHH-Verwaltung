@@ -311,7 +311,9 @@ export function account(id, { back = null, tab = null } = {}) {
           <li><span>${j.year}</span>${badge(YEAR[j.stand][0], YEAR[j.stand][1])}</li>`)}</ul>` : html`<p class="small muted">Kein Beitragsjahr seit Datenbeginn.</p>`}
           ${money ? '' : html`<p class="small muted">Beträge und Zahlungen stehen in der Buchhaltung.</p>`}</section>
         <section class="akte-card"><h4>Notiz <span class="small muted">nur Mitgliederverwaltung</span></h4>
-          ${write ? html`<form data-note><textarea name="text" rows="3" maxlength="1000" placeholder="z. B. Rückruf vereinbart">${f.note || ''}</textarea>
+          ${!isActive(m) ? html`<p class="small muted" data-note-gone>Für ausgetretene Mitglieder werden keine Notizen gespeichert – eine Notiz wird mit dem Austritt gelöscht (Datenschutz).</p>`
+          : write ? html`<form data-note><textarea name="text" rows="3" maxlength="1000" placeholder="z. B. Rückruf vereinbart">${f.note || ''}</textarea>
+            ${m.left_on ? html`<p class="small muted">Wird am ${date(m.left_on)} mit dem Austritt gelöscht.</p>` : ''}
             <div class="form-actions"><button type="submit" class="btn small">Notiz speichern</button></div></form>` : html`<p>${f.note || html`<span class="muted">Keine Notiz.</span>`}</p>`}</section>
         <section class="akte-card akte-wide"><h4>Letzte Änderungen</h4>${history(a.verlauf.slice(0, 4))}
           ${a.verlauf.length > 4 ? html`<button type="button" class="link small" data-tab="verlauf">Ganzer Verlauf</button>` : ''}</section></div>`,
@@ -387,6 +389,7 @@ function leaveDialog(m, a, reopen) {
     <div class="formgrid"><label class="field">Austrittsdatum<input name="left_on" type="date" required min="${m.joined}" max="${Number(todayIso().slice(0, 4)) + 2}-12-31" value="${m.left_on || todayIso()}">
         <span class="small muted">Auch ein künftiges Datum ist möglich – bis dahin bleibt das Mitglied aktiv.</span></label>
       <label class="field span">Grund<input name="reason" maxlength="200" autocomplete="off" value="${a.member.left_reason || ''}" placeholder="optional, z. B. Kündigung, Umzug, Altersgrenze"></label></div>
+    ${a.member.note ? html`<p class="small muted" data-leave-note>Die Notiz zum Mitglied wird am Austrittstag gelöscht (Datenschutz).</p>` : ''}
     ${hints.length ? html`<p class="notice warn" data-leave-hints>Bitte prüfen: Das Mitglied hat ${hints.join(' und ')}. Der Austritt wird trotzdem gespeichert.</p>` : ''}
     <p class="notice warn" data-leave-year hidden></p>
     <div class="form-actions">${m.left_on ? html`<button type="button" class="btn ghost" data-undo>Austritt zurücknehmen</button>` : ''}

@@ -1,5 +1,6 @@
 """Mitgliederverwaltung 0.43: Listen (CSV, Etiketten, Anschreiben), Stand des Beitrags ohne Beträge, Mitgliederakte – nur erfundene Daten."""
 import json
+from datetime import date
 import tempfile
 import unittest
 import urllib.error
@@ -160,10 +161,11 @@ class AkteTests(Basis):
         old = dict(self.s.db.execute('SELECT * FROM members WHERE id=?', (self.a,)).fetchone())
         self.s.update_member(self.a, {**old, 'email': 'neu@example.org', 'note': 'ignoriert'}, 'Test')   # Formular ändert die Notiz nie
         self.assertEqual(self.s.db.execute('SELECT note FROM members WHERE id=?', (self.a,)).fetchone()[0], 'Rückruf vereinbart')
-        mitglieder.austritt(self.s, self.a, '2026-12-31', '', 'Test')
+        later = date.today().year + 1                                                         # künftiger Austritt: Notiz bleibt bis dahin
+        mitglieder.austritt(self.s, self.a, f'{later}-12-31', '', 'Test')
         mitglieder.notiz(self.s, self.a, '', 'Test')
         texts = [x['text'] for x in mitglieder.verlauf(self.s, self.a)]
-        self.assertEqual(texts, ['Notiz gelöscht', 'Austritt zum 31.12.2026 eingetragen', 'Geändert: E-Mail privat', 'Notiz geändert', 'Mitglied angelegt'])
+        self.assertEqual(texts, ['Notiz gelöscht', f'Austritt zum 31.12.{later} eingetragen', 'Geändert: E-Mail privat', 'Notiz geändert', 'Mitglied angelegt'])
         self.assertEqual([x['text'] for x in mitglieder.verlauf(self.s, self.b)], ['Mitglied angelegt'])   # nur Einträge dieses Mitglieds
         with self.s.db:
             self.s.audit('Test', 'Rechnung storniert', {'id': self.a})                         # andere Art mit derselben Kennung
@@ -173,6 +175,26 @@ class AkteTests(Basis):
         for bad in ((self.a, 'x' * 1001), ('1', 'x'), (True, 'x'), (self.a, None), (999, 'x')):
             with self.assertRaises(ValueError, msg=bad):
                 mitglieder.notiz(self.s, *bad, 'Test')
+
+    def test_notiz_entfaellt_mit_dem_austritt(self):
+        note = lambda mid: self.s.db.execute('SELECT note FROM members WHERE id=?', (mid,)).fetchone()[0]
+        for mid in (self.a, self.b, self.c):
+            mitglieder.notiz(self.s, mid, 'Rückruf', 'Test')
+        mitglieder.austritt(self.s, self.a, f'{date.today().year + 1}-06-30', '', 'Test')
+        self.assertEqual(note(self.a), 'Rückruf')                                             # künftiger Austritt: bis dahin aktiv
+        self.assertEqual(mitglieder.notizen_bereinigen(self.s, date(date.today().year + 1, 6, 30)), 1)   # am Austrittstag
+        self.assertIsNone(note(self.a))
+        mitglieder.austritt(self.s, self.b, date.today().isoformat(), '', 'Test')            # Austritt heute: sofort
+        self.assertIsNone(note(self.b))
+        old = dict(self.s.db.execute('SELECT * FROM members WHERE id=?', (self.c,)).fetchone())
+        self.s.update_member(self.c, {**old, 'left_on': '2025-12-31'}, 'Test')                # auch über „Bearbeiten“
+        self.assertIsNone(note(self.c))
+        with self.assertRaisesRegex(ValueError, 'ausgetretene'):
+            mitglieder.notiz(self.s, self.c, 'neu', 'Test')
+        mitglieder.notiz(self.s, self.c, '', 'Test')                                         # leeren geht immer
+        rows = self.s.db.execute("SELECT actor,detail FROM audit WHERE action='Notizen ausgetretener Mitglieder gelöscht'").fetchall()
+        self.assertEqual([(r[0], json.loads(r[1])) for r in rows], [('Programm', {'anzahl': 1})] * 3)
+        self.assertEqual(mitglieder.notizen_bereinigen(self.s), 0)                            # nichts mehr zu tun: kein Eintrag
 
     def test_alle_angaben(self):
         m = dict(self.s.db.execute('SELECT * FROM members WHERE id=?', (self.b,)).fetchone())

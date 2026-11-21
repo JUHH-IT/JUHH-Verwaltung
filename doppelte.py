@@ -1,6 +1,6 @@
 """Doppelte Mitglieder finden (ab 0.45, Wunsch Lennert Gust 21.11.2026: „eine Funktion, um doppelte Mitglieder zu finden“).
 
-Nur Hinweise, nichts wird zusammengeführt oder gelöscht. Zwei Mitglieder gelten als möglicherweise doppelt bei
+Zwei Mitglieder gelten als möglicherweise doppelt bei
   - gleichem Namen und gleichem Geburtsdatum,
   - gleichem Namen und gleicher Anschrift (Straße mit Hausnummer und PLZ),
   - gleicher E-Mail-Adresse und gleichem Geburtsdatum,
@@ -13,7 +13,7 @@ dieselbe E-Mail-Adresse haben – dann „kein Duplikat“.
 """
 import re
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from itertools import combinations
 
 GRUENDE = {'name_geburt': 'gleicher Name und Geburtsdatum', 'name_anschrift': 'gleicher Name und Anschrift',
@@ -111,3 +111,99 @@ def kein_duplikat(store, ids, actor):
         store.db.executemany('INSERT OR IGNORE INTO mitglieder_keine_doppelten(a,b,actor,time) VALUES(?,?,?,?)',
                              [(a, b, actor, now) for a, b in combinations(ids, 2)])
         store.audit(actor, 'Kein Duplikat bestätigt', {'ids': ids})
+
+
+# ---------------------------------------------------------------- Zusammenführen (ab 0.47)
+
+# Angaben, die beim bleibenden Mitglied ergänzt werden, wenn sie dort fehlen (Anschrift ist Pflicht und bleibt immer die des bleibenden)
+ERGAENZEN = ('salutation', 'title', 'name_prefix', 'name_suffix', 'letter_salutation', 'letter_salutation2', 'gender', 'nationality',
+             'clubs', 'club', 'email', 'email_work', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method', 'kv_joined')
+VERGLEICH = ('number', 'first_name', 'last_name', 'birth', 'street', 'zip', 'city', 'kv', 'left_on', 'dues')   # bleiben beim bleibenden Mitglied – Unterschiede zeigen
+UMHAENGEN = (('invoices', 'Rechnungen', True), ('dues_assignments', 'Beitragszahlungen', True), ('mandates', 'SEPA-Mandate', True),
+             ('refunds', 'Auslagenerstattungen', True), ('dues_targets', 'festgelegte Beiträge', False), ('sepa_mandates', 'gemerkte Mandatsreferenzen', False))
+
+
+def _id(value):
+    if not isinstance(value, int) or isinstance(value, bool) or not 0 < value < 2 ** 62:
+        raise ValueError('Ungültiges Mitglied.')
+    return value
+
+
+def _zeigen(key, value):
+    from core import KVS
+    from formate import euro, german_date
+    if value in (None, ''):
+        return '—'
+    if key in ('birth', 'joined', 'left_on', 'kv_joined'):
+        return german_date(value)
+    if key == 'kv':
+        return dict(KVS).get(value, value)
+    return euro(value) if key == 'dues' else str(value)
+
+
+def vorschau(store, keep, drop, buchhaltung=False):
+    """Was beim Zusammenführen passiert: bleibendes und entfallendes Mitglied, ergänzte Angaben, Unterschiede, umgehängte Einträge,
+    Hindernisse (gleiche Rechnung/Festlegung im selben Jahr, zwei aktive Mandate, Buchhaltung ohne Recht „Buchhaltung ändern“)."""
+    import mitglieder
+    keep, drop = _id(keep), _id(drop)
+    if keep == drop:
+        raise ValueError('Bitte zwei verschiedene Mitglieder wählen.')
+    a, b = (store.db.execute('SELECT * FROM members WHERE id=?', (i,)).fetchone() for i in (keep, drop))
+    if not a or not b:
+        raise ValueError('Mitglied nicht gefunden.')
+    a, b = dict(a), dict(b)
+    neu = {k: b[k] for k in ERGAENZEN if not a.get(k) and b.get(k)}
+    if not a.get('ov_id') and b.get('ov_id') and a['kv'] == b['kv']:
+        neu['ov_id'] = b['ov_id']
+    if b['joined'] < a['joined']:
+        neu['joined'] = b['joined']                      # dieselbe Mitgliedschaft: der frühere Eintritt zählt
+    if b['no_mail'] and not a['no_mail']:
+        neu['no_mail'] = 1                               # Postausschluss bleibt bestehen
+    if b.get('note') and not (a['left_on'] and a['left_on'] <= date.today().isoformat()):   # ausgetreten: keine Notiz (DSGVO)
+        neu['note'] = f"{a['note']}\n—\n{b['note']}" if a.get('note') else b['note']
+    zahl = {table: store.db.execute(f'SELECT COUNT(*) FROM {table} WHERE member_id=?', (drop,)).fetchone()[0] for table, _, _ in UMHAENGEN}
+    konflikte = [f'Beide haben eine {"Beitragsrechnung" if kind == "dues" else "Rechnung"} {year} – erst eine stornieren bzw. klären.'
+                 for year, kind in store.db.execute('SELECT year,kind FROM invoices WHERE member_id=? AND year IS NOT NULL INTERSECT '
+                                                    'SELECT year,kind FROM invoices WHERE member_id=? AND year IS NOT NULL', (keep, drop))]
+    konflikte += [f'Für beide ist der Beitrag {year} festgelegt – eine Festlegung entfernen.' for (year,) in store.db.execute(
+        'SELECT year FROM dues_targets WHERE member_id=? INTERSECT SELECT year FROM dues_targets WHERE member_id=?', (keep, drop))]
+    if all(store.db.execute("SELECT 1 FROM mandates WHERE member_id=? AND status='active'", (i,)).fetchone() for i in (keep, drop)):
+        konflikte.append('Beide haben ein aktives SEPA-Mandat – eins widerrufen.')
+    if len(neu.get('note') or '') > mitglieder.MAX_NOTE:
+        konflikte.append(f'Zusammen wären die Notizen länger als {mitglieder.MAX_NOTE} Zeichen – erst eine kürzen.')
+    if not buchhaltung and any(zahl[t] for t, _, konto in UMHAENGEN if konto):
+        konflikte.append('Das entfallende Mitglied hat Rechnungen, Beitragszahlungen, Mandate oder Erstattungen – umhängen darf nur, '
+                         'wer „Buchhaltung ändern“ hat.')
+    person = lambda m: {'id': m['id'], 'number': m['number'], 'name': m['name']}
+    return {'bleibt': person(a), 'entfaellt': person(b), 'neu': neu,
+            'ergaenzt': [mitglieder.LABELS.get(k, 'Notiz' if k == 'note' else k) for k in neu],
+            'unterschiede': [[mitglieder.LABELS[k], _zeigen(k, a[k]), _zeigen(k, b[k])] for k in VERGLEICH if a[k] != b[k] and k != 'number'],
+            'umhaengen': [[label, zahl[t]] for t, label, _ in UMHAENGEN if zahl[t]], 'konflikte': konflikte}
+
+
+def zusammenfuehren(store, keep, drop, actor, buchhaltung=False):
+    """Mitglied `drop` in `keep` aufgehen lassen (vorher sichert der Aufrufer die Datenbank): fehlende Angaben ergänzen, Rechnungen,
+    Zahlungen, Mandate, Erstattungen, Festlegungen und gemerkte Mandatsreferenzen umhängen, `drop` löschen (Kennung bleibt gesperrt).
+    Prüft in der Transaktion erneut; im Protokoll nur Kennungen, Nummern, Feldnamen und Anzahlen."""
+    import mitglieder
+    with store.db:
+        store.db.execute('BEGIN IMMEDIATE')
+        v = vorschau(store, keep, drop, buchhaltung)
+        if v['konflikte']:
+            raise ValueError(' '.join(v['konflikte']))
+        neu = v['neu']
+        if neu:
+            a = {**dict(store.db.execute('SELECT * FROM members WHERE id=?', (keep,)).fetchone()), **neu}
+            neu['name'], neu['address'] = mitglieder.compose(a)
+            store.db.execute(f"UPDATE members SET {','.join(f'{k}=?' for k in neu)} WHERE id=?", (*neu.values(), keep))
+        for table, _, _ in UMHAENGEN:
+            store.db.execute(f'UPDATE {table} SET member_id=? WHERE member_id=?', (keep, drop))
+        store.db.execute('DELETE FROM dues_rates WHERE member_id=?', (drop,))   # Beitragsverlauf: der des bleibenden Mitglieds gilt
+        store.db.execute('DELETE FROM mitglieder_keine_doppelten WHERE a=? OR b=?', (drop, drop))
+        store.db.execute('DELETE FROM members WHERE id=?', (drop,))
+        store.db.execute('INSERT OR IGNORE INTO deleted_members(id,deleted) VALUES(?,?)', (drop, datetime.now().isoformat(timespec='seconds')))
+        store.audit(actor, 'Mitglieder zusammengeführt', {'id': keep, 'number': v['bleibt']['number'],   # id: im Verlauf des bleibenden Mitglieds
+                                                          'entfaellt': {'id': drop, 'number': v['entfaellt']['number']},
+                                                          'ergaenzt': sorted(k for k in neu if k not in ('name', 'address')),
+                                                          'umgehaengt': {label: n for label, n in v['umhaengen']}})
+    return v

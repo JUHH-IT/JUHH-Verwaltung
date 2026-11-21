@@ -183,6 +183,7 @@ class Store:
             self.db.execute(f'UPDATE members SET {",".join(k+"=?" for k in STORED)} WHERE id=?',[v[k] for k in STORED]+[mid])
             __import__('mitglieder').record_dues(self.db,mid,old['dues'],v['dues'])
             self.audit(actor,'Mitglied geändert',{'id':mid,'number':v['number'],'fields':sorted(changed)})
+        if 'left_on' in changed: __import__('mitglieder').notizen_bereinigen(self)   # Notiz entfällt mit dem Austritt (DSGVO)
         return mid
 
     def individual_dues(self,m,year,rates=None):
