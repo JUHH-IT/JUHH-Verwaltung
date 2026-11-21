@@ -238,7 +238,7 @@ try {
   // Mitglied anlegen und bearbeiten
   await page.click('[data-page=members]');
   await page.click('[data-new]');
-  await page.keyboard.press('Escape');                                       // Esc schließt den Dialog (auch im Programmfenster)
+  await page.keyboard.press('Escape');                                       // Esc schließt den Dialog
   check(!(await page.evaluate(() => document.getElementById('modal').open)), 'Esc schließt den Dialog');
   await page.click('[data-new]');
   await page.fill('input[name=number]', 'T-1');

@@ -377,7 +377,7 @@ class StartTests(unittest.TestCase):
         finally:
             app.ADDRESSES = saved
 
-    def start_like_systemd(self, tmp, env_extra=None, args_extra=()):
+    def start_like_systemd(self, tmp, env_extra=None, args_extra=(), unit_args=True):
         """Start genau wie die Unit server/ju-finanzen.service: Argumente aus ExecStart, Umgebung aus der Einstellungsdatei
         (Vorlage server/ju-finanzen.env.beispiel – so steht sie auf bestehenden Servern) mit Testordnern und freiem Port."""
         repo = Path(app.__file__).parent
@@ -391,16 +391,20 @@ class StartTests(unittest.TestCase):
                         JU_FINANZEN_ADRESSEN=ADRESSE, JU_FINANZEN_GEHEIMNISSE=f'{tmp}/geheim', **(env_extra or {}))
         env = {'PATH': os.environ.get('PATH', ''), 'LANG': 'C.UTF-8', 'TZ': 'Europe/Berlin', 'PYTHONUNBUFFERED': '1', 'PYTHONDONTWRITEBYTECODE': '1',
                'HOME': tmp, **settings}
-        proc = subprocess.Popen([sys.executable, str(repo / 'app.py'), *exec_start[2:], *args_extra], env=env, cwd=tmp,
+        proc = subprocess.Popen([sys.executable, str(repo / 'app.py'), *(exec_start[2:] if unit_args else ()), *args_extra], env=env, cwd=tmp,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         return proc, port
 
     def test_server_start_as_process(self):
         """Start wie unter systemd mit den Einstellungen bestehender Server (JU_FINANZEN_MODUS=server) – auch mit den Argumenten der
-        Unit bis 0.41 (--no-browser) und --modus server: kein Browser, keine Steuerdateien, SIGTERM beendet sauber."""
-        for args in ((), ('--no-browser',), ('--no-browser', '--modus', 'server')):
-            with self.subTest(args=args), tempfile.TemporaryDirectory() as tmp:
-                proc, port = self.start_like_systemd(tmp, args_extra=args)
+        Unit bis 0.41 (--no-browser) und --modus server: kein Browser, keine Steuerdateien, SIGTERM beendet sauber. Die Unit
+        übergibt --modus server selbst – auch eine Einstellungsdatei mit anderem Wert startet den Serverbetrieb."""
+        unit = (Path(app.__file__).parent / 'server' / 'ju-finanzen.service').read_text(encoding='utf-8')
+        self.assertRegex(unit, r'(?m)^ExecStart=\S+ \S+/app\.py --modus server$')
+        for env_extra, args in ((None, ()), (None, ('--no-browser',)), (None, ('--no-browser', '--modus', 'server')),
+                                ({'JU_FINANZEN_MODUS': 'mac'}, ())):
+            with self.subTest(env=env_extra, args=args), tempfile.TemporaryDirectory() as tmp:
+                proc, port = self.start_like_systemd(tmp, env_extra, args)
                 try:
                     for _ in range(100):
                         try:
@@ -427,11 +431,15 @@ class StartTests(unittest.TestCase):
                 self.assertTrue((Path(tmp) / 'Daten' / 'finanzen.sqlite3').exists())
 
     def test_mac_mode_is_refused(self):
-        """Betriebsart „mac“ (Einstellung oder Argument) bricht mit deutscher Meldung ab, statt still etwas anderes zu starten."""
-        for env_extra, args in (({'JU_FINANZEN_MODUS': 'mac'}, ()), ({}, ('--modus', 'mac'))):
+        """Betriebsart „mac“ (Einstellung oder Argument) bricht mit deutscher Meldung ab, statt still etwas anderes zu starten.
+        Die Einstellung allein prüft ein Start ohne die Argumente der Unit – deren --modus server ginge ihr vor (siehe unten)."""
+        for env_extra, args, unit_args in (({'JU_FINANZEN_MODUS': 'mac'}, (), False), ({}, ('--modus', 'mac'), True)):
             with self.subTest(env=env_extra, args=args), tempfile.TemporaryDirectory() as tmp:
-                proc, _ = self.start_like_systemd(tmp, env_extra, args)
-                out, _ = proc.communicate(timeout=20)
+                proc, _ = self.start_like_systemd(tmp, env_extra, args, unit_args)
+                try:
+                    out, _ = proc.communicate(timeout=20)
+                finally:
+                    proc.kill()
                 self.assertEqual(proc.returncode, 6, out)
                 self.assertIn('Start abgebrochen: Betriebsart „mac“ gibt es nicht mehr', out)
                 self.assertFalse((Path(tmp) / 'Daten').exists())                            # nichts angelegt
