@@ -81,7 +81,8 @@ REGELN = (
      'teilweise', 'Liste „Werden 35“ und Auswertung. Kein automatischer Austritt, die Ausnahme kennt das Programm nicht.', False),
     ('notiz-austritt', 'mitglieder', 'DSGVO Art. 5 Abs. 1 lit. e, Art. 17', 'Notizen nach dem Austritt',
      'Notizen der Mitgliederverwaltung braucht es nur während der Mitgliedschaft; eine Aufbewahrungspflicht gibt es für sie nicht.',
-     'umgesetzt', 'Gelöscht am Austrittstag (beim Eintragen, Bearbeiten, Import und stündlich). Für Ausgetretene keine neuen Notizen.', False),
+     'teilweise', 'In der Datenbank gelöscht am Austrittstag (beim Eintragen, Bearbeiten, Import und stündlich); für Ausgetretene keine '
+     'neuen Notizen. Sicherungen enthalten die Notiz weiter: Tagessicherungen 30 Tage, Sicherungen „Vor Änderungen“ ohne Frist.', False),
     ('wahlrecht', 'wahlen', 'Satzung § 37 Abs. 1 Nr. 1', 'Wahlberechtigung',
      'Mitglied am Beitrittsstichtag und die bis zum Beitragsstichtag fälligen Beiträge dieses und der zwei vorigen Jahre bezahlt.',
      'umgesetzt', _wahl, True),

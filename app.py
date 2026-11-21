@@ -881,7 +881,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path in ('/api/zusammenfuehren-vorschau','/api/zusammenfuehren'):   # doppelte Mitglieder zusammenführen (doppelte.py, 0.47)
                 import doppelte;bh=rollen.can(rights,'buchhaltung','schreiben')
                 if path=='/api/zusammenfuehren':
-                    doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh)   # erst prüfen, dann sichern, dann zusammenführen (erneut geprüft)
+                    doppelte.pruefen(store,data.get('keep'),data.get('drop'),bh)   # erst prüfen (Hindernis: keine Sicherung), dann sichern, dann zusammenführen (erneut geprüft)
                     saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-zusammenfuehren')
                     doppelte.zusammenfuehren(store,data.get('keep'),data.get('drop'),actor,bh);result={'backup':saved.name}
                 else: result={k:v for k,v in doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh).items() if k!='neu'}

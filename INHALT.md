@@ -100,7 +100,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 JU Hamburg Finanzen – local authenticated pilot server.
 
-Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_static.py, test_uebernahme.py
+Tests: test_doppelte.py, test_http.py, test_karte.py, test_keycloak_app.py, test_mitgliederverwaltung.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_static.py, test_uebernahme.py
 
 - `backups_dir()`
 - `save_receipt(store, table, rid, number, filename, suffix, raw)` – Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
@@ -335,6 +335,7 @@ Tests: test_doppelte.py
 - `gruppen(store)` – Mögliche Doppelte als Gruppen: [{'ids': [...], 'gruende': [Text, …]}] – Paare mit „kein Duplikat“ zählen nicht.
 - `kein_duplikat(store, ids, actor)` – Mitglieder einer Gruppe als „kein Duplikat“ bestätigen (alle Paare untereinander); im Protokoll nur die Kennungen.
 - `vorschau(store, keep, drop, buchhaltung=…)` – Was beim Zusammenführen passiert: bleibendes und entfallendes Mitglied, ergänzte Angaben, Unterschiede, umgehängte Einträge,
+- `pruefen(store, keep, drop, buchhaltung=…)` – Vorschau oder ValueError mit allen Hindernissen – vor der Sicherung und erneut in der Transaktion.
 - `zusammenfuehren(store, keep, drop, actor, buchhaltung=…)` – Mitglied `drop` in `keep` aufgehen lassen (vorher sichert der Aufrufer die Datenbank): fehlende Angaben ergänzen, Rechnungen,
 
 ### gliederung.py

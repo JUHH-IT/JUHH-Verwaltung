@@ -73,6 +73,7 @@ function mergeDialog(ids, back) {
       const left = !isActive(a) || !isActive(b);
       mount(box, html`
         <p><strong>${v.bleibt.name}</strong> (${v.bleibt.number}) bleibt, <strong>${v.entfaellt.name}</strong> (${v.entfaellt.number}) wird gelöscht.</p>
+        ${v.hinweise.map((h) => html`<p class="small" data-merge-hint>${h}</p>`)}
         ${left ? html`<p class="notice warn" data-merge-left>Eines der Mitglieder ist ausgetreten – vielleicht ein Wiedereintritt mit neuer Mitgliedsnummer.
           Dann besser nicht zusammenführen, sondern „Kein Duplikat“.</p>` : ''}
         <p class="small">${v.ergaenzt.length ? html`Wird beim bleibenden Mitglied ergänzt: ${v.ergaenzt.join(', ')}.` : 'Keine fehlenden Angaben zu ergänzen.'}
