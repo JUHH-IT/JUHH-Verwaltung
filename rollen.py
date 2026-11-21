@@ -108,7 +108,7 @@ POST = {
     **{path: _w(_M) for path in (
         '/api/member', '/api/members-preview', '/api/members-import', '/api/gliederung-vorschau', '/api/gliederung-import',
         '/api/ortsverband', '/api/ortsverband-status', '/api/ortsverband-loeschen', '/api/kv-nummern', '/api/klaerfall-klaeren',
-        '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete', '/api/member-austritt')},
+        '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete', '/api/member-austritt', '/api/member-notiz')},
     '/api/adresse-pruefen': _r(_M), '/api/strassen-suche': _r(_M), '/api/mitglieder-liste': _r(_M),
     '/api/adressen-laden': _w(_M, 'verwaltung'),
     **{path: _w(_B) for path in (

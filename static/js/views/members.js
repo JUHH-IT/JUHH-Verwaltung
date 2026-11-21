@@ -6,7 +6,7 @@
 // Das geöffnete Mitglied zeigt weiter sein Beitragskonto (mitgliederkonto.py): Jahre, Buchungen, Soll von Hand festlegen.
 import { api, download } from '../api.js';
 import { html, mount, raw } from '../html.js';
-import { eur, signed, date, toInput, todayIso } from '../format.js';
+import { eur, signed, date, dateTime, weekdayDate, toInput, todayIso } from '../format.js';
 import { store, refresh, kvName, go, can } from '../store.js';
 import { pageHead, icon, table, empty, dialog, overlay, safe, toast, badge, uploadProtected } from '../ui.js';
 import { kvOvFields, bindKvOv, ovById, ovLabel, ovsOf } from '../gliederung.js';
@@ -40,14 +40,6 @@ const NOAUTO = 'autocapitalize="off" autocorrect="off" spellcheck="false"';
 
 /** Saldo des Beitragskontos: − Rückstand (rot), + Guthaben. */
 export const balanceCell = (cents) => (cents < 0 ? html`<span class="over">${signed(cents)}</span>` : cents > 0 ? signed(cents) : html`<span class="muted">${eur(0)}</span>`);
-
-/** Jahresbeitrag: fester Betrag oder automatisch nach Alter (Beitrag des gewählten Haushaltsjahres laut Beitragskonto). */
-const duesLabel = (m) => {
-  if (m.dues !== null && m.dues !== undefined) return html`${eur(m.dues)} <span class="muted">(fester Betrag)</span>`;
-  const byAge = String(m.dues_basis || '').startsWith('Staffel');   // „automatisch nach Alter“ nur, wenn das Soll wirklich aus der Staffel kommt
-  if (m.dues_soll) return html`${eur(m.dues_soll)} <span class="muted">(${store.year}${byAge ? ', automatisch nach Alter' : ''}: ${m.dues_basis})</span>`;
-  return html`<span class="muted">${m.dues_basis ? `${store.year}: ${m.dues_basis}` : 'automatisch nach Alter'}</span>`;
-};
 
 /** Anschrift im Mitgliedsdialog prüfen (ab 0.32): mit den amtlichen Hamburger Adressdaten auf diesem Rechner (adressen.py) – gibt es die
  * Straße, passt die PLZ? Nur ein Hinweis mit Vorschlägen; gespeichert werden kann immer (Mitglieder außerhalb Hamburgs, neue Straßen). */
@@ -248,71 +240,142 @@ function deleteMember(m, done) {
   });
 }
 
-export function account(id, { back = null } = {}) {
+const YEAR = { klaeren: ['klären', 'warn'], frei: ['beitragsfrei', ''], spaeter: ['noch nicht fällig', ''], offen: ['offen', 'warn'], bezahlt: ['bezahlt', 'ok'] };
+const initials = (m) => `${(m.first_name || '').slice(0, 1)}${(m.last_name || m.name || '').slice(0, 1)}`.toUpperCase();
+const telLink = (n) => `tel:${String(n).replace(/[^+0-9]/g, '')}`;
+
+/** Hinweis zur Wahlberechtigung: ausgewertet (ab „Wahlberechtigung auswerten ab“) die Gründe des Servers, vorher eine Vorschau aus den
+ * offenen Jahren im Fenster des nächsten Beitragsstichtags (§ 37 Abs. 1 Nr. 1) – ohne Beträge. */
+function wahlHint(m, a) {
+  const day = store.data.wahl?.beitrag;
+  if (!day || !isActive(m) || m.guest) return '';
+  if (m.wahl) return m.wahl.status === 'nicht' ? html`<p class="notice warn" data-wahl-hint><strong>Nicht wahlberechtigt:</strong> ${m.wahl.gruende.join(' · ')}.
+    Was bis zum Beitragsstichtag ${weekdayDate(day)} eingeht, zählt (Satzung § 37 Abs. 1 Nr. 1).</p>` : '';
+  const y = Number(day.slice(0, 4)), open = a.jahre.filter((j) => j.stand === 'offen' && j.year >= y - 2 && j.year <= y).map((j) => j.year);
+  return open.length ? html`<p class="notice warn" data-wahl-hint><strong>Für die Wahlberechtigung fehlt der Beitrag ${open.join(', ')}.</strong>
+    Er muss bis zum Beitragsstichtag ${weekdayDate(day)} eingegangen sein (Satzung § 37 Abs. 1 Nr. 1).</p>` : '';
+}
+
+/** Mitgliederakte (0.43): Kopf mit Status und Aktionen, Reiter Überblick / Alle Angaben / Beitragskonto (nur mit Buchhaltung) / Verlauf.
+ * Ohne Buchhaltung: Stand je Beitragsjahr ohne Beträge (Server: /api/member-account). */
+export function account(id, { back = null, tab = null } = {}) {
   const m = store.data.members.find((x) => x.id === id);
-  const invoices = store.data.invoices.filter((i) => i.member_id === id);
-  let full = null;   // alle Angaben des Mitglieds (Kontakt, Mitgliederverwaltung) – nicht in der Gesamtliste
-  const el = dialog('Mitglied · ' + sortName(m), html`
-    ${back ? html`<button type="button" class="link back-link" data-back>← Zurück zur Liste</button>` : ''}
-    <div class="panel-head"><p class="muted">${m.number} · ${kvName(m.kv)}${m.ov_id ? ` · OV ${ovLabel(ovById(m.ov_id))}` : ''} · geboren ${date(m.birth)} (${years(m.birth)} Jahre)
-      · Eintritt ${date(m.joined)}${m.left_on ? ` · Austritt ${isActive(m) ? 'zum ' : ''}${date(m.left_on)}` : ` (${years(m.joined)} Jahre Mitglied)`}${statusBadges(m)}<br>
-      <span data-status>Status: ${memberStatus(m)}${m.wahl?.gruende.length ? html` <span class="small">${m.wahl.gruende.join(' · ')}</span>` : ''}</span><br>
-      ${m.title ? `${m.title} ` : ''}${m.address.split('\n').map((l, i) => html`${i ? html`<br>` : ''}${l}`)}<br>${m.email || 'keine E-Mail-Adresse'} · Jahresbeitrag: ${duesLabel(m)}
-      <span data-contact></span></p>
-      <span style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/api/member-account.pdf?id=${id}" target="_blank" rel="noopener">${icon('file', 16)} Beitragskonto (PDF)</a>
-        <button type="button" class="btn" data-edit>${icon('edit', 16)} Bearbeiten</button>
-        <button type="button" class="btn" data-leave>${m.left_on ? 'Austritt ändern' : 'Austritt eintragen'}</button>
-        <button type="button" class="btn ghost" data-delete>Löschen</button></span></div>
-    <div data-account><p class="small muted">Wird geladen …</p></div>
-    ${mandateSection(m)}
-    <h3>Rechnungen</h3>
-    ${invoices.length ? table(['Jahr', 'Rechnung', { label: 'Forderung', className: 'num' }, { label: 'Bezahlt', className: 'num' }, 'Status'],
-      invoices.map((i) => html`<tr><td>${i.year || date(i.issued)}</td><td>${i.number}</td><td class="num">${eur(i.total)}</td><td class="num">${eur(i.paid)}</td><td>${invoiceBadge(i)}</td></tr>`))
-      : empty('Keine Rechnungen', 'Beitragslauf unter „Rechnungen“ starten.')}`, { wide: true });
-  el.querySelector('[data-edit]').onclick = () => safe(async () => memberDialog(full || (await api('/api/member-account?id=' + id)).member));
-  el.querySelector('[data-delete]').onclick = () => deleteMember(m, () => el.close());
-  el.querySelector('[data-leave]').onclick = () => safe(async () => leaveDialog(m, await api('/api/member-account?id=' + id), () => account(id, { back })));
+  const money = can('buchhaltung'), write = can('mitglieder', 'schreiben');
+  tab = tab || (money ? 'konto' : 'ueberblick');   // Schatzmeister zuerst das Beitragskonto, Mitgliederverwaltung den Überblick
+  const el = dialog('Mitglied · ' + sortName(m), html`${back ? html`<button type="button" class="link back-link" data-back>← Zurück zur Liste</button>` : ''}
+    <div data-akte><p class="small muted">Wird geladen …</p></div>`, { wide: true });
   el.querySelector('[data-back]')?.addEventListener('click', back);
-  bindMandateSection(el, m, () => account(id, { back }));
-  const load = () => safe(async () => {
-    const a = await api('/api/member-account?id=' + id);
-    full = a.member;
-    const contact = [full.phone && `Tel. ${full.phone}`, full.phone_work && `Tel. dienstl. ${full.phone_work}`, full.mobile && `Handy ${full.mobile}`,
-      full.mobile_work && `Handy dienstl. ${full.mobile_work}`, full.email_work && `E-Mail dienstl. ${full.email_work}`].filter(Boolean).join(' · ');
-    const known = full.external_balance !== null && full.external_balance !== undefined;
-    const line = el.querySelector('[data-contact]');
-    if (line) mount(line, html`${full.left_reason ? html`<br>Austrittsgrund: ${full.left_reason}` : ''}${contact ? html`<br>${contact}` : ''}${known ? html`<br>Kontostand laut Mitgliederverwaltung: ${eur(full.external_balance)}` : ''}${
-      a.sepa_refs.length ? html`<br>Gemerkte Mandatsreferenzen (SEPA-Datei): ${a.sepa_refs.map((r, n) => html`${n ? ', ' : ''}${r.mandate}
-        <button type="button" class="link" data-forget="${n}" title="Nicht mehr automatisch diesem Mitglied zuordnen">entfernen</button>`)}` : ''}`);
-    el.querySelectorAll('[data-forget]').forEach((b) => (b.onclick = () => safe(async () => {
-      const r = a.sepa_refs[Number(b.dataset.forget)];
-      await api('/api/sepa-mandat-vergessen', { creditor: r.creditor, mandate: r.mandate });
-      toast('Gemerkte Mandatsreferenz entfernt.');
-      load();
-    })));
-    const box = el.querySelector('[data-account]');
-    mount(box, html`<h3>Beitragskonto</h3>
-      <p class="${a.balance < 0 ? 'notice warn' : 'notice'}">${a.balance < 0 ? `Rückstand ${eur(-a.balance)}` : a.balance > 0 ? `Guthaben ${eur(a.balance)}` : 'Ausgeglichen'}
-        – fällige Beiträge seit ${a.first} minus Zahlungen.${a.issues.length ? ` Zu klären: ${a.issues.join('; ')}` : ''}</p>
-      ${a.years.length ? table(['Jahr', { label: 'Beitrag (Soll)', className: 'num' }, 'Grundlage', { label: 'Gezahlt für das Jahr', className: 'num' },
-        { label: 'Offen', className: 'num' }, { label: 'Stand 31.12.', className: 'num' }, ''], a.years.map((r) => html`<tr>
-        <td>${r.year}</td><td class="num">${r.soll === null ? badge('klären', 'warn') : eur(r.soll)}</td>
-        <td class="small">${r.issue || r.basis}${r.soll && !r.due_now ? html`<span class="sub">fällig ${date(r.due)}</span>` : ''}</td>
-        <td class="num">${eur(r.paid)}</td><td class="num">${r.open === null ? '—' : r.open ? html`<span class="over">${eur(r.open)}</span>` : eur(0)}</td>
-        <td class="num">${balanceCell(r.end_balance)}</td>
-        <td class="nowrap">${r.source === 'invoice' && r.soll !== null ? html`<span class="small muted">laut Rechnung</span>`
-          : html`<button type="button" class="btn small" data-target="${r.year}">${r.source === 'set' ? 'Soll ändern' : 'Soll festlegen'}</button>`}</td></tr>`))
-        : html`<p class="small muted">Kein Beitragsjahr seit Datenbeginn.</p>`}
-      <p class="small muted">„Offen“: Zahlungen decken die ältesten fälligen Beiträge zuerst – auch eine Nachzahlung, die in einem späteren Haushaltsjahr gebucht ist.</p>
-      <h3>Buchungen im Beitragskonto</h3>
-      ${a.postings.length ? table(['Datum', 'Buchung', { label: 'Beitrag', className: 'num' }, { label: 'Zahlung', className: 'num' }, { label: 'Saldo', className: 'num' }],
-        a.postings.map((x) => html`<tr class="${x.counts ? '' : 'muted'}"><td class="nowrap">${date(x.day)}</td>
-          <td>${x.text}${x.journal_id ? html`<span class="sub">Buchung #${x.journal_id}</span>` : ''}${x.counts ? '' : html`<span class="sub">noch nicht fällig</span>`}</td>
-          <td class="num">${x.soll ? eur(x.soll) : ''}</td><td class="num">${x.ist ? eur(x.ist) : ''}</td><td class="num">${balanceCell(x.balance)}</td></tr>`))
-        : html`<p class="small muted">Keine Buchungen.</p>`}`);
-    box.querySelectorAll('[data-target]').forEach((b) => (b.onclick = () => targetDialog(m, a.years.find((r) => r.year === Number(b.dataset.target)), load)));
-  });
-  load();
+  const reopen = (t = tab) => account(id, { back, tab: t });
+  safe(async () => draw(await api('/api/member-account?id=' + id)));
+
+  function draw(a) {
+    const f = a.member;
+    const tabs = [['ueberblick', 'Überblick'], ['angaben', 'Alle Angaben'], ...(money ? [['konto', 'Beitragskonto']] : []), ['verlauf', 'Verlauf']];
+    if (!tabs.some(([k]) => k === tab)) tab = 'ueberblick';
+    const phone = f.mobile || f.phone || f.mobile_work || f.phone_work;
+    const [dl, dk] = DUES[m.dues_state] || DUES.frei;
+    const box = el.querySelector('[data-akte]');
+    mount(box, html`<div class="akte">
+      <header class="akte-head panel-head"><span class="akte-avatar" aria-hidden="true">${initials(m)}</span>
+        <div class="akte-who"><p class="muted">${m.number} · ${kvName(m.kv)}${m.ov_id ? ` · OV ${ovLabel(ovById(m.ov_id))}` : ''}${m.birth ? ` · ${years(m.birth)} Jahre` : ''}${
+          m.left_on ? ` · Austritt ${isActive(m) ? 'zum ' : ''}${date(m.left_on)}${f.left_reason ? ` (${f.left_reason})` : ''}` : ''}</p>
+          <p class="akte-chips" data-status>${memberStatus(m)}${m.joined ? html` <span class="small muted">seit ${m.joined.slice(0, 4)}</span>` : ''}
+            ${badge(`Beitrag ${store.year}: ${dl}`, dk)}${statusBadges(m)}</p></div>
+        <div class="akte-actions">
+          ${m.email ? html`<a class="btn" href="mailto:${m.email}">${icon('mail', 16)} E-Mail</a>` : ''}
+          ${phone ? html`<a class="btn" href="${telLink(phone)}">Anrufen</a>` : ''}
+          ${write ? html`<button type="button" class="btn" data-edit>${icon('edit', 16)} Bearbeiten</button>
+            <button type="button" class="btn" data-leave>${m.left_on ? 'Austritt ändern' : 'Austritt eintragen'}</button>
+            <button type="button" class="btn ghost" data-delete>Löschen</button>` : ''}</div></header>
+      ${wahlHint(m, a)}
+      <div class="tabs" role="tablist" aria-label="Mitgliederakte">${tabs.map(([k, label]) => html`<button type="button" role="tab" data-tab="${k}" aria-selected="${k === tab}">${label}</button>`)}</div>
+      <div data-tab-body></div></div>`);
+    const body = box.querySelector('[data-tab-body]');
+    const show = {
+      ueberblick: () => html`<div class="akte-grid">
+        <section class="akte-card"><h4>Kontakt</h4><dl>
+          <dt>E-Mail</dt><dd>${m.email ? html`<a href="mailto:${m.email}">${m.email}</a>` : badge('fehlt', 'warn')}</dd>
+          ${f.email_work ? html`<dt>E-Mail dienstl.</dt><dd>${f.email_work}</dd>` : ''}
+          ${[['Handy', f.mobile], ['Telefon', f.phone], ['Handy dienstl.', f.mobile_work], ['Telefon dienstl.', f.phone_work]].filter(([, v]) => v)
+            .map(([k, v]) => html`<dt>${k}</dt><dd><a href="${telLink(v)}">${v}</a></dd>`)}
+          <dt>Anschrift</dt><dd>${m.address.split('\n').map((l, i) => html`${i ? html`<br>` : ''}${l}`)}${m.zip ? '' : html` ${badge('prüfen', 'warn')}`}</dd></dl></section>
+        <section class="akte-card"><h4>Mitgliedschaft</h4><dl>
+          <dt>Eintritt</dt><dd>${date(m.joined)}${m.left_on ? '' : ` (${years(m.joined)} Jahre)`}</dd>
+          ${m.kv_joined ? html`<dt>Eintritt KV</dt><dd>${date(m.kv_joined)}</dd>` : ''}
+          ${m.left_on ? html`<dt>Austritt</dt><dd>${date(m.left_on)}${f.left_reason ? ` · ${f.left_reason}` : ''}</dd>` : ''}
+          <dt>Geburtsdatum</dt><dd>${date(m.birth)}</dd>
+          <dt>Jahresbeitrag</dt><dd>${m.dues !== null && m.dues !== undefined ? html`${eur(m.dues)} <span class="muted">(fester Betrag)</span>` : 'automatisch nach Alter'}</dd>
+          ${m.wahl ? html`<dt>Status</dt><dd>${wahlBadge(m.wahl.status)}</dd>` : ''}</dl></section>
+        <section class="akte-card"><h4>Beiträge</h4>${a.jahre.length ? html`<ul class="akte-years">${a.jahre.slice(-3).reverse().map((j) => html`
+          <li><span>${j.year}</span>${badge(YEAR[j.stand][0], YEAR[j.stand][1])}</li>`)}</ul>` : html`<p class="small muted">Kein Beitragsjahr seit Datenbeginn.</p>`}
+          ${money ? '' : html`<p class="small muted">Beträge und Zahlungen stehen in der Buchhaltung.</p>`}</section>
+        <section class="akte-card"><h4>Notiz <span class="small muted">nur Mitgliederverwaltung</span></h4>
+          ${write ? html`<form data-note><textarea name="text" rows="3" maxlength="1000" placeholder="z. B. Rückruf vereinbart">${f.note || ''}</textarea>
+            <div class="form-actions"><button type="submit" class="btn small">Notiz speichern</button></div></form>` : html`<p>${f.note || html`<span class="muted">Keine Notiz.</span>`}</p>`}</section>
+        <section class="akte-card akte-wide"><h4>Letzte Änderungen</h4>${history(a.verlauf.slice(0, 4))}
+          ${a.verlauf.length > 4 ? html`<button type="button" class="link small" data-tab="verlauf">Ganzer Verlauf</button>` : ''}</section></div>`,
+      angaben: () => html`<dl class="akte-all">${a.angaben.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>`,
+      konto: () => html`<div data-account></div>${mandateSection(m)}
+        <h3>Rechnungen</h3>${(() => { const inv = store.data.invoices.filter((i) => i.member_id === id);
+          return inv.length ? table(['Jahr', 'Rechnung', { label: 'Forderung', className: 'num' }, { label: 'Bezahlt', className: 'num' }, 'Status'],
+            inv.map((i) => html`<tr><td>${i.year || date(i.issued)}</td><td>${i.number}</td><td class="num">${eur(i.total)}</td><td class="num">${eur(i.paid)}</td><td>${invoiceBadge(i)}</td></tr>`))
+            : empty('Keine Rechnungen', 'Beitragslauf unter „Rechnungen“ starten.'); })()}`,
+      verlauf: () => history(a.verlauf),
+    };
+    mount(body, show[tab]());
+    box.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; draw(a); }));
+    box.querySelector('[data-edit]')?.addEventListener('click', () => memberDialog(f));
+    box.querySelector('[data-delete]')?.addEventListener('click', () => deleteMember(m, () => el.close()));
+    box.querySelector('[data-leave]')?.addEventListener('click', () => leaveDialog(m, a, () => reopen()));
+    box.querySelector('[data-note]')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      safe(async () => {
+        await api('/api/member-notiz', { id, text: e.target.text.value });
+        toast('Notiz gespeichert.');
+        reopen();
+      });
+    });
+    if (tab === 'konto') accountBox(m, a, box, () => reopen('konto'));
+  }
+}
+
+/** Verlauf aus dem Protokoll: Datum, Änderung, wer. */
+const history = (rows) => (rows.length ? html`<ol class="akte-history">${rows.map((r) => html`<li><span class="muted">${dateTime(r.time)}</span>
+  <span>${r.text}<span class="sub">${r.actor}</span></span></li>`)}</ol>` : html`<p class="small muted">Noch keine Änderungen im Programm protokolliert.</p>`);
+
+/** Beitragskonto (nur mit Buchhaltung): Saldo, Jahre mit Soll von Hand, Buchungen, gemerkte Mandatsreferenzen, SEPA-Mandat. */
+function accountBox(m, a, root, reload) {
+  bindMandateSection(root, m, reload);
+  const box = root.querySelector('[data-account]');
+  mount(box, html`<p class="${a.balance < 0 ? 'notice warn' : 'notice'}">${a.balance < 0 ? `Rückstand ${eur(-a.balance)}` : a.balance > 0 ? `Guthaben ${eur(a.balance)}` : 'Ausgeglichen'}
+      – fällige Beiträge seit ${a.first} minus Zahlungen.${a.issues.length ? ` Zu klären: ${a.issues.join('; ')}` : ''}
+      <a class="link small" href="/api/member-account.pdf?id=${m.id}" target="_blank" rel="noopener">Beitragskonto als PDF</a></p>
+    ${a.years.length ? table(['Jahr', { label: 'Beitrag (Soll)', className: 'num' }, 'Grundlage', { label: 'Gezahlt für das Jahr', className: 'num' },
+      { label: 'Offen', className: 'num' }, { label: 'Stand 31.12.', className: 'num' }, ''], a.years.map((r) => html`<tr>
+      <td>${r.year}</td><td class="num">${r.soll === null ? badge('klären', 'warn') : eur(r.soll)}</td>
+      <td class="small">${r.issue || r.basis}${r.soll && !r.due_now ? html`<span class="sub">fällig ${date(r.due)}</span>` : ''}</td>
+      <td class="num">${eur(r.paid)}</td><td class="num">${r.open === null ? '—' : r.open ? html`<span class="over">${eur(r.open)}</span>` : eur(0)}</td>
+      <td class="num">${balanceCell(r.end_balance)}</td>
+      <td class="nowrap">${r.source === 'invoice' && r.soll !== null ? html`<span class="small muted">laut Rechnung</span>`
+        : html`<button type="button" class="btn small" data-target="${r.year}">${r.source === 'set' ? 'Soll ändern' : 'Soll festlegen'}</button>`}</td></tr>`))
+      : html`<p class="small muted">Kein Beitragsjahr seit Datenbeginn.</p>`}
+    <p class="small muted">„Offen“: Zahlungen decken die ältesten fälligen Beiträge zuerst – auch eine Nachzahlung, die in einem späteren Haushaltsjahr gebucht ist.</p>
+    <h3>Buchungen im Beitragskonto</h3>
+    ${a.postings.length ? table(['Datum', 'Buchung', { label: 'Beitrag', className: 'num' }, { label: 'Zahlung', className: 'num' }, { label: 'Saldo', className: 'num' }],
+      a.postings.map((x) => html`<tr class="${x.counts ? '' : 'muted'}"><td class="nowrap">${date(x.day)}</td>
+        <td>${x.text}${x.journal_id ? html`<span class="sub">Buchung #${x.journal_id}</span>` : ''}${x.counts ? '' : html`<span class="sub">noch nicht fällig</span>`}</td>
+        <td class="num">${x.soll ? eur(x.soll) : ''}</td><td class="num">${x.ist ? eur(x.ist) : ''}</td><td class="num">${balanceCell(x.balance)}</td></tr>`))
+      : html`<p class="small muted">Keine Buchungen.</p>`}
+    ${a.member.external_balance !== null && a.member.external_balance !== undefined ? html`<p class="small muted">Kontostand laut Mitgliederverwaltung: ${eur(a.member.external_balance)}</p>` : ''}
+    ${a.sepa_refs.length ? html`<p class="small">Gemerkte Mandatsreferenzen (SEPA-Datei): ${a.sepa_refs.map((r, n) => html`${n ? ', ' : ''}${r.mandate}
+      <button type="button" class="link" data-forget="${n}" title="Nicht mehr automatisch diesem Mitglied zuordnen">entfernen</button>`)}</p>` : ''}`);
+  box.querySelectorAll('[data-target]').forEach((b) => (b.onclick = () => targetDialog(m, a.years.find((r) => r.year === Number(b.dataset.target)), reload)));
+  box.querySelectorAll('[data-forget]').forEach((b) => (b.onclick = () => safe(async () => {
+    const r = a.sepa_refs[Number(b.dataset.forget)];
+    await api('/api/sepa-mandat-vergessen', { creditor: r.creditor, mandate: r.mandate });
+    toast('Gemerkte Mandatsreferenz entfernt.');
+    reload();
+  })));
 }
 
 /** Austritt eintragen, ändern oder zurücknehmen (0.37): Datum (auch künftig), Grund optional; a = /api/member-account mit den Hinweisen

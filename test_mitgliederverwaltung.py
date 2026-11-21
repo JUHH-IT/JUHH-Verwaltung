@@ -1,4 +1,4 @@
-"""Listen der Mitgliederverwaltung (ab 0.43): Auswahl als CSV, Etiketten, Anschreiben; Stand des Beitrags ohne Beträge – nur erfundene Daten."""
+"""Mitgliederverwaltung 0.43: Listen (CSV, Etiketten, Anschreiben), Stand des Beitrags ohne Beträge, Mitgliederakte – nur erfundene Daten."""
 import json
 import tempfile
 import unittest
@@ -7,6 +7,7 @@ import urllib.request
 from io import BytesIO
 from pathlib import Path
 
+import mitglieder
 import mitgliederkonto
 import mitgliederlisten
 import test_rollen   # Anmeldung und Personen am Testserver (nicht als Name importiert, sonst liefen dessen Tests hier noch einmal)
@@ -21,7 +22,7 @@ def pdf_text(raw):
     return [page.extract_text() for page in PdfReader(BytesIO(raw)).pages]
 
 
-class ListenTests(unittest.TestCase):
+class Basis(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.s = Store(Path(self.tmp.name) / 't.db')
@@ -35,6 +36,8 @@ class ListenTests(unittest.TestCase):
         self.s.db.close()
         self.tmp.cleanup()
 
+
+class ListenTests(Basis):
     def test_auswahl_prueft_die_eingabe(self):
         for bad in (None, [], 'x', [True], [1.5], ['1'], list(range(1, mitgliederlisten.MAX + 2)), [self.a, 999]):
             with self.assertRaises(ValueError, msg=bad):
@@ -97,6 +100,42 @@ class ListenTests(unittest.TestCase):
         self.assertIn(2026, member['dues_open_years'])                      # fällig und nicht eingegangen (ab 2027 auch Folgejahre)
 
 
+class AkteTests(Basis):
+    """Notiz, Verlauf und alle Angaben eines Mitglieds (Akte)."""
+
+    def test_notiz_und_verlauf(self):
+        mitglieder.notiz(self.s, self.a, '  Rückruf vereinbart \r\n', 'Test')
+        self.assertEqual(self.s.db.execute('SELECT note FROM members WHERE id=?', (self.a,)).fetchone()[0], 'Rückruf vereinbart')
+        mitglieder.notiz(self.s, self.a, 'Rückruf vereinbart', 'Test')                       # unverändert: kein Eintrag
+        old = dict(self.s.db.execute('SELECT * FROM members WHERE id=?', (self.a,)).fetchone())
+        self.s.update_member(self.a, {**old, 'email': 'neu@example.org', 'note': 'ignoriert'}, 'Test')   # Formular ändert die Notiz nie
+        self.assertEqual(self.s.db.execute('SELECT note FROM members WHERE id=?', (self.a,)).fetchone()[0], 'Rückruf vereinbart')
+        mitglieder.austritt(self.s, self.a, '2026-12-31', '', 'Test')
+        mitglieder.notiz(self.s, self.a, '', 'Test')
+        texts = [x['text'] for x in mitglieder.verlauf(self.s, self.a)]
+        self.assertEqual(texts, ['Notiz gelöscht', 'Austritt zum 31.12.2026 eingetragen', 'Geändert: E-Mail privat', 'Notiz geändert', 'Mitglied angelegt'])
+        self.assertEqual([x['text'] for x in mitglieder.verlauf(self.s, self.b)], ['Mitglied angelegt'])   # nur Einträge dieses Mitglieds
+        details = ' '.join(r[0] for r in self.s.db.execute("SELECT detail FROM audit WHERE action='Notiz zum Mitglied geändert'"))
+        self.assertNotIn('Rückruf', details)                                                  # der Text steht nie im Protokoll
+        for bad in ((self.a, 'x' * 1001), ('1', 'x'), (True, 'x'), (self.a, None), (999, 'x')):
+            with self.assertRaises(ValueError, msg=bad):
+                mitglieder.notiz(self.s, *bad, 'Test')
+
+    def test_alle_angaben(self):
+        m = dict(self.s.db.execute('SELECT * FROM members WHERE id=?', (self.b,)).fetchone())
+        rows = dict(mitglieder.angaben(self.s, m))
+        self.assertEqual((rows['Mitgliedsnummer'], rows['Geburtsdatum'], rows['Postausschluss'], rows['Kreisverband']),
+                         ('T-2', '01.03.1995', 'ja', 'Altona / Elbvororte'))
+        self.assertNotIn('Gastmitglied', rows)                                                # Nein-Angaben fallen weg
+        self.assertNotIn('Austritt', rows)
+
+    def test_stand_je_jahr(self):
+        self.assertEqual([mitgliederkonto.jahr_stand(y) for y in (
+            {'soll': None, 'due_now': True, 'open': None}, {'soll': 0, 'due_now': True, 'open': 0}, {'soll': 3000, 'due_now': False, 'open': 0},
+            {'soll': 3000, 'due_now': True, 'open': 3000}, {'soll': 3000, 'due_now': True, 'open': 0})],
+            ['klaeren', 'frei', 'spaeter', 'offen', 'bezahlt'])
+
+
 class ListenHttpTests(unittest.TestCase):
     """Am laufenden Server: Liste nur mit „Mitglieder lesen“ und Passwortbestätigung; Stand des Beitrags auch ohne Buchhaltung."""
     setUpClass = classmethod(test_server.ServerHttpTests.setUpClass.__func__)
@@ -128,8 +167,18 @@ class ListenHttpTests(unittest.TestCase):
         status, _, _, body = self.file(unconfirmed, '/api/mitglieder-liste', {'art': 'csv', 'ids': [member['id']]})
         self.assertEqual((status, json.loads(body).get('confirm')), (428, True))
         self.assertEqual(self.get(officer, '/api/regelwerk')[0], 200)
+        status, akte = self.get(officer, f"/api/member-account?id={member['id']}")
+        self.assertEqual(status, 200)
+        self.assertIn(2026, [j['year'] for j in akte['jahre'] if j['stand'] == 'offen'])           # Stand je Jahr ohne Betrag
+        self.assertEqual((akte['years'], akte['balance']), ([], 0))                                 # Beitragskonto bleibt leer
+        self.assertIn(['Mitgliedsnummer', 'M-1'], akte['angaben'])
+        self.assertEqual(self.post(officer, '/api/member-notiz', {'id': member['id'], 'text': 'Rückruf'})[0], 200)
+        self.assertEqual(self.get(officer, f"/api/member-account?id={member['id']}")[1]['member']['note'], 'Rückruf')
+        self.assertNotIn('note', member)                                                          # nicht in der Gesamtliste
 
         admin = self.person('technik', 'Administrator')                                               # keine Mitgliederdaten
+        reader = self.person('leitung', 'Landesgeschäftsführer')                                      # lesen ja, Notiz nein
+        self.assertEqual(self.post(reader, '/api/member-notiz', {'id': member['id'], 'text': 'x'})[0], 403)
         self.assertEqual(self.file(admin, '/api/mitglieder-liste', {'art': 'csv', 'ids': [member['id']]})[0], 403)
         status, r = self.get(admin, '/api/regelwerk')                                                  # Regelwerk: alle Angemeldeten
         self.assertEqual(status, 200)

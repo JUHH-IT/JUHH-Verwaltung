@@ -650,8 +650,11 @@ class Handler(BaseHTTPRequestHandler):
                     # Hinweise für „Austritt eintragen“ (0.37): nur Ja/Nein, keine Beträge – auch ohne Buchhaltung sichtbar
                     account['austritt']={'offen':account['arrears']>0,'mandat':bool(lastschrift.active_mandate(store,int(query['id'][0]))),
                                          'festgelegt':[y['year'] for y in account['years'] if y['source'] in ('set','invoice') and y['soll'] is not None]}   # Jahre mit festem Soll (Dialog warnt sonst vor „Soll zu klären“)
+                    # Akte (0.43): Stand je Jahr ohne Betrag, Verlauf aus dem Protokoll (nur Feldnamen), alle Angaben – auch ohne Buchhaltung
+                    account.update(jahre=[{'year':y['year'],'stand':mitgliederkonto.jahr_stand(y)} for y in account['years']],
+                                   verlauf=mitglieder.verlauf(store,account['member']['id']),angaben=mitglieder.angaben(store,account['member']))
                     if not rollen.can(rights,'buchhaltung'):   # Mitgliederverwaltung ohne Buchhaltung: Stammdaten ja, Beitragskonto und Beträge nein
-                        account={k:(v if k in ('member','first','today','austritt') else rollen.blank(v)) for k,v in account.items()}
+                        account={k:(v if k in ('member','first','today','austritt','jahre','verlauf','angaben') else rollen.blank(v)) for k,v in account.items()}
                     return self.send(200,account)
                 if path in ('/api/wahlrecht','/api/wahlrecht.pdf','/api/wahlrecht.csv'):   # Wahlberechtigung (wahlrecht.py); ohne Stichtag = laufender Status
                     day=query.get('stichtag',[''])[0] or None
@@ -872,6 +875,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/haushalt-plan': haushalt.save_plan(store,int(data['year']),data['title'],data.get('amount'),actor)
             elif path=='/api/haushalt-import': result={'count':haushalt.import_reference(store,int(data['year']),actor)}
             elif path=='/api/member': result={'id':store.member(data,actor)}
+            elif path=='/api/member-notiz': mitglieder.notiz(store,data.get('id'),data.get('text'),actor)
             elif path=='/api/mitglieder-liste':   # Auswahl als CSV, Etiketten oder Anschreiben (mitgliederlisten.py, 0.43) – enthält Kontaktdaten
                 body,kind,name=__import__('mitgliederlisten').datei(store,data,actor);return self.send(200,body,kind,attachment=name)
             elif path=='/api/members-preview':

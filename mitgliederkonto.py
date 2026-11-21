@@ -202,6 +202,17 @@ def stand(row, m):
     return 'bezahlt' if (row['paid'] or 0) >= row['soll'] else 'offen'
 
 
+def jahr_stand(y):
+    """Stand eines Beitragsjahres aus account ohne Betrag (Akte, 0.43): klaeren / frei / spaeter (noch nicht fällig) / offen / bezahlt."""
+    if y['soll'] is None:
+        return 'klaeren'
+    if not y['soll']:
+        return 'frei'
+    if not y['due_now']:
+        return 'spaeter'
+    return 'offen' if y['open'] else 'bezahlt'
+
+
 def returned_after(store, after, years, today=None):
     """Mitglieder, bei denen nach dem Tag `after` (bis heute) eine Rücklastschrift oder Rückzahlung für eines der Beitragsjahre gebucht ist."""
     pay = _context(store, today)['pay']
