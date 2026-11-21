@@ -193,6 +193,15 @@ def overview(store, year=None, today=None):
     return rows
 
 
+def stand(row, m):
+    """Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): klaeren / frei / bezahlt / offen; row aus overview."""
+    if row['soll'] is None:
+        return 'klaeren'
+    if m['guest'] or m['dues_free'] or not row['soll']:
+        return 'frei'
+    return 'bezahlt' if (row['paid'] or 0) >= row['soll'] else 'offen'
+
+
 def returned_after(store, after, years, today=None):
     """Mitglieder, bei denen nach dem Tag `after` (bis heute) eine Rücklastschrift oder Rückzahlung für eines der Beitragsjahre gebucht ist."""
     pay = _context(store, today)['pay']

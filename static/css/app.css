@@ -359,9 +359,44 @@ html.compact .nav button { min-height: 44px; font-size: 15px; }
 html.compact .main { padding: 24px 24px 56px; }
 html.compact .worklist .detail { top: 72px; scroll-margin-top: 64px; }
 
+/* Mitglieder: Listen und Auswahl (0.43) */
+.ml-tabs { flex-wrap: wrap; column-gap: 24px; }
+@media (max-width: 640px) { .ml-tabs { flex-wrap: nowrap; } }
+.ml-save { flex: none; background: none; border: 1px dashed var(--teal-100); border-radius: 999px; color: var(--teal-ink); font-size: 13px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.ml-pick { width: 40px; }
+.ml-check { width: 18px; height: 18px; accent-color: var(--teal); margin: 0; }
+tr.is-picked td { background: var(--teal-50); }
+.ml-bar { position: sticky; bottom: 12px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; background: var(--navy); color: #fff; border-radius: var(--radius-lg); padding: 12px 16px; box-shadow: var(--shadow-float); }
+.ml-bar > .small { color: #d5e2f1; }
+.ml-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.ml-bar .btn.ghost { color: #fff; }
+.ml-bar .btn.ghost:hover { background: rgba(255, 255, 255, 0.12); }
+@media (max-width: 640px) { .ml-actions { margin-left: 0; width: 100%; } .ml-actions .btn { flex: 1 1 auto; } }
+
+/* Überblick der Mitgliederverwaltung (0.43) */
+.mu-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; align-items: start; }
+.mu-list strong, .mu-dates strong, .mu-list .sub, .mu-dates .sub { display: block; }
+.mu-list .sub, .mu-dates .sub { font-size: 13px; color: var(--muted); }
+.mu-dates { hyphens: auto; overflow-wrap: anywhere; }
+.mu-list, .mu-dates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mu-list li + li, .mu-dates li + li { border-top: 1px solid var(--line-2); }
+.mu-list button { width: 100%; display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 14px; align-items: center; background: none; border: 0; padding: 12px 4px; text-align: left; cursor: pointer; border-radius: 8px; color: inherit; }
+.mu-list button:hover { background: var(--surface-2); }
+.mu-list strong, .mu-dates strong { font-weight: 600; }
+.mu-list svg { color: var(--muted); }
+.mu-count { justify-self: start; min-width: 44px; text-align: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; background: var(--line-2); color: var(--ink-2); border-radius: 999px; padding: 2px 10px; }
+.mu-count.warn { background: var(--orange-50); color: var(--orange-ink); }
+.mu-dates li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 12px; padding: 10px 0; }
+.mu-dates .is-past { color: var(--muted); }
+.mu-day { font-size: 13px; font-weight: 600; color: var(--navy); font-variant-numeric: tabular-nums; }
+.mu-dates .is-past .mu-day { color: var(--muted); }
+.mu-meter { display: flex; align-items: center; gap: 10px; min-width: 160px; }
+.mu-meter .meter { flex: 1 1 auto; margin-top: 0; }
+@media (max-width: 900px) { .mu-grid { grid-template-columns: 1fr; } }
+
 /* Regelwerk (0.43) */
 .rw-intro { max-width: 72ch; }
-.rw-group { padding: 0; overflow: hidden; }
+.panel.rw-group { padding: 0; overflow: hidden; }
 .rw-group h2 { padding: 16px 24px; border-bottom: 1px solid var(--line-2); background: var(--surface-2); }
 .rw-head, .rw-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) minmax(0, 0.8fr) 104px; gap: 8px 20px; padding: 12px 24px; align-items: start; }
 .rw-head { font-size: 12px; font-weight: 500; color: var(--muted); padding-bottom: 0; }

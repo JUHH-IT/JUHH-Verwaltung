@@ -58,7 +58,7 @@ NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltun
 # Regel (AGENTS.md): alles, was alle Daten ausliefert, löscht, Zugänge/Rechte ändert oder Mail und Bankverbindung umlenken kann
 CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-listen.zip'),('GET','/api/sepa.xml'),
          ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
-         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
+         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
          ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
@@ -872,6 +872,8 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/haushalt-plan': haushalt.save_plan(store,int(data['year']),data['title'],data.get('amount'),actor)
             elif path=='/api/haushalt-import': result={'count':haushalt.import_reference(store,int(data['year']),actor)}
             elif path=='/api/member': result={'id':store.member(data,actor)}
+            elif path=='/api/mitglieder-liste':   # Auswahl als CSV, Etiketten oder Anschreiben (mitgliederlisten.py, 0.43) – enthält Kontaktdaten
+                body,kind,name=__import__('mitgliederlisten').datei(store,data,actor);return self.send(200,body,kind,attachment=name)
             elif path=='/api/members-preview':
                 raw=base64.b64decode(data['content'],validate=True)
                 if len(raw)>10_000_000: raise ValueError('Datei zu groß.')

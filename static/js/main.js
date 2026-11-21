@@ -10,6 +10,7 @@ import { cash } from './views/cash.js';
 import { budgets } from './views/budgets.js';
 import { rpj } from './views/rpj.js';
 import { members } from './views/members.js';
+import { mitgliederUeberblick } from './views/mitglieder-ueberblick.js';
 import { cases } from './views/klaerfaelle.js';
 import { karte, leaveMap } from './views/karte.js';
 import { wahlrecht } from './views/wahlrecht.js';
@@ -32,6 +33,7 @@ const root = document.getElementById('root');
 const PAGES = [
   // area: Bereich, für den die Person mindestens „lesen“ braucht (rollen.py); ohne Angabe für alle Angemeldeten
   { id: 'overview', label: 'Start', icon: 'home', view: overview, group: '' },
+  { id: 'mv-overview', label: 'Überblick', icon: 'layers', view: mitgliederUeberblick, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'members', label: 'Mitglieder', icon: 'users', view: members, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'cases', label: 'Klärfälle', icon: 'alert', view: cases, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'map', label: 'Karte', icon: 'map', view: karte, group: 'Mitgliederverwaltung', area: 'mitglieder' },
