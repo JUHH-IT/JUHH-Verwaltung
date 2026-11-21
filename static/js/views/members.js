@@ -14,6 +14,7 @@ import { invoiceBadge } from './invoices.js';
 import { mandateSection, bindMandateSection, activeMandate } from './sepa.js';
 import { matchMembers, sortName, addressLine } from '../member-picker.js';
 import { listen, isActive, fehlt, anschriftVollstaendig, gespeichert, speichern } from '../mitglieder-listen.js';
+import { doppelteDialog } from './doppelte.js';
 
 let search = '';
 let kvFilter = '';
@@ -588,9 +589,9 @@ export function members(main) {
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
   const write = can('mitglieder', 'schreiben');
   mount(main, html`<div class="page wide">
-    ${pageHead('Mitgliederverwaltung', 'Mitglieder', write ? html`
+    ${pageHead('Mitgliederverwaltung', 'Mitglieder', html`<button type="button" class="btn" data-doubles>Doppelte prüfen</button>${write ? html`
       <button type="button" class="btn" data-import>${icon('upload', 16)} Liste importieren</button>
-      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>` : '')}
+      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>` : ''}`)}
     <section class="cards" aria-label="Mitgliederbestand">
       <div class="card"><span class="label">Aktive Mitglieder</span><span class="value">${active.length}</span>
         <span class="note">${kvs.length} ${kvs.length === 1 ? 'Kreisverband' : 'Kreisverbände'}${all.length > active.length ? ` · ${all.length - active.length} ausgetreten` : ''}</span></div>
@@ -636,12 +637,14 @@ export function members(main) {
       <strong>${picked.length} ausgewählt</strong>${picked.length > post ? html`<span class="small">${picked.length - post} ohne Post (Anschrift unvollständig oder Postausschluss)</span>` : ''}
       <span class="ml-actions"><button type="button" class="btn small" data-letter ${post ? '' : 'disabled'}>${icon('file', 14)} Anschreiben</button>
         <button type="button" class="btn small" data-labels ${post ? '' : 'disabled'}>Adressetiketten</button>
-        <button type="button" class="btn small" data-csv>${icon('download', 14)} CSV</button>
+        <button type="button" class="btn small" data-excel>${icon('download', 14)} Excel je Kreisverband</button>
+        <button type="button" class="btn small" data-csv>CSV</button>
         <button type="button" class="btn small ghost" data-unpick>Auswahl aufheben</button></span></div>` : ''}
   </div>`);
   const redraw = () => members(main);
   main.querySelector('[data-new]')?.addEventListener('click', () => memberDialog());
   main.querySelector('[data-import]')?.addEventListener('click', importMembersDialog);
+  main.querySelector('[data-doubles]').onclick = () => doppelteDialog();
   main.querySelector('[data-go-cases]')?.addEventListener('click', () => go('cases'));
   main.querySelectorAll('[data-liste]').forEach((b) => (b.onclick = () => { liste = b.dataset.liste; ansicht = ''; redraw(); }));
   main.querySelectorAll('[data-saved]').forEach((b) => (b.onclick = () => {
@@ -679,6 +682,7 @@ export function members(main) {
   });
   const pickedIds = picked.map((m) => m.id);
   main.querySelector('[data-csv]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Mitgliederliste-${todayIso()}.csv`, { art: 'csv', ids: pickedIds })));
+  main.querySelector('[data-excel]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Mitgliederliste-${todayIso()}.xlsx`, { art: 'excel', ids: pickedIds })));
   main.querySelector('[data-labels]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Adressetiketten-${todayIso()}.pdf`, { art: 'etiketten', ids: pickedIds })));
   main.querySelector('[data-letter]')?.addEventListener('click', () => letterDialog(pickedIds, post));
   main.querySelector('[data-unpick]')?.addEventListener('click', () => { selected = new Set(); redraw(); });

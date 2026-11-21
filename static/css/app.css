@@ -427,6 +427,10 @@ tr.is-picked td { background: var(--teal-50); }
   .akte-history li { grid-template-columns: 1fr; gap: 2px; }
 }
 
+/* Doppelte Mitglieder (0.45) */
+.dp-group { padding: 12px 16px; margin-top: 12px; }
+.dp-why { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /* Regelwerk (0.43) */
 .rw-intro { max-width: 72ch; }
 .panel.rw-group { padding: 0; overflow: hidden; }

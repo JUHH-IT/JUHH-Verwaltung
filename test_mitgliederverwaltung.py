@@ -53,6 +53,23 @@ class ListenTests(Basis):
         self.assertIn("'=Hamburg", text)
         self.assertEqual(len(lines), 3)
 
+    def test_excel_ein_blatt_je_kreisverband(self):
+        import openpyxl
+        from io import BytesIO
+        other = self.s.member({**BASE, 'kv': '5300', 'number': 'T-4', 'first_name': '=HYPERLINK("x")', 'last_name': 'Formel'}, 'Test')
+        body, kind, name = mitgliederlisten.datei(self.s, {'art': 'excel', 'ids': [self.a, self.b, other]}, 'Test')
+        self.assertTrue(name.endswith('.xlsx') and kind.endswith('spreadsheetml.sheet'))
+        book = openpyxl.load_workbook(BytesIO(body))
+        self.assertEqual(book.sheetnames, ['Altona - Elbvororte', 'Eimsbüttel'])            # „/“ ist im Blattnamen nicht erlaubt
+        first = book['Altona - Elbvororte']
+        self.assertEqual([c.value for c in first[1]][:5], ['Mitgliedsnummer', 'Anrede', 'Titel', 'Vorname', 'Nachname'])
+        self.assertEqual([r[0].value for r in first.iter_rows(min_row=2)], ['T-2', 'T-1'])
+        self.assertTrue(first['A1'].font.bold)
+        cell = book['Eimsbüttel']['D2']
+        self.assertEqual((cell.value, cell.data_type), ('=HYPERLINK("x")', 's'))             # Text, keine Formel
+        row = self.s.db.execute("SELECT detail FROM audit WHERE action='Mitgliederliste ausgegeben' ORDER BY id DESC").fetchone()
+        self.assertEqual(json.loads(row[0]), {'art': 'excel', 'anzahl': 3})
+
     def test_post_nur_mit_anschrift_und_ohne_postausschluss(self):
         members = mitgliederlisten.auswahl(self.s, [self.a, self.b, self.c])
         self.assertEqual([m['number'] for m in members if mitgliederlisten.postfaehig(m)], ['T-1', 'T-3'])
