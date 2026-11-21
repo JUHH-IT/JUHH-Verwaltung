@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.42'
+VERSION='0.43'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -58,7 +58,7 @@ NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltun
 # Regel (AGENTS.md): alles, was alle Daten ausliefert, löscht, Zugänge/Rechte ändert oder Mail und Bankverbindung umlenken kann
 CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-listen.zip'),('GET','/api/sepa.xml'),
          ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
-         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
+         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
          ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
@@ -639,6 +639,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(200,beitraege.entries(store,year) if query.get('all',[''])[0]=='1' else beitraege.open_list(store,year))
                 if path=='/api/karte': return self.send(200,__import__('karte').data(store,DATA))   # Lage der Mitglieder (karte.py), nur Kennung und Koordinate
                 if path=='/api/karte-gebiete': return self.send(200,__import__('karte').gebiete())   # Bezirke/Stadtteile (öffentliche Daten)
+                if path=='/api/regelwerk': return self.send(200,__import__('regelwerk').regeln(store.config()))   # Regelwerk für alle Angemeldeten (0.43)
                 if path=='/api/adressen-status': return self.send(200,__import__('adressen').status(DATA))
                 if path=='/api/klaerfaelle':   # Klärfälle der Mitgliederverwaltung (klaerfaelle.py)
                     import klaerfaelle
@@ -649,8 +650,11 @@ class Handler(BaseHTTPRequestHandler):
                     # Hinweise für „Austritt eintragen“ (0.37): nur Ja/Nein, keine Beträge – auch ohne Buchhaltung sichtbar
                     account['austritt']={'offen':account['arrears']>0,'mandat':bool(lastschrift.active_mandate(store,int(query['id'][0]))),
                                          'festgelegt':[y['year'] for y in account['years'] if y['source'] in ('set','invoice') and y['soll'] is not None]}   # Jahre mit festem Soll (Dialog warnt sonst vor „Soll zu klären“)
+                    # Akte (0.43): Stand je Jahr ohne Betrag, Verlauf aus dem Protokoll (nur Feldnamen), alle Angaben – auch ohne Buchhaltung
+                    account.update(jahre=[{'year':y['year'],'stand':mitgliederkonto.jahr_stand(y)} for y in account['years']],
+                                   verlauf=mitglieder.verlauf(store,account['member']['id']),angaben=mitglieder.angaben(store,account['member']))
                     if not rollen.can(rights,'buchhaltung'):   # Mitgliederverwaltung ohne Buchhaltung: Stammdaten ja, Beitragskonto und Beträge nein
-                        account={k:(v if k in ('member','first','today','austritt') else rollen.blank(v)) for k,v in account.items()}
+                        account={k:(v if k in ('member','first','today','austritt','jahre','verlauf','angaben') else rollen.blank(v)) for k,v in account.items()}
                     return self.send(200,account)
                 if path in ('/api/wahlrecht','/api/wahlrecht.pdf','/api/wahlrecht.csv'):   # Wahlberechtigung (wahlrecht.py); ohne Stichtag = laufender Status
                     day=query.get('stichtag',[''])[0] or None
@@ -871,6 +875,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/haushalt-plan': haushalt.save_plan(store,int(data['year']),data['title'],data.get('amount'),actor)
             elif path=='/api/haushalt-import': result={'count':haushalt.import_reference(store,int(data['year']),actor)}
             elif path=='/api/member': result={'id':store.member(data,actor)}
+            elif path=='/api/member-notiz': mitglieder.notiz(store,data.get('id'),data.get('text'),actor)
+            elif path=='/api/mitglieder-liste':   # Auswahl als CSV, Etiketten oder Anschreiben (mitgliederlisten.py, 0.43) – enthält Kontaktdaten
+                body,kind,name=__import__('mitgliederlisten').datei(store,data,actor);return self.send(200,body,kind,attachment=name)
             elif path=='/api/members-preview':
                 raw=base64.b64decode(data['content'],validate=True)
                 if len(raw)>10_000_000: raise ValueError('Datei zu groß.')

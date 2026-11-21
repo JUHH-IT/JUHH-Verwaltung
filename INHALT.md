@@ -21,13 +21,13 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Einstellungen ändern:** `POST /api/mail-check`, `POST /api/mail-forget`, `POST /api/mail-password` ⚠, `POST /api/mail-test`, `POST /api/settings` ⚠
 
-**Mitgliederverwaltung lesen:** `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/strassen-suche`
+**Mitgliederverwaltung lesen:** `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`
 
 **Mitgliederverwaltung lesen oder Buchhaltung lesen:** `GET /api/beitrag-nach-alter`
 
 **Mitgliederverwaltung lesen oder Einstellungen lesen oder Benutzer und Rollen lesen:** `GET /api/adressen-status`
 
-**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`
+**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-notiz`, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`
 
 **Mitgliederverwaltung ändern oder Benutzer und Rollen ändern:** `POST /api/adressen-laden`
 
@@ -45,7 +45,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Verband ändern oder Buchhaltung ändern:** `POST /api/cash-donation`, `POST /api/rpj-zuordnen-mehrere`, `POST /api/rpj-zuordnen`
 
-**angemeldet:** `GET /api/data`, `GET /api/haushalt`, `GET /api/karte-gebiete`, `GET /api/workflow`, `POST /api/bestaetigen`, `POST /api/logout`, `POST /api/password`
+**angemeldet:** `GET /api/data`, `GET /api/haushalt`, `GET /api/karte-gebiete`, `GET /api/regelwerk`, `GET /api/workflow`, `POST /api/bestaetigen`, `POST /api/logout`, `POST /api/password`
 
 **ohne Anmeldung** (`rollen.OUTSIDE`): `/api/keycloak/rueckkehr`, `/api/keycloak/start`, `/api/login`, `/api/status`
 
@@ -59,6 +59,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/html.js`: esc, html, mount, raw
 - `static/js/main.js` → /api/bestaetigen, /api/keycloak, /api/login, /api/logout, /api/status
 - `static/js/member-picker.js`: CASE_REASON, EXTERNAL_REASON, addressLine, caseLabel, externalLabel, fold, matchMembers, membersLabel, membersPayload, pickMembers, sortName, suggestMembers
+- `static/js/mitglieder-listen.js`: anschriftVollstaendig, fehlt, gespeichert, isActive, listen, speichern
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
@@ -79,10 +80,12 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/konten.js`: konten, saldo → /api/konten, /api/konto, /api/konto.csv
 - `static/js/views/kv.js`: bindKv, bindKvPage, bindTransfers, kvPage, kvTable, masterDialog, needsAttention, openKv, planRest, transferDialog, transferList, valuesDialog → /api/import-kv-master, /api/kv-detail, /api/kv-label, /api/kv-plan, /api/kv-transfer, /api/kv-transfer-reverse, /api/kv-values, /api/kv.pdf, /api/op-liste.pdf, /api/preview-kv-master
 - `static/js/views/mailing.js`: afterIssue, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
-- `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/sepa-mandat-vergessen
+- `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/sepa-mandat-vergessen
+- `static/js/views/mitglieder-ueberblick.js`: mitgliederUeberblick → /api/regelwerk
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
 - `static/js/views/overview.js`: overview → /api/monatsbericht.pdf, /api/pruefpaket.zip
 - `static/js/views/reconcile.js`: reconcileDialog → /api/abgleich
+- `static/js/views/regelwerk.js`: regelwerk → /api/regelwerk
 - `static/js/views/rpj.js`: assignDialog, projectDialog, rpj → /api/rpj, /api/rpj-abruf, /api/rpj-abruf-loeschen, /api/rpj-buchungen.csv, /api/rpj-import, /api/rpj-import-vorschau, /api/rpj-jahr, /api/rpj-offen, /api/rpj-projekt, /api/rpj-projekt-loeschen, /api/rpj-projekt.pdf, /api/rpj-vorlage.csv, /api/rpj-zuordnen, /api/rpj-zuordnen-mehrere, /api/rpj.csv, /api/rpj.pdf
 - `static/js/views/sepa-datei.js`: sepaFileDialog → /api/sepa-aufteilen, /api/sepa-begleitzettel, /api/sepa-vorschau
 - `static/js/views/sepa.js`: activeMandate, bindMandateSection, mandateSection, sepaDialog → /api/debit-notice, /api/mandate, /api/mandate-revoke, /api/mandate.pdf, /api/sepa, /api/sepa-batch, /api/sepa-batch-status, /api/sepa-debit-reject, /api/sepa-debit-remove, /api/sepa.xml
@@ -169,7 +172,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -229,7 +232,7 @@ Tests: test_import.py
 
 Stammdaten (Einstellungen): erlaubte Felder, Standardwerte und Prüfung an einer Stelle.
 
-Tests: test_rechnungen.py
+Tests: test_rechnungen.py, test_regelwerk.py
 
 - `unknown_placeholders(text)`
 - `clean(data, current)` – Prüft geänderte Felder; liefert {Schlüssel: Text}. current = bisherige Stammdaten (mit Standards).
@@ -255,6 +258,16 @@ Tests: test_konten.py
 - `source_label(source)`
 - `ledger_csv(store, code, year, kv=…)` – Kontenblatt als CSV (Semikolon, Euro mit Komma, wie die übrigen Exporte).
 
+### regelwerk.py
+
+Regelwerk (ab 0.43, Wunsch Lennert Gust 21.11.2026): die Regeln aus Satzung und Finanzordnung, die das Programm anwendet.
+
+Tests: test_regelwerk.py
+
+- `zweiter_freitag_dezember(year)` – Rechnungsausgang (Satzung § 49 Abs. 4): bis zum zweiten Freitag im Dezember.
+- `termine(cfg, today=…)` – Nächste Termine der Mitgliederverwaltung: Beitrittsstichtag, Rechnungsausgang, Beitragsstichtag, Liste an den LMA (§ 17).
+- `regeln(cfg, today=…)` – Regelwerk für die Seite: Quellen, Bereiche, Regeln mit heutigem Wert und Stand, Termine, offene Fragen.
+
 ## Mitgliederverwaltung
 
 ### mitglieder.py
@@ -263,7 +276,7 @@ Mitglieder-Stammdaten: Vorname/Nachname und Anschrift in Feldern, Prüfung, Mitg
 
 Tabellen: `deleted_members`, `dues_rates`
 
-Tests: test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_pruefung.py, test_wahlrecht.py
+Tests: test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_pruefung.py, test_wahlrecht.py
 
 - `next_id(db)` – Nächste Mitglieds-id: nie eine schon einmal vergebene (auch nicht die eines gelöschten Mitglieds).
 - `insert(db, v)` – Mitglied mit geprüften Werten (values) anlegen; liefert die id.
@@ -274,6 +287,9 @@ Tests: test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_pru
 - `compose(v)` – name und address aus den Einzelfeldern (für Rechnungen, PDF, E-Mail); Namenszusatz (z. B. „von“) vor dem Nachnamen.
 - `left_day(value, joined)` – Austrittsdatum prüfen (auch künftig erlaubt, nie vor dem Eintritt) – eine Prüfung für Formular, Import und „Austritt eintragen“.
 - `austritt(store, member_id, left_on, reason, actor)` – Austritt eintragen bzw. ändern (left_on = Datum, Grund optional) oder zurücknehmen (left_on leer) – ab 0.37.
+- `notiz(store, member_id, text, actor)` – Notiz der Mitgliederverwaltung zum Mitglied speichern (ab 0.43; leer = löschen) – im Protokoll ohne den Text.
+- `verlauf(store, member_id, limit=…)` – Änderungen an einem Mitglied aus dem Protokoll (neueste zuerst): Zeit, wer, was – nur Feldnamen und Daten, keine Werte.
+- `angaben(store, m)` – Alle Angaben eines Mitglieds als [(Bezeichnung, Wert)] in der Reihenfolge der Mitgliederverwaltung – leere weggelassen.
 - `record_dues(db, member_id, old, new, year=…)` – Individuellen Jahresbeitrag ab einem Jahr festhalten (Tabelle dues_rates): ändert er sich – z. B. durch einen neuen Import der
 - `flag(value, label)` – Ja/Nein-Angabe (J/N, ja/nein, 1/0, x) → 1/0; leer = 0.
 - `values(data, kvs, ovs=…, inactive=…)` – Geprüfte Stammdaten eines Mitglieds. Ältere Aufrufe mit name/address werden aufgeteilt.
@@ -287,6 +303,20 @@ Tests: test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_pru
 - `delete_blockers(db, member_id)` – Gründe gegen das Löschen: [„3 Rechnungen“, …]; leer = löschbar.
 - `check_delete(store, member_id, arrears_ok=…)` – Löschbar? Sperrt bei Buchhaltungsbezug; ein offener Rückstand (Soll nach Staffel ohne Zahlung) verlangt eine ausdrückliche Bestätigung.
 - `delete(store, member_id, actor, arrears_ok=…)` – Mitglied ohne Buchhaltungsbezug endgültig löschen (vorher sichert der Aufrufer die Datenbank). Prüft in der Transaktion erneut.
+
+### mitgliederlisten.py
+
+Listen der Mitgliederverwaltung (ab 0.43, Wunsch Lennert Gust 21.11.2026): eine Auswahl aus der Mitgliederliste als CSV, als
+
+Tests: test_mitgliederverwaltung.py
+
+- `auswahl(store, ids)` – Mitglieder zu den Kennungen der Auswahl (sortiert nach Name) – prüft die Eingabe: Liste ganzer Zahlen, höchstens MAX, alle vorhanden.
+- `postfaehig(m)` – Bekommt Post: vollständige Anschrift (Straße, PLZ, Ort) und kein Postausschluss.
+- `anschrift(m)` – Zeilen für Etikett und Anschriftfeld: Anrede, Titel und Name, Adresszusätze, Straße, PLZ Ort, Land.
+- `csv(store, members)` – Mitglieder der Auswahl mit Anschrift und Kontakt als CSV (Semikolon, Formelschutz wie die anderen Listen).
+- `etiketten(members)` – Adressetiketten (Zweckform 3474: 3 × 8 Etiketten à 70 × 37 mm auf A4) – nur Mitglieder, die Post bekommen.
+- `anschreiben(cfg, members, betreff, text, today=…)` – Ein Brief je Mitglied (DIN 5008): Absender, Anschriftfeld, Datum, Betreff, Briefanrede (sonst „Hallo Vorname,“), Text, Gruß.
+- `datei(store, data, actor)` – Abruf der Oberfläche: {art, ids, betreff?, text?} → (Inhalt, Medientyp, Dateiname); im Protokoll nur Art und Anzahl.
 
 ### gliederung.py
 
@@ -447,7 +477,7 @@ Mitgliederbuchhaltung: Beitragskonto je Mitglied (Nebenbuch zu den Mitgliedsbeit
 
 Tabellen: `dues_targets`
 
-Tests: test_beitraege.py, test_bereinigung.py, test_kasse.py, test_klaerfaelle.py, test_mitgliederkonto.py
+Tests: test_beitraege.py, test_bereinigung.py, test_kasse.py, test_klaerfaelle.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py
 
 - `init(db)`
 - `first_year(store)` – Erstes Jahr der Mitgliederkonten: Datenbeginn (ältere Daten sind gelöscht), sonst KV-Finanzrahmen-Beginn.
@@ -455,6 +485,8 @@ Tests: test_beitraege.py, test_bereinigung.py, test_kasse.py, test_klaerfaelle.p
 - `member_years(m, ctx_first, this_year)` – Mögliche Beitragsjahre eines Mitglieds: ab Datenbeginn bzw. Eintritt bis zum laufenden Jahr bzw. Austrittsjahr.
 - `account(store, member_id, today=…)` – Beitragskonto eines Mitglieds: Jahre (Soll, Grundlage, gezahlt, offen, Stand 31.12.) und Buchungen mit laufendem Saldo.
 - `overview(store, year=…, today=…)` – Alle Mitglieder: Soll und gezahlt im Jahr, Saldo (heute) – für die Mitgliederliste, Rückstände und Abstimmung.
+- `stand(row, m)` – Stand des Beitrags im Jahr ohne Betrag (sichtbar mit „Mitglieder lesen“, 0.43): wie jahr_stand – Zahlungen decken die ältesten
+- `jahr_stand(y)` – Stand eines Beitragsjahres aus account ohne Betrag (Akte, 0.43): klaeren / frei / spaeter (noch nicht fällig) / offen / bezahlt.
 - `returned_after(store, after, years, today=…)` – Mitglieder, bei denen nach dem Tag `after` (bis heute) eine Rücklastschrift oder Rückzahlung für eines der Beitragsjahre gebucht ist.
 - `reconciliation(store, year, until=…)` – Abstimmung Hauptbuch ↔ Mitgliederkonten für ein Haushaltsjahr (nur Zahlungen, ohne Stornos; until: Zahlungen bis zu diesem Tag).
 - `summary(store, year=…, today=…, rows=…)` – Kennzahlen der Mitgliederbuchhaltung für ein Jahr.

@@ -102,11 +102,24 @@ export async function fileToBase64(file) {
 }
 
 /** Datei vom Server laden und speichern – bei einem Fehler die Meldung des Servers statt einer kaputten Datei.
- *  Rückgabe: true = Datei liegt vor. */
-export async function download(url, filename, confirmed = false) {
+ *  data: Angaben für einen POST (z. B. eine Auswahl von Mitgliedern), sonst GET. Rückgabe: true = Datei liegt vor. */
+const loading = new Set();   // gleicher Abruf läuft schon (Doppelklick) → nicht doppelt laden und protokollieren
+export async function download(url, filename, data = undefined) {
+  const key = url + '\n' + JSON.stringify(data ?? null);
+  if (loading.has(key)) return false;
+  loading.add(key);
+  try {
+    return await fetchFile(url, filename, data);
+  } finally {
+    loading.delete(key);
+  }
+}
+
+async function fetchFile(url, filename, data, confirmed = false) {
   let response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, data === undefined ? undefined
+      : { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(data) });
   } catch {
     throw new Error(OFFLINE);
   }
@@ -117,7 +130,7 @@ export async function download(url, filename, confirmed = false) {
     } catch {
       // keine JSON-Antwort
     }
-    if (await failed(url, response, json, confirmed)) return download(url, filename, true);
+    if (await failed(url, response, json, confirmed)) return fetchFile(url, filename, data, true);
     throw new Error(json.error || 'Download fehlgeschlagen.');
   }
   const link = document.createElement('a');

@@ -394,7 +394,8 @@ try {
   await page.fill('#mandate-form input[name=iban]', 'DE02 1203 0000 0000 2020 51');
   await page.click('#mandate-form button[type=submit]');
   check((await toast()).includes('Mandat JUHH-T-2-1'), 'SEPA-Mandat erfassen');
-  check((await page.locator('#modal').textContent()).includes('DE02 •••• 2051'), 'Mandat im Mitgliedskonto');
+  check(await page.waitForFunction(() => document.querySelector('#modal')?.textContent.includes('DE02 •••• 2051'), null, { timeout: 5000 }).then(() => true, () => false),
+    'Mandat im Mitgliedskonto');
   await shot('28-mandat');
   await dialogClose();
   await page.click('[data-page=invoices]');
@@ -834,7 +835,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('#leave-form button[type=submit]');
   check((await toast()).includes('Austritt eingetragen'), 'Austritt eingetragen');
   check(await page.waitForFunction(() => document.querySelector('#modal [data-status]')?.textContent.includes('ausgetreten')
-    && document.querySelector('#modal [data-contact]')?.textContent.includes('Austrittsgrund: Umzug'), null, { timeout: 5000 }).then(() => true, () => false),
+    && document.querySelector('#modal .akte-head')?.textContent.includes('(Umzug)'), null, { timeout: 5000 }).then(() => true, () => false),
   'Mitglied danach: Status ausgetreten mit Grund');
   await page.click('#modal [data-leave]');
   await page.waitForSelector('#preview[open] #leave-form [data-undo]');
@@ -868,6 +869,65 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.waitForSelector('#modal [data-leave]');
   check(true, 'Wahlberechtigung: Klick öffnet das Mitglied');
   await dialogClose();
+
+  // 0.43: Überblick der Mitgliederverwaltung, Listen mit Auswahl, Mitgliederakte, Regelwerk
+  await page.click('[data-page=mv-overview]');
+  await page.waitForSelector('.mu-page .mu-dates');
+  check((await page.locator('.mu-page .cards').textContent()).includes('Aktive Mitglieder') && await page.locator('.mu-page .mu-dates li').count() === 4
+    && (await page.locator('.mu-page').textContent()).includes('Beitragsstichtag'), 'Überblick: Kennzahlen und Termine aus dem Regelwerk');
+  await shot('49-mitglieder-ueberblick');
+  const todo = page.locator('.mu-page [data-list]');
+  check(await todo.count() >= 1, 'Überblick: Zu tun');
+  const listId = await todo.first().getAttribute('data-list');
+  await todo.first().click();
+  check(await page.waitForFunction((id) => document.querySelector(`main [data-liste="${id}"]`)?.getAttribute('aria-selected') === 'true', listId, { timeout: 5000 })
+    .then(() => true, () => false), 'Zu tun öffnet die passende Liste');
+  await page.click('main [data-liste=alle]');
+  await page.check('main [data-check-all]');
+  check((await page.locator('main .ml-bar').textContent()).includes('ausgewählt'), 'Auswahl: Leiste mit Serienaktionen');
+  await shot('50-mitglieder-auswahl');
+  const [listCsv] = await Promise.all([page.waitForEvent('download'), page.click('main .ml-bar [data-csv]')]);
+  check(listCsv.suggestedFilename().startsWith('Mitgliederliste-') && readFileSync(await listCsv.path(), 'utf8').includes('Mitgliedsnummer;Anrede'), 'Auswahl als CSV');
+  const [labels] = await Promise.all([page.waitForEvent('download'), page.click('main .ml-bar [data-labels]')]);
+  check(readFileSync(await labels.path()).subarray(0, 4).toString() === '%PDF', 'Adressetiketten als PDF');
+  await page.click('main .ml-bar [data-letter]');
+  await page.fill('#letter-form [name=betreff]', 'Einladung zum Test');
+  await page.fill('#letter-form [name=text]', 'Erster Absatz.\n\nZweiter Absatz.');
+  const [letters] = await Promise.all([page.waitForEvent('download'), page.click('#letter-form button[type=submit]')]);
+  check(letters.suggestedFilename().startsWith('Anschreiben-') && readFileSync(await letters.path()).subarray(0, 4).toString() === '%PDF', 'Anschreiben als PDF');
+  await page.click('main .ml-bar [data-unpick]');
+  check(await page.locator('main .ml-bar').count() === 0, 'Auswahl aufheben');
+  await page.click('main [data-save-view]');
+  await page.fill('#view-form [name=name]', 'Meine Testansicht');
+  await page.click('#view-form button[type=submit]');
+  check(await page.locator('main [data-saved]').count() === 1, 'Ansicht gespeichert');
+  await page.click('main [data-delete-view]');
+  check(await page.locator('main [data-saved]').count() === 0, 'Ansicht gelöscht');
+  await page.click('main [data-liste=aktiv]');
+  await page.locator('main [data-member]').first().click();
+  await page.waitForSelector('#modal .akte-head');
+  await page.click('#modal [data-tab=ueberblick]');
+  await page.fill('#modal [data-note] textarea', 'Rückruf vereinbart (Test)');
+  await page.click('#modal [data-note] button[type=submit]');
+  check((await toast()).includes('Notiz gespeichert'), 'Akte: Notiz speichern');
+  await page.waitForSelector('#modal [data-tab=verlauf]');
+  await page.click('#modal [data-tab=verlauf]');
+  check((await page.locator('#modal .akte-history').textContent()).includes('Notiz geändert'), 'Akte: Verlauf aus dem Protokoll');
+  await page.click('#modal [data-tab=angaben]');
+  check((await page.locator('#modal .akte-all').textContent()).includes('Mitgliedsnummer'), 'Akte: alle Angaben');
+  await shot('51-mitgliederakte');
+  await dialogClose();
+  await page.click('[data-page=regelwerk]');
+  await page.waitForSelector('.rw-page .rw-row');
+  check(await page.locator('.rw-page .rw-row').count() >= 10 && (await page.locator('.rw-page').textContent()).includes('Satzung § 49 Abs. 1'), 'Regelwerk mit Quellen');
+  await page.click('.rw-page [data-bereich=wahlen]');
+  check(await page.locator('.rw-page .rw-row').count() === 2, 'Regelwerk: Filter nach Bereich');
+  await page.fill('#rw-search', 'Altersgrenze');
+  check(await page.locator('.rw-page .rw-row').count() === 0 && (await page.locator('.rw-page').textContent()).includes('Keine Regel gefunden'), 'Regelwerk: Suche im Bereich');
+  await page.click('.rw-page [data-bereich=""]');
+  check(await page.locator('.rw-page .rw-row').count() === 1, 'Regelwerk: Suche über alle Bereiche');
+  await page.fill('#rw-search', '');
+  await shot('52-regelwerk');
 
   // 0.29: Auswertung der Mitgliederdaten
   await page.click('[data-page=auswertung]');

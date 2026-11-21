@@ -69,7 +69,7 @@ def _r(*areas): return tuple((area, 'lesen') for area in areas)
 _B, _M, _V = 'buchhaltung', 'mitglieder', 'verband'
 GET = {
     # die Oberfläche lädt Gesamtdaten, Haushalt und Arbeitsdaten immer – der Server leert, wofür das Recht fehlt
-    '/api/data': FREE, '/api/haushalt': FREE, '/api/workflow': FREE, '/api/karte-gebiete': FREE,
+    '/api/data': FREE, '/api/haushalt': FREE, '/api/workflow': FREE, '/api/karte-gebiete': FREE, '/api/regelwerk': FREE,
     **{path: _r(_B) for path in (
         '/api/suggestions', '/api/dues-preview', '/api/invoice.pdf', '/api/invoices.pdf', '/api/preview.pdf',
         '/api/mail-preview', '/api/kasse', '/api/kasse.pdf', '/api/kasse.csv', '/api/kasse-datei', '/api/bill-file',
@@ -108,8 +108,8 @@ POST = {
     **{path: _w(_M) for path in (
         '/api/member', '/api/members-preview', '/api/members-import', '/api/gliederung-vorschau', '/api/gliederung-import',
         '/api/ortsverband', '/api/ortsverband-status', '/api/ortsverband-loeschen', '/api/kv-nummern', '/api/klaerfall-klaeren',
-        '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete', '/api/member-austritt')},
-    '/api/adresse-pruefen': _r(_M), '/api/strassen-suche': _r(_M),
+        '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete', '/api/member-austritt', '/api/member-notiz')},
+    '/api/adresse-pruefen': _r(_M), '/api/strassen-suche': _r(_M), '/api/mitglieder-liste': _r(_M),
     '/api/adressen-laden': _w(_M, 'verwaltung'),
     **{path: _w(_B) for path in (
         '/api/sepa-vorschau', '/api/sepa-begleitzettel', '/api/sepa-mandat-vergessen', '/api/sepa-aufteilen', '/api/beitrag-zuordnen',

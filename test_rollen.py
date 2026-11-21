@@ -325,7 +325,8 @@ class RollenHttpTests(unittest.TestCase):
         status, account = self.get(who, f'/api/member-account?id={member}')
         self.assertEqual(status, 200)
         self.assertEqual(account['member']['name'], 'Erika Muster')
-        self.assertFalse(any(account[k] for k in account if k not in ('member', 'first', 'today', 'austritt')))   # Beitragskonto leer
+        self.assertFalse(any(account[k] for k in account if k not in ('member', 'first', 'today', 'austritt', 'jahre', 'verlauf', 'angaben')))   # Beitragskonto leer
+        self.assertTrue(all(set(j) == {'year', 'stand'} for j in account['jahre']))                  # Akte (0.43): Stand je Jahr ohne Betrag
         self.assertEqual(account['austritt'], {'offen': True, 'mandat': False, 'festgelegt': []})     # Hinweise zum Austritt: nur Ja/Nein, Jahre mit festem Soll (0.37)
         for path in ('/api/kasse?year=2026', '/api/konten?year=2026', '/api/journal.csv?year=2026', '/api/op-liste?kv=', '/api/rpj?year=2026',
                      '/api/benutzer', '/api/backup', f'/api/member-dues?id={member}', '/api/monatsbericht.pdf?year=2026&month=1'):

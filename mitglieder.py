@@ -17,11 +17,12 @@ legt der Import an), kennwortgeschützte Excel-Dateien (Kennwort nur für das En
 """
 import csv
 import io
+import json
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
 
-from formate import email_address, iso, money
+from formate import email_address, euro, german_date, iso, money
 
 # Angaben der Mitgliederverwaltung (Export der CDU-Mitgliederverwaltung, Wunsch Lennert Gust 08.11.2026: „bitte alles ergänzen, weil eine
 # Mitgliederverwaltung folgen wird“). Alter und Jubiläumsjahre der Datei werden nicht gespeichert – sie ergeben sich aus Geburt und Eintritt.
@@ -46,7 +47,7 @@ LABELS = {'number': 'Mitgliedsnummer', 'first_name': 'Vorname', 'last_name': 'Na
           'kv_number': 'Kreisverband (Nr.)', 'ov_number': 'Ortsverband (Nr.)', 'ov_name': 'Ortsbezeichnung'}
 MAX_TEXT = 200
 PRIVATE = ('gender', 'nationality', 'phone', 'phone_work', 'mobile', 'mobile_work', 'email_work', 'letter_salutation', 'letter_salutation2',
-           'payment_method', 'external_balance', 'left_reason') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
+           'payment_method', 'external_balance', 'left_reason', 'note') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
 PARTICLES = {'von', 'van', 'de', 'der', 'den', 'zu', 'vom', 'zum', 'zur', 'ten', 'ter', 'du', 'da', 'di', 'del', 'la', 'le', 'dos'}
 MAX_ROWS = 5000
 
@@ -69,7 +70,7 @@ def init(db):
     added = [col for col in ('first_name', 'last_name', 'address_extra', 'street', 'zip', 'city', 'country') if col not in cols]
     for col in added:
         db.execute(f'ALTER TABLE members ADD COLUMN {col} TEXT')
-    extra = {**{col: 'TEXT' for col in TEXTS + LEGACY + ('kv_joined', 'email_work')}, 'external_balance': 'INTEGER',
+    extra = {**{col: 'TEXT' for col in TEXTS + LEGACY + ('kv_joined', 'email_work', 'note')}, 'external_balance': 'INTEGER',
              'dues_free': 'INTEGER NOT NULL DEFAULT 0 CHECK(dues_free IN (0,1))', 'guest': 'INTEGER NOT NULL DEFAULT 0 CHECK(guest IN (0,1))',
              'no_mail': 'INTEGER NOT NULL DEFAULT 0 CHECK(no_mail IN (0,1))', 'ov_id': 'INTEGER REFERENCES ortsverbaende(id)'}
     more = [col for col in extra if col not in cols]
@@ -198,6 +199,71 @@ def austritt(store, member_id, left_on, reason, actor):
                     {'id': m['id'], 'number': m['number'], 'vorher': {'austritt': m['left_on'], 'grund': bool(m['left_reason'])},
                      'nachher': {'austritt': left, 'grund': bool(reason)}})
     return m['id']
+
+
+MAX_NOTE = 1000
+VERLAUF = ('Mitglied angelegt', 'Mitglied geändert', 'Austritt eingetragen', 'Austritt zurückgenommen', 'Notiz zum Mitglied geändert')
+
+
+def notiz(store, member_id, text, actor):
+    """Notiz der Mitgliederverwaltung zum Mitglied speichern (ab 0.43; leer = löschen) – im Protokoll ohne den Text."""
+    if not isinstance(member_id, int) or isinstance(member_id, bool) or not isinstance(text, str):
+        raise ValueError('Ungültige Angaben.')
+    text = text.replace('\r\n', '\n').strip() or None
+    if text and len(text) > MAX_NOTE:
+        raise ValueError(f'Notiz: höchstens {MAX_NOTE} Zeichen.')
+    m = store.db.execute('SELECT id,number,note FROM members WHERE id=?', (member_id,)).fetchone()
+    if not m:
+        raise ValueError('Mitglied nicht gefunden.')
+    if text == m['note']:
+        return
+    with store.db:
+        store.db.execute('UPDATE members SET note=? WHERE id=?', (text, member_id))
+        store.audit(actor, 'Notiz zum Mitglied geändert', {'id': member_id, 'number': m['number'], 'leer': not text})
+
+
+def verlauf(store, member_id, limit=50):
+    """Änderungen an einem Mitglied aus dem Protokoll (neueste zuerst): Zeit, wer, was – nur Feldnamen und Daten, keine Werte."""
+    rows = store.db.execute(f"SELECT time,actor,action,detail FROM audit WHERE action IN ({','.join('?' * len(VERLAUF))}) "
+                            "AND json_extract(detail,'$.id')=? ORDER BY id DESC LIMIT ?", (*VERLAUF, member_id, limit)).fetchall()
+    out = []
+    for time, actor, action, raw in rows:
+        detail = json.loads(raw or '{}')
+        text = action
+        if action == 'Mitglied geändert' and detail.get('fields'):
+            text = 'Geändert: ' + ', '.join(LABELS.get(f, f) for f in detail['fields'])
+        elif action == 'Austritt eingetragen' and (detail.get('nachher') or {}).get('austritt'):
+            text = f"Austritt zum {german_date(detail['nachher']['austritt'])} eingetragen"
+        elif action == 'Notiz zum Mitglied geändert':
+            text = 'Notiz gelöscht' if detail.get('leer') else 'Notiz geändert'
+        out.append({'time': time, 'actor': actor, 'text': text})
+    return out
+
+
+def angaben(store, m):
+    """Alle Angaben eines Mitglieds als [(Bezeichnung, Wert)] in der Reihenfolge der Mitgliederverwaltung – leere weggelassen."""
+    import gliederung
+    from core import KVS
+    ovs = {o['id']: gliederung.label(o) for o in gliederung.ovs(store)}
+    out = []
+    for key, label in LABELS.items():
+        value = m.get(key)
+        if key in ('kv_number', 'ov_number', 'ov_name') or value is None or value == '' or (key in ('dues_free', 'guest', 'no_mail') and not value):
+            continue
+        if key in ('birth', 'joined', 'left_on', 'kv_joined'):
+            value = german_date(value)
+        elif key in ('dues_free', 'guest', 'no_mail'):
+            value = 'ja'
+        elif key in ('dues', 'external_balance'):
+            value = euro(value)
+        elif key == 'kv':
+            value = dict(KVS).get(value, value)
+        elif key == 'ov_id':
+            value = ovs.get(value)
+            if not value:
+                continue
+        out.append((label, str(value)))
+    return out
 
 
 def record_dues(db, member_id, old, new, year=None):
