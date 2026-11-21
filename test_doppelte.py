@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 
 import doppelte
+import mitglieder
+import mitgliederkonto
 import test_rollen   # Anmeldung und Personen am Testserver (nicht als Name importiert, sonst liefen dessen Tests hier noch einmal)
 import test_server
 from core import Store
@@ -115,6 +117,103 @@ class DoppelteTests(unittest.TestCase):
         self.assertEqual(self.groups(), [])
 
 
+class ZusammenfuehrenTests(unittest.TestCase):
+    """Zusammenführen (0.47): Angaben ergänzen, Buchhaltung umhängen, Hindernisse, Protokoll ohne Inhalte."""
+    tearDown, member = DoppelteTests.tearDown, DoppelteTests.member
+
+    def setUp(self):
+        DoppelteTests.setUp(self)
+        self.s.save_settings({'issuer': 'JU Test', 'issuer_address': 'Beispielweg 2', 'iban': 'DE89 3704 0044 0532 0130 00', 'age_basis': 'jan1'}, 'Test')
+
+    def row(self, mid):
+        r = self.s.db.execute('SELECT * FROM members WHERE id=?', (mid,)).fetchone()
+        return dict(r) if r else None
+
+    def mandat(self, mid, ref):
+        with self.s.db:
+            self.s.db.execute("INSERT INTO mandates(member_id,reference,holder,iban,signed_on,created) VALUES(?,?,?,?,?,?)",
+                              (mid, ref, 'Test Halter', 'DE02120300000000202051', '2026-01-01', '2026-01-01'))
+
+    def test_vorschau_und_zusammenfuehren(self):
+        a = self.member('Erika', 'Muster', joined='2021-01-01')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2019-05-01', email='erika@example.org', mobile='0151 0000000', no_mail='1')
+        c = self.member('Erika', 'Muster', street='Dritter Weg 7', birth='1990-01-01', email='erika@example.org')
+        mitglieder.notiz(self.s, a, 'Notiz A', 'Test')
+        mitglieder.notiz(self.s, b, 'Notiz B', 'Test')
+        self.s.issue_dues(2026, [b], 'Test')
+        mitgliederkonto.set_target(self.s, b, 2027, 0, 'Test-Befreiung', 'Test')
+        self.mandat(b, 'TEST-1')
+        doppelte.kein_duplikat(self.s, [b, c], 'Test')
+        self.assertEqual(doppelte.vorschau(self.s, a, b)['konflikte'], ['Das entfallende Mitglied hat Rechnungen, Beitragszahlungen, Mandate oder '
+                                                                         'Erstattungen – umhängen darf nur, wer „Buchhaltung ändern“ hat.'])
+        v = doppelte.vorschau(self.s, a, b, True)
+        self.assertEqual((v['bleibt']['number'], v['entfaellt']['number'], v['konflikte']), ('T-1', 'T-2', []))
+        self.assertEqual(v['ergaenzt'], ['E-Mail privat', 'Handy privat', 'Eintritt', 'Postausschluss', 'Notiz'])   # Anschrift: a hat eine
+        self.assertEqual(v['umhaengen'], [['Rechnungen', 1], ['SEPA-Mandate', 1], ['festgelegte Beiträge', 1]])
+        self.assertEqual(v['unterschiede'], [['Straße', 'Musterweg 1', 'Anderer Weg 5']])   # es gilt die des bleibenden
+        doppelte.zusammenfuehren(self.s, a, b, 'Test', True)
+        self.assertIsNone(self.row(b))
+        m = self.row(a)
+        self.assertEqual((m['email'], m['mobile'], m['joined'], m['no_mail'], m['street'], m['note']),
+                         ('erika@example.org', '0151 0000000', '2019-05-01', 1, 'Musterweg 1', 'Notiz A\n—\nNotiz B'))
+        for table in ('invoices', 'mandates', 'dues_targets'):
+            self.assertEqual([tuple(r) for r in self.s.db.execute(f'SELECT member_id FROM {table}')], [(a,)], table)
+        self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM dues_rates WHERE member_id=?', (b,)).fetchone()[0], 0)
+        self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM mitglieder_keine_doppelten').fetchone()[0], 0)
+        self.assertGreater(self.member('Neu', 'Person'), c)                                  # die Kennung von b wird nie neu vergeben
+        self.assertIn(b, [r[0] for r in self.s.db.execute('SELECT id FROM deleted_members')])
+        raw = self.s.db.execute("SELECT detail FROM audit WHERE action='Mitglieder zusammengeführt'").fetchone()[0]
+        self.assertEqual(json.loads(raw), {'id': a, 'number': 'T-1', 'entfaellt': {'id': b, 'number': 'T-2'},
+                                           'ergaenzt': ['email', 'joined', 'mobile', 'no_mail', 'note'],
+                                           'umgehaengt': {'Rechnungen': 1, 'SEPA-Mandate': 1, 'festgelegte Beiträge': 1}})
+        for secret in ('Notiz B', 'erika@', '0151'):
+            self.assertNotIn(secret, raw)
+        self.assertEqual(mitglieder.verlauf(self.s, a)[0]['text'],
+                         'Zusammengeführt mit Nr. T-2 – ergänzt: E-Mail privat, Eintritt, Handy privat, Postausschluss, Notiz')
+
+    def test_anschrift_bleibt_und_ortsverband_nur_im_selben_kv(self):
+        import gliederung
+        with self.s.db:
+            ov, _ = gliederung.ensure(self.s.db, '5100', '1', 'Test-OV')
+        a = self.member('Ole', 'Probe', kv='5200')
+        b = self.member('Ole', 'Probe', street='Anderer Weg 5', zip='22767', address_extra='c/o Test', ov_id=ov)
+        v = doppelte.vorschau(self.s, a, b)
+        self.assertEqual(v['neu'], {})                                                       # anderer Kreisverband: kein Ortsverband
+        self.assertEqual(v['unterschiede'][:2], [['Straße', 'Musterweg 1', 'Anderer Weg 5'], ['PLZ', '20095', '22767']])
+        self.assertEqual(v['unterschiede'][2][0], 'Kreisverband')
+        before = self.row(a)['address']
+        doppelte.zusammenfuehren(self.s, a, b, 'Test')
+        self.assertEqual(self.row(a)['address'], before)
+        c = self.member('Ole', 'Probe', street='Dritter Weg 7')
+        d = self.member('Ole', 'Probe', street='Vierter Weg 9', ov_id=ov)
+        self.assertEqual(doppelte.vorschau(self.s, c, d)['neu'], {'ov_id': ov})
+
+    def test_hindernisse_aendern_nichts(self):
+        a = self.member('Erika', 'Muster')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5')
+        self.s.issue_dues(2026, [a, b], 'Test')
+        self.mandat(a, 'TEST-1')
+        self.mandat(b, 'TEST-2')
+        mitglieder.notiz(self.s, a, 'x' * 600, 'Test')
+        mitglieder.notiz(self.s, b, 'y' * 600, 'Test')
+        konflikte = doppelte.vorschau(self.s, a, b, True)['konflikte']
+        self.assertEqual(len(konflikte), 3, konflikte)
+        self.assertIn('Beide haben eine Beitragsrechnung 2026', konflikte[0])
+        with self.assertRaisesRegex(ValueError, 'Beitragsrechnung 2026'):
+            doppelte.zusammenfuehren(self.s, a, b, 'Test', True)
+        self.assertIsNotNone(self.row(b))
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM audit WHERE action='Mitglieder zusammengeführt'").fetchone()[0], 0)
+        for keep, drop in ((a, a), (a, 999), ('1', b), (True, b), (a, 2 ** 70), (None, b)):
+            with self.assertRaises(ValueError, msg=(keep, drop)):
+                doppelte.vorschau(self.s, keep, drop)
+
+    def test_ausgetretenes_bleibendes_mitglied_bekommt_keine_notiz(self):
+        a = self.member('Erika', 'Muster')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5')
+        mitglieder.notiz(self.s, b, 'Notiz B', 'Test')
+        mitglieder.austritt(self.s, a, '2025-12-31', '', 'Test')
+        self.assertNotIn('note', doppelte.vorschau(self.s, a, b)['neu'])
+
 
 class DoppelteHttpTests(unittest.TestCase):
     """Am laufenden Server: Doppelte sehen mit „Mitglieder lesen“, „kein Duplikat“ nur mit „Mitglieder ändern“."""
@@ -139,6 +238,24 @@ class DoppelteHttpTests(unittest.TestCase):
         self.assertEqual(self.get(officer, '/api/doppelte')[1]['gruppen'], [])
         admin = self.person('technik', 'Administrator')                                               # keine Mitgliederdaten
         self.assertEqual(self.get(admin, '/api/doppelte')[0], 403)
+
+    def test_zusammenfuehren(self):
+        officer = self.person('Mitglieder-Person', 'Landesmitgliederbeauftragter')
+        ids = [self.post(officer, '/api/member', {**BASE, 'number': n, 'first_name': 'Lea', 'last_name': 'Zweifach', 'email': mail})[1]['id']
+               for n, mail in (('M-10', None), ('M-11', 'lea@example.org'))]
+        pair = {'keep': ids[0], 'drop': ids[1]}
+        reader = self.person('leitung', 'Landesgeschäftsführer')
+        self.assertEqual(self.post(reader, '/api/zusammenfuehren-vorschau', pair)[0], 200)
+        self.assertEqual(self.post(reader, '/api/zusammenfuehren', pair)[0], 403)
+        self.assertEqual(self.post(self.person('technik', 'Administrator'), '/api/zusammenfuehren-vorschau', pair)[0], 403)
+        status, v = self.post(officer, '/api/zusammenfuehren-vorschau', pair)
+        self.assertEqual((status, v['ergaenzt'], 'neu' in v), (200, ['E-Mail privat'], False))   # Werte (auch Notizen) nie in der Vorschau
+        self.assertEqual(self.post(officer, '/api/zusammenfuehren', {'keep': ids[0], 'drop': ids[0]})[0], 400)
+        status, r = self.post(officer, '/api/zusammenfuehren', pair)
+        self.assertEqual(status, 200)
+        self.assertTrue(r['backup'].startswith('vor-zusammenfuehren'))
+        members = {m['id']: m for m in self.get(officer, '/api/data?year=2026')[1]['members']}
+        self.assertEqual((ids[1] in members, members[ids[0]]['email']), (False, 'lea@example.org'))
 
 
 if __name__ == '__main__':

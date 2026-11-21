@@ -960,6 +960,35 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check((await toast()).includes('kein Duplikat'), 'Doppelte: kein Duplikat bestätigt');
   check(await page.waitForFunction(() => (document.querySelector('#modal [data-doppelte]')?.textContent || '').includes('Keine möglichen Doppelten'), null, { timeout: 5000 })
     .then(() => true, () => false), 'Doppelte: Gruppe danach ausgeblendet');
+  // 0.47: zusammenführen – ein drittes Exemplar geht nach Vorschau im ersten auf
+  const twin = await page.evaluate(async () => {
+    const { csrf } = await (await fetch('/api/status')).json();
+    const m = (await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json()).members.find((x) => x.last_name === 'Musterfrau');
+    const r = await fetch('/api/member', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ number: 'D-2', first_name: m.first_name, last_name: 'Musterfrau', birth: m.birth, joined: m.joined, kv: m.kv,
+        street: 'Doppelweg 5', zip: '20095', city: 'Hamburg', mobile: '0151 00000099' }) });
+    return { keep: m.id, drop: (await r.json()).id };
+  });
+  await dialogClose();
+  await page.reload();
+  await page.waitForSelector('.sidebar');
+  await page.click('[data-page=mv-overview]');
+  await page.click('.mu-page [data-doubles]');
+  await page.waitForSelector('#modal .dp-group [data-merge]');
+  await page.click('#modal .dp-group [data-merge]');
+  await page.waitForSelector('#modal [data-merge-form]');
+  await page.selectOption('#modal [name=keep]', String(twin.keep));
+  await page.selectOption('#modal [name=drop]', String(twin.drop));
+  check(await page.waitForFunction(() => (document.querySelector('#modal [data-merge-preview]')?.textContent || '').includes('D-2) wird gelöscht')
+    && !document.querySelector('#modal [data-merge-ok]').disabled, null, { timeout: 5000 }).then(() => true, () => false), 'Zusammenführen: Vorschau, wer bleibt und wer gelöscht wird');
+  check((await page.locator('#modal [data-merge-preview]').textContent()).includes('Handy privat'), 'Zusammenführen: fehlende Angaben werden ergänzt');
+  await shot('54-zusammenfuehren');
+  await page.click('#modal [data-merge-ok]');
+  check((await toast()).includes('Zusammengeführt'), 'Zusammenführen: ausgeführt, Sicherung vorher');
+  check(await page.waitForFunction(() => (document.querySelector('#modal [data-doppelte]')?.textContent || '').includes('Keine möglichen Doppelten'), null, { timeout: 5000 })
+    .then(() => true, () => false), 'Zusammenführen: Gruppe danach weg');
+  check(await page.evaluate(async (id) => !(await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json()).members.some((m) => m.id === id), twin.drop),
+    'Zusammenführen: das zweite Mitglied ist gelöscht');
   await dialogClose();
   await page.click('[data-page=members]');
   await page.click('main [data-liste=aktiv]');

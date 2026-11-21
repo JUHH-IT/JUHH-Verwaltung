@@ -21,13 +21,13 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Einstellungen ändern:** `POST /api/mail-check`, `POST /api/mail-forget`, `POST /api/mail-password` ⚠, `POST /api/mail-test`, `POST /api/settings` ⚠
 
-**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`
+**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`, `POST /api/zusammenfuehren-vorschau`
 
 **Mitgliederverwaltung lesen oder Buchhaltung lesen:** `GET /api/beitrag-nach-alter`
 
 **Mitgliederverwaltung lesen oder Einstellungen lesen oder Benutzer und Rollen lesen:** `GET /api/adressen-status`
 
-**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/kein-duplikat`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-notiz`, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`
+**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/kein-duplikat`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-notiz`, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`, `POST /api/zusammenfuehren` ⚠
 
 **Mitgliederverwaltung ändern oder Benutzer und Rollen ändern:** `POST /api/adressen-laden`
 
@@ -70,7 +70,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/booking.js`: bookingEditor → /api/book, /api/matches, /api/suggestions
 - `static/js/views/budgets.js`: budgets → /api/cash-donation, /api/donations, /api/haushalt-import, /api/haushalt-plan, /api/haushalt-reference, /api/haushalt.pdf, /api/kv-close
 - `static/js/views/cash.js`: cash → /api/kasse, /api/kasse-anfang, /api/kasse-beleg, /api/kasse-datei, /api/kasse-ungueltig, /api/kasse.csv, /api/kasse.pdf
-- `static/js/views/doppelte.js`: doppelteDialog → /api/doppelte, /api/kein-duplikat
+- `static/js/views/doppelte.js`: doppelteDialog → /api/doppelte, /api/kein-duplikat, /api/zusammenfuehren, /api/zusammenfuehren-vorschau
 - `static/js/views/dues.js`: dues → /api/beitraege-offen, /api/beitraege-vorschlaege, /api/beitrag-zuordnen, /api/klaerfall-melden
 - `static/js/views/imports.js`: importDialog, learningDialog, masterDialog → /api/forget, /api/import-bank, /api/import-master, /api/preview-bank, /api/preview-master
 - `static/js/views/invoice-create.js`: createDialog → /api/preview.pdf, /api/series, /api/series-preview
@@ -163,6 +163,7 @@ Tests: test_http.py, test_karte.py, test_keycloak_app.py, test_rollen.py, test_s
 - `env_list(name)`
 - `run_backups(backups)` – Tägliche Sicherung der Datenbank und neue Belege spiegeln (beim Start und im Servermodus stündlich geprüft).
 - `schutz_stuendlich()` – Abwehr im Hintergrundlauf: Stundenstatistik schreiben, Bedrohungsliste täglich auffrischen – Fehler nur protokollieren.
+- `notizen_stuendlich()` – Notizen ausgetretener Mitglieder löschen (mitglieder.notizen_bereinigen, DSGVO) – Fehler nur protokollieren.
 - `check_bind(host)` – Servermodus: nur eine bestimmte Adresse (127.0.0.1 hinter Tailscale Serve oder die Tailscale-Adresse 100.x),
 - `keycloak_from_env(env)` – JU_FINANZEN_ANMELDUNG = passwort (Standard) | keycloak. Keycloak nur mit vollständiger, passender Einrichtung – sonst
 - `main(argv=…)`
@@ -277,7 +278,7 @@ Mitglieder-Stammdaten: Vorname/Nachname und Anschrift in Feldern, Prüfung, Mitg
 
 Tabellen: `deleted_members`, `dues_rates`
 
-Tests: test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_pruefung.py, test_wahlrecht.py
+Tests: test_doppelte.py, test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_pruefung.py, test_wahlrecht.py
 
 - `next_id(db)` – Nächste Mitglieds-id: nie eine schon einmal vergebene (auch nicht die eines gelöschten Mitglieds).
 - `insert(db, v)` – Mitglied mit geprüften Werten (values) anlegen; liefert die id.
@@ -289,6 +290,7 @@ Tests: test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mit
 - `left_day(value, joined)` – Austrittsdatum prüfen (auch künftig erlaubt, nie vor dem Eintritt) – eine Prüfung für Formular, Import und „Austritt eintragen“.
 - `austritt(store, member_id, left_on, reason, actor)` – Austritt eintragen bzw. ändern (left_on = Datum, Grund optional) oder zurücknehmen (left_on leer) – ab 0.37.
 - `notiz(store, member_id, text, actor)` – Notiz der Mitgliederverwaltung zum Mitglied speichern (ab 0.43; leer = löschen) – im Protokoll ohne den Text.
+- `notizen_bereinigen(store, today=…)` – Notizen ausgetretener Mitglieder löschen (ab 0.47, DSGVO: der Zweck endet mit der Mitgliedschaft, keine Aufbewahrungspflicht)
 - `verlauf(store, member_id, limit=…)` – Änderungen an einem Mitglied aus dem Protokoll (neueste zuerst): Zeit, wer, was – nur Feldnamen und Daten, keine Werte.
 - `angaben(store, m)` – Alle Angaben eines Mitglieds als [(Bezeichnung, Wert)] in der Reihenfolge der Mitgliederverwaltung – leere weggelassen.
 - `record_dues(db, member_id, old, new, year=…)` – Individuellen Jahresbeitrag ab einem Jahr festhalten (Tabelle dues_rates): ändert er sich – z. B. durch einen neuen Import der
@@ -332,6 +334,8 @@ Tests: test_doppelte.py
 - `paare(members)` – {(a, b): {Grund, …}} für alle Paare möglicher Doppelter (a < b); members: Zeilen mit id, name, first_name, last_name, birth,
 - `gruppen(store)` – Mögliche Doppelte als Gruppen: [{'ids': [...], 'gruende': [Text, …]}] – Paare mit „kein Duplikat“ zählen nicht.
 - `kein_duplikat(store, ids, actor)` – Mitglieder einer Gruppe als „kein Duplikat“ bestätigen (alle Paare untereinander); im Protokoll nur die Kennungen.
+- `vorschau(store, keep, drop, buchhaltung=…)` – Was beim Zusammenführen passiert: bleibendes und entfallendes Mitglied, ergänzte Angaben, Unterschiede, umgehängte Einträge,
+- `zusammenfuehren(store, keep, drop, actor, buchhaltung=…)` – Mitglied `drop` in `keep` aufgehen lassen (vorher sichert der Aufrufer die Datenbank): fehlende Angaben ergänzen, Rechnungen,
 
 ### gliederung.py
 
@@ -339,7 +343,7 @@ Gliederung: Kreisverbände (mit Nummer der CDU-Mitgliederverwaltung) und Ortsver
 
 Tabellen: `ortsverbaende`
 
-Tests: test_auswertung.py, test_gliederung.py, test_opliste.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_doppelte.py, test_gliederung.py, test_opliste.py, test_wahlrecht.py
 
 - `digits(text)`
 - `init(db)` – Tabelle der Ortsverbände und Nummer der Mitgliederverwaltung je Kreisverband (additiv).
@@ -492,7 +496,7 @@ Mitgliederbuchhaltung: Beitragskonto je Mitglied (Nebenbuch zu den Mitgliedsbeit
 
 Tabellen: `dues_targets`
 
-Tests: test_beitraege.py, test_bereinigung.py, test_kasse.py, test_klaerfaelle.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py
+Tests: test_beitraege.py, test_bereinigung.py, test_doppelte.py, test_kasse.py, test_klaerfaelle.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py
 
 - `init(db)`
 - `first_year(store)` – Erstes Jahr der Mitgliederkonten: Datenbeginn (ältere Daten sind gelöscht), sonst KV-Finanzrahmen-Beginn.
