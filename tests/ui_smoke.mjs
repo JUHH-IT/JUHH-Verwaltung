@@ -911,7 +911,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.waitForSelector('#modal [name=city]');
   await page.fill('#modal [name=city]', 'Teststadt');
   await page.click('#modal form button[type=submit]');
-  await page.waitForFunction(() => !document.querySelector('#modal [name=city]'), null, { timeout: 8000 }).catch(() => {});
+  check((await toast()).length > 0, 'Mitglied geändert (Ort)');
   await page.keyboard.press('Escape');
   await page.click('[data-page=kenntnis]');
   await page.waitForSelector('.kn-page .kn-zeile');
