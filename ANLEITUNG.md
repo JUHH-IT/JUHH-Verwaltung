@@ -385,6 +385,17 @@ Bucht die Bank eine Sammellastschrift oder Sammelgutschrift als **eine** Zeile, 
 
 ## Auswertung (ab 0.29)
 
+**Ab 0.54** steht die Auswertung im Menü bei der Mitgliederverwaltung und ist ein Blatt mit sechs Abschnitten; ein Sprungmenü führt zu jedem. Jeder Abschnitt beginnt mit einer Aussage aus den Zahlen. Die unten beschriebenen Inhalte gibt es weiter, sie stehen jetzt hier:
+
+- **Bestand:** Bestand je Jahresende als Linie, Ein- und Austritte je Jahr und je Monat, rechts **„Im Vergleich zum Vorjahr"** (Mitglieder, Eintritte, Austritte, Frauenanteil, Durchschnittsalter, mit E-Mail, mit SEPA-Mandat, mit Ortsverband – jeweils bis zum selben Tag des Vorjahres). E-Mail, Mandat und Ortsverband kennt das Programm nur im heutigen Stand.
+- **Struktur:** Alterspyramide, Frauenanteil (gesamt, bei den Eintritten, unter 25 und ab 25 Jahren), Mitgliedsdauer.
+- **Gliederung:** eine Tabelle der Kreisverbände mit den Sichten **Struktur**, **Erreichbarkeit**, **Ortsverbände** und – nur mit Buchhaltung – **Beitrag**. Der Punkt beim Frauenanteil zeigt den Kreisverband, der Strich den Wert der ganzen Auswahl. **Daten vollständig** heißt wie im Cockpit: Anschrift, E-Mail, Geburtsdatum und Ortsverband sind eingetragen; unter 80 % ist der Wert orange.
+- **Dichte:** Stadtteile als Flächen, eingefärbt nach Mitgliedern je Stadtteil oder **je km²**, daneben die stärksten Stadtteile und die Zahl der Stadtteile ohne Mitglied. Braucht die amtlichen Adressdaten und das Recht „Mitglieder lesen"; gilt immer für heute, nicht für den Stichtag. Eine Dichte je Einwohner gibt es nicht – Einwohnerzahlen kennt das Programm nicht.
+- **Bindung:** je Eintrittsjahr, wie viele nach 1 bis 5 Jahren noch Mitglied waren (eine Zelle füllt sich erst, wenn alle Eintritte des Jahres so lange zurückliegen); wann Mitglieder gehen (nach Mitgliedsdauer, davon mit Erreichen der Altersgrenze); wie viele in den nächsten Jahren 35 werden; Anteil der Eintritte mit eingetragenem Werber.
+- **Listen** zum Handeln, Vereinigungen und Zahlweg.
+
+PDF und CSV enthalten weiter die bisherigen Zahlen, noch nicht die neuen Abschnitte Dichte und Bindung.
+
 Seitenleiste → **Auswertung**: Mitgliederdaten zu einem **Stichtag** (Standard heute), für alle oder einen **Kreisverband** und **Ortsverband**. Oben die Kennzahlen (Mitglieder am Stichtag, Eintritte/Austritte im Jahr, Durchschnitts- und Medianalter, Frauenanteil, Anteil mit E-Mail, SEPA-Mandat, Ortsverband). Darunter, ab 0.38 als Diagramme – jede Zahl steht als Text am Balken, nichts muss angetippt werden:
 
 - **Altersstruktur:** Altersgruppen (unter 16, 16–17, 18–20, 21–24, 25–29, 30–34, 35 und älter) mit Anzahl und Anteil, **Alterspyramide** (männlich links, weiblich rechts) und Durchschnitts- und Medianalter je Geschlecht. Alter in vollendeten Jahren am Stichtag; wer am Stichtag Geburtstag hat, zählt schon zum neuen Alter.

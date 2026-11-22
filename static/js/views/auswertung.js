@@ -252,7 +252,9 @@ function gliederung(r) {
   const z = (label, inhalt, klasse = '') => html`<td class="num ${klasse}" data-label="${label}">${inhalt}</td>`;
   const balken = (label, text, anteil, klasse = '') => z(label, html`<span>${text}</span>${strich(anteil, klasse)}`, 'aw-mitbalken');
   const daten = (v) => z('Daten vollständig', part(v), v !== null && v < WARN ? 'aw-warn' : '');
-  const frauen = (v) => html`<td class="aw-skala" data-label="Frauenanteil"><span class="aw-spur" aria-hidden="true">${c.women_share === null ? '' : html`<i class="aw-mk" style="left:${Math.min(100, c.women_share * 200)}%"></i>`}${v === null ? '' : html`<i class="aw-pt" style="left:${Math.min(100, v * 200)}%"></i>`}</span><span class="wert">${part(v)}</span></td>`;
+  // Skala des Frauenanteils: 0 bis 50 % (feiner), nur wenn ein Wert darüber liegt 0 bis 100 %
+  const grenze = Math.max(c.women_share || 0, ...(r.kv_rows || []).map((k) => k.women_share || 0)) > 0.5 ? 1 : 0.5;
+  const frauen = (v) => html`<td class="aw-skala" data-label="Frauenanteil"><span class="aw-spur" aria-hidden="true">${c.women_share === null ? '' : html`<i class="aw-mk" style="left:${Math.min(100, (c.women_share / grenze) * 100)}%"></i>`}${v === null ? '' : html`<i class="aw-pt" style="left:${Math.min(100, (v / grenze) * 100)}%"></i>`}</span><span class="wert">${part(v)}</span></td>`;
   const leer = empty('Keine Mitglieder', 'Für die Auswahl gibt es keine Mitglieder.');
   const ganz = (v) => (c.active ? v : null);   // leere Auswahl: kein Anteil statt 0 %
   let inhalt, notiz;
@@ -265,7 +267,7 @@ function gliederung(r) {
       <details class="aw-details"><summary>Zahlen als Tabelle</summary>${tab(['Kreisverband', N('Mitglieder'), N('weiblich'), N('männlich'), N('divers/ohne Angabe'), N('Eintritte'), N('Austritte'), N('Gäste'), N('SEPA-Mandate')],
         rows.map((k) => html`<tr><th scope="row">${k.name}</th><td class="num">${zahl(k.active)}</td><td class="num">${few(k.w)}</td><td class="num">${few(k.m)}</td><td class="num">${few(k.x)}</td>
           <td class="num">${zahl(k.joined_year)}</td><td class="num">${zahl(k.left_year)}</td><td class="num">${zahl(k.guests)}</td><td class="num">${zahl(k.mandates)}</td></tr>`), { klasse: 'aw-eng' })}</details>` : leer;
-    notiz = `Frauenanteil auf einer Skala von 0 bis 50 %${c.women_share === null ? '' : `, der Strich zeigt den Wert der ganzen Auswahl von ${pct(c.women_share)}`}. Daten vollständig: Anschrift, E‑Mail, Geburtsdatum und Ortsverband sind eingetragen. Saldo: Eintritte minus Austritte ${r.year} bis zum Stichtag.`;
+    notiz = `Frauenanteil auf einer Skala von 0 bis ${grenze === 1 ? 100 : 50} %${c.women_share === null ? '' : `, der Strich zeigt den Wert der ganzen Auswahl von ${pct(c.women_share)}`}. Daten vollständig: Anschrift, E‑Mail, Geburtsdatum und Ortsverband sind eingetragen. Saldo: Eintritte minus Austritte ${r.year} bis zum Stichtag.`;
   } else if (art === 'erreichbar') {
     const zeile = (titel, k) => html`<tr><th scope="row">${titel}</th>${z('Aktiv', zahl(k.active))}${balken('Mit E‑Mail', part(k.with_email), k.with_email)}${balken('Mit SEPA-Mandat', part(k.with_mandate), k.with_mandate)}${balken('Mit Ortsverband', part(k.with_ov), k.with_ov)}${daten(k.complete)}</tr>`;
     inhalt = rows.length ? tab(['Kreisverband', N('Aktiv'), 'Mit E‑Mail', 'Mit SEPA-Mandat', 'Mit Ortsverband', N('Daten vollständig')], rows.map((k) => zeile(name(k), k)),
