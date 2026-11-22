@@ -231,14 +231,15 @@ def letzte_dateipruefung(db, app_dir):
 
 
 def konten(db):
-    """Personen mit letzter Anmeldung, Verwaltungs-/Sicherheitsrechten und Hinweisen (ungenutzt, ohne Passwort, deaktiviert)."""
+    """Personen mit letzter Anmeldung, Verwaltungs-/Sicherheitsrechten und Hinweisen (ungenutzt, ohne Passwort, deaktiviert;
+    `app` = Authenticator-Pflicht im Keycloak-Betrieb)."""
     zuletzt = dict(db.execute("SELECT person,max(zeit) FROM sicherheit_ereignisse WHERE art IN ('anmeldung','notzugang') GROUP BY person").fetchall())
     grenze = (datetime.now() - timedelta(days=UNGENUTZT_TAGE)).isoformat()
     result = []
     # aktiv = darf hinein (rollen.GILT): abgelaufene Personen („gültig bis“ vorbei) zählen wie deaktivierte
-    for name, password, active in db.execute(f'SELECT name,password,{rollen.GILT} FROM users ORDER BY name COLLATE NOCASE').fetchall():
+    for name, password, active, app in db.execute(f'SELECT name,password,{rollen.GILT},totp_pflicht FROM users ORDER BY name COLLATE NOCASE').fetchall():
         rights = rollen.rights_of(db, name)
-        result.append({'name': name, 'aktiv': bool(active), 'passwort': str(password or '').startswith('scrypt$'),
+        result.append({'name': name, 'aktiv': bool(active), 'passwort': str(password or '').startswith('scrypt$'), 'app': bool(app),
                        'zuletzt': zuletzt.get(name, ''), 'ungenutzt': bool(active) and zuletzt.get(name, '') < grenze,
                        'privilegiert': any(rollen.can(rights, a, 'schreiben') for a in ('verwaltung', 'sicherheit', 'sicherung')),
                        'rechte': rights})

@@ -559,19 +559,27 @@ def status(db, eigene=None):
 
 
 def abwehr(db):
-    """Abwehr der letzten 24 Stunden für die Übersicht: Treffer nach Art, Abweisungen, Sperren – gesamt und je Stunde."""
+    """Abwehr für die Übersicht: Treffer nach Art, Abweisungen, Sperren der letzten 24 Stunden (gesamt und je Stunde) und je Tag
+    der letzten 7 Tage (ab 0.50, aus derselben Stundenstatistik – sie hält 8 Tage)."""
     _statistik_schreiben(db)
     jetzt = datetime.fromtimestamp(UHR())
     stunden = [(jetzt - timedelta(hours=h)).strftime('%Y-%m-%dT%H') for h in range(23, -1, -1)]
+    tage = [(jetzt - timedelta(days=d)).strftime('%Y-%m-%d') for d in range(6, -1, -1)]
     werte = {}
-    for stunde, art, n in db.execute('SELECT stunde,art,n FROM schutz_stunden WHERE stunde>=?', (stunden[0],)):
+    for stunde, art, n in db.execute('SELECT stunde,art,n FROM schutz_stunden WHERE stunde>=?', (tage[0] + 'T00',)):
         werte.setdefault(stunde, {})[art] = n
     arten = ('falle', 'werkzeug', 'muster', 'fehler')
-    verlauf = [{'stunde': s[11:], 'treffer': sum(werte.get(s, {}).get(a, 0) for a in arten), 'abgewiesen': werte.get(s, {}).get('abgewiesen', 0),
-                'sperren': werte.get(s, {}).get('sperre', 0)} for s in stunden]
-    summe = lambda art: sum(w.get(art, 0) for w in werte.values())
+    zeile = lambda w: {'treffer': sum(w.get(a, 0) for a in arten), 'abgewiesen': w.get('abgewiesen', 0), 'sperren': w.get('sperre', 0)}
+    verlauf = [{'stunde': s[11:], **zeile(werte.get(s, {}))} for s in stunden]
+    letzte = [w for s, w in werte.items() if s >= stunden[0]]
+    summe = lambda art: sum(w.get(art, 0) for w in letzte)
+    je_tag = {tag: {'treffer': 0, 'abgewiesen': 0, 'sperren': 0} for tag in tage}
+    for s, w in werte.items():
+        if s[:10] in je_tag:
+            for k, v in zeile(w).items():
+                je_tag[s[:10]][k] += v
     return {'modus': einstellungen(db)['modus'], 'treffer': {a: summe(a) for a in arten}, 'treffer_gesamt': sum(v['treffer'] for v in verlauf),
-            'abgewiesen': summe('abgewiesen'), 'sperren': summe('sperre'), 'stunden': verlauf,
+            'abgewiesen': summe('abgewiesen'), 'sperren': summe('sperre'), 'stunden': verlauf, 'tage': [{'tag': tag, **je_tag[tag]} for tag in tage],
             'gesperrt': db.execute('SELECT count(*) FROM schutz_sperren WHERE bis=0 OR bis>?', (int(UHR()),)).fetchone()[0]}
 
 

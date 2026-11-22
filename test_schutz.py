@@ -467,8 +467,14 @@ class FirewallTests(Basis):
         self.assertEqual(len(a['stunden']), 24)
         self.assertEqual(a['stunden'][-1], {'stunde': datetime.fromtimestamp(self.jetzt[0]).strftime('%H'), 'treffer': 1, 'abgewiesen': 3, 'sperren': 1})
         self.assertEqual(a['stunden'][-2]['treffer'], 3)
+        self.assertEqual(a['tage'][-1]['tag'], datetime.fromtimestamp(self.jetzt[0]).strftime('%Y-%m-%d'))
+        self.assertEqual(sum(x['treffer'] for x in a['tage']), 4)                            # 7 Tage enthalten die letzten 24 Stunden
         self.weiter(25 * 3600)
-        self.assertEqual(schutz.abwehr(self.db)['treffer_gesamt'], 0)                       # älter als 24 Stunden
+        b = schutz.abwehr(self.db)
+        self.assertEqual(b['treffer_gesamt'], 0)                                            # älter als 24 Stunden
+        self.assertEqual((len(b['tage']), sum(x['treffer'] for x in b['tage']), sum(x['sperren'] for x in b['tage'])), (7, 4, 1))   # im 7-Tage-Verlauf noch da
+        self.weiter(7 * 86400)
+        self.assertEqual(sum(x['treffer'] for x in schutz.abwehr(self.db)['tage']), 0)      # älter als 7 Tage
 
     def test_1000_normale_anfragen_ohne_schreibzugriff(self):
         self.anfrage()                                                                      # Stand einmal laden

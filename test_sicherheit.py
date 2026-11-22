@@ -67,11 +67,12 @@ class SicherheitTests(unittest.TestCase):
             sicherheit.ereignis(self.db, 'unbekannt')
 
     def test_konten(self):
-        rollen.save_user(self.db, test_rollen.P('Zweite', password=PASSWORT, roles=[]), 'Erste')
+        rollen.save_user(self.db, test_rollen.P('Zweite', password=PASSWORT, roles=[], totp_pflicht=False), 'Erste')
         sicherheit.ereignis(self.db, 'anmeldung', 'Erste')
         k = {x['name']: x for x in sicherheit.konten(self.db)}
         self.assertTrue(k['Erste']['privilegiert'] and k['Erste']['passwort'] and not k['Erste']['ungenutzt'])
         self.assertTrue(k['Zweite']['ungenutzt'] and not k['Zweite']['privilegiert'])
+        self.assertEqual((k['Erste']['app'], k['Zweite']['app']), (True, False))   # Authenticator-Pflicht (Zugänge, 0.50)
 
     def test_dateipruefung(self):
         root = Path(self.tmp.name) / 'programm'
