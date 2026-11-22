@@ -140,10 +140,10 @@ def expires(store, mandate, exclude=None):
     return add_months(last_use(store, mandate, exclude), MANDATE_MONTHS)
 
 
-def mandat_gueltig(store, today=None):
-    """Kennungen der Mitglieder mit aktivem, nicht verfallenem Mandat (ab 0.53, Liste „IBAN ohne Mandat“)."""
+def mandat_gueltig(store, today=None, rows=None):
+    """{Mitglied: IBAN} der aktiven, nicht verfallenen Mandate (ab 0.53, Liste „IBAN ohne Mandat“); rows = schon gelesene mandates()."""
     today = today or date.today().isoformat()
-    return {m['member_id'] for m in mandates(store) if m['status'] == 'active' and m['expires'] >= today}
+    return {m['member_id']: m['iban'] for m in (rows if rows is not None else mandates(store)) if m['status'] == 'active' and m['expires'] >= today}
 
 
 def mandates(store):
@@ -677,6 +677,8 @@ def _mandat_seite(store, cfg, member_id, p, line, issuer):
     from reportlab.platypus import Spacer, Table
     m = store.db.execute('SELECT * FROM members WHERE id=?', (member_id,)).fetchone() if member_id else None
     mandate = active_mandate(store, member_id) if member_id else None
+    if mandate and (expires(store, mandate) < date.today().isoformat() or (m and m['iban'] and m['iban'] != mandate['iban'])):
+        mandate = None   # verfallen oder Kontowechsel: Formular für ein neues Mandat mit den Bankdaten des Mitglieds (ab 0.53)
     bank = {'holder': (m['kontoinhaber'] or m['name']) if m else '', 'iban': m['iban'] if m and m['iban'] else ''}   # Bankdaten am Mitglied (ab 0.53)
     rows = [line('Zahlungsempfänger', f"{issuer}\n{cfg.get('issuer_address', '')}"),
             line('Gläubiger-Identifikationsnummer', re.sub(r'\s+', '', cfg.get('creditor_id') or '').upper()),

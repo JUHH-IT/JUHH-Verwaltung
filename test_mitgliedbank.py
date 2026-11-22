@@ -10,6 +10,7 @@ import doppelte
 import lastschrift
 import mitglieder
 import mitgliederlisten
+import rollen
 from core import Store
 
 CREDITOR = 'DE98ZZZ09999999999'                     # Beispiel-Gläubiger-ID der Bundesbank
@@ -44,6 +45,10 @@ class NummerTests(Basis):
         self.assertEqual(mitglieder.naechste_nummer(self.s.db), 'A0000000124')
         self.member('A0000000124')
         self.assertEqual(mitglieder.naechste_nummer(self.s.db), 'A0000000125')
+        self.member('A125')                                                               # gleiche Zahl ohne führende Nullen: überspringen
+        self.assertEqual(mitglieder.naechste_nummer(self.s.db), 'A0000000126')
+        with self.assertRaisesRegex(ValueError, 'schon vergeben'):                        # zweimal derselbe Vorschlag: verständliche Meldung
+            self.member('A125')
 
 
 class BankTests(Basis):
@@ -57,6 +62,32 @@ class BankTests(Basis):
         self.assertEqual(self.m(mid)['iban'], IBAN)                                        # nicht mitgeschickt: bleibt
         self.s.update_member(mid, {**{k: self.m(mid)[k] for k in STAMM}, 'iban': ''}, 'Test')
         self.assertEqual((self.m(mid)['iban'], self.m(mid)['kontoinhaber']), (None, None))  # ohne IBAN kein Kontoinhaber
+
+    def test_nur_ewr_und_bindestriche(self):
+        mid = self.member('M1', iban='DE02-1203-0000-0000-2020-51')
+        self.assertEqual(self.m(mid)['iban'], IBAN)
+        with self.assertRaisesRegex(ValueError, 'außerhalb des EWR'):
+            self.member('M2', iban='CH93 0076 2011 6238 5295 7')
+
+    def test_verfallenes_mandat_und_kontowechsel(self):
+        self.s.save_settings({'creditor_id': CREDITOR}, 'Test')
+        alt, neu = self.member('M1', iban=IBAN), self.member('M2', iban=IBAN)
+        lastschrift.create_mandate(self.s, alt, {'iban': IBAN2, 'holder': 'Alt Inhaber', 'signed_on': '2021-01-15'}, 'Test')   # 36 Monate ungenutzt
+        lastschrift.create_mandate(self.s, neu, {'iban': IBAN2, 'holder': 'Alt Inhaber', 'signed_on': '2026-01-15'}, 'Test')   # gültig, anderes Konto
+        liste = {m['id']: m for m in self.s.snapshot(2026)['members']}
+        self.assertEqual((liste[alt]['sepa_mandat'], liste[neu]['sepa_mandat'], liste[neu]['iban_abweichend']), (False, True, True))
+        body, _, _ = mitgliederlisten.datei(self.s, {'art': 'mandate', 'ids': [alt, neu]}, 'Test')
+        for seite in (p.extract_text() for p in PdfReader(io.BytesIO(body)).pages):  # beide: neues Mandat mit den Bankdaten des Mitglieds
+            self.assertIn('DE02 1203 0000 0000 2020 51', seite)
+            self.assertIn('wird mit der ersten Beitragsrechnung mitgeteilt', seite)
+            self.assertNotIn('Alt Inhaber', seite)
+
+    def test_rechte_gesamtliste(self):
+        self.member('M1', iban=IBAN)
+        for rechte in ({'mitglieder': 'lesen'}, {'mitglieder': 'schreiben', 'auswertung': 'lesen'}, {'buchhaltung': 'schreiben'}):
+            for m in rollen.filter_snapshot(self.s.snapshot(2026), rechte)['members']:
+                self.assertNotIn('iban', m, rechte)
+                self.assertNotIn('kontoinhaber', m, rechte)
 
     def test_gesamtliste_nur_ja_nein(self):
         self.s.save_settings({'creditor_id': CREDITOR}, 'Test')
@@ -98,6 +129,17 @@ class BankTests(Basis):
         mitglieder.apply(self.s, p, [r['row_no'] for r in p['rows']], 'Test')
         m1 = self.s.db.execute("SELECT iban,kontoinhaber FROM members WHERE number='M1'").fetchone()
         self.assertEqual(tuple(m1), (IBAN, 'Erika Muster'))
+
+    def test_import_aktualisiert_nur_als_paar(self):
+        kopf = 'Mitgliedsnummer;Vorname;Name;Straße;PLZ;Ort;Geburtsdatum;Eintritt;Kreisverband;IBAN'
+        zeile = lambda nr, iban: f'{nr};Erika;Muster;Musterweg 1;20095;Hamburg;01.02.2000;01.01.2024;Altona;{iban}'   # noqa: E731
+        leer, falsch, wechsel = (self.member(n, iban=IBAN, kontoinhaber='Mutter Muster') for n in ('M1', 'M2', 'M3'))
+        raw = '\n'.join([kopf, zeile('M1', ''), zeile('M2', 'DE00123'), zeile('M3', IBAN2)]).encode()
+        p = mitglieder.preview(self.s, raw, 'liste.csv')
+        mitglieder.apply(self.s, p, [r['row_no'] for r in p['rows'] if r['action'] in ('new', 'update')], 'Test')
+        self.assertEqual((self.m(leer)['iban'], self.m(leer)['kontoinhaber']), (IBAN, 'Mutter Muster'))       # leere Zelle lässt stehen
+        self.assertEqual((self.m(falsch)['iban'], self.m(falsch)['kontoinhaber']), (IBAN, 'Mutter Muster'))   # ungültig: beides bleibt
+        self.assertEqual((self.m(wechsel)['iban'], self.m(wechsel)['kontoinhaber']), (IBAN2, None))           # neues Konto: alter Inhaber entfällt
 
     def test_zusammenfuehren_uebernimmt_bankverbindung_als_paar(self):
         keep, drop = self.member('M1'), self.member('M2', iban=IBAN, kontoinhaber='Erika Muster')

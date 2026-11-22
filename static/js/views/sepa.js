@@ -14,6 +14,8 @@ export function mandateSection(member) {
   const old = store.data.mandates.filter((x) => x.member_id === member.id && x.status === 'revoked');
   const enabled = Boolean(store.data.settings.creditor_id);
   return html`<section class="approval-card ${m ? 'done' : ''}"><h3>${icon('bank', 16)} SEPA-Lastschrift</h3>
+    ${m && member.iban_abweichend ? html`<p class="notice warn" data-iban-abweichend>Die Mitgliederverwaltung hat eine andere IBAN eingetragen als im Mandat –
+      Kontowechsel? Dann das alte Mandat widerrufen und das neue (unterschriebene) erfassen.</p>` : ''}
     ${m ? html`<p>Mandat <strong style="font-weight:600">${m.reference}</strong> · ${m.holder} · ${m.iban} · unterschrieben am ${date(m.signed_on)}${m.last_used ? ` · zuletzt eingezogen ${date(m.last_used)}` : ''}</p>
         <p class="small muted">Beitragsrechnungen enthalten die Vorabankündigung; der Beitrag wird per Lastschrift eingezogen.
           ${m.expires < todayIso() ? html`<strong>Mandat verfallen</strong> (36 Monate ungenutzt) – neues Mandat einholen.` : `Gültig für Einzüge bis ${date(m.expires)}, wenn es bis dahin nicht genutzt wird.`}</p>`

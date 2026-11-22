@@ -597,7 +597,7 @@ Tests: test_lastschrift.py, test_mitgliedbank.py, test_sepadatei.py, test_wahlre
 - `active_mandate(store, member_id)`
 - `last_use(store, mandate, exclude=…)` – Letzte Nutzung (eingereichte oder geplante Lastschrift, sonst Unterschrift bzw. bekannte Nutzung außerhalb).
 - `expires(store, mandate, exclude=…)` – Letzter möglicher Einzugstag: 36 Monate nach der letzten Nutzung (exclude: diese Lastschrift nicht mitzählen).
-- `mandat_gueltig(store, today=…)` – Kennungen der Mitglieder mit aktivem, nicht verfallenem Mandat (ab 0.53, Liste „IBAN ohne Mandat“).
+- `mandat_gueltig(store, today=…, rows=…)` – {Mitglied: IBAN} der aktiven, nicht verfallenen Mandate (ab 0.53, Liste „IBAN ohne Mandat“); rows = schon gelesene mandates().
 - `mandates(store)`
 - `create_mandate(store, member_id, data, actor)` – Unterschriebenes Mandat erfassen. Ein aktives Mandat je Mitglied; Kontowechsel = neues Mandat.
 - `revoke_mandate(store, mandate_id, reason, actor)`
@@ -1027,7 +1027,7 @@ Rollen und Rechte im Serverbetrieb (ab 0.34).
 
 Tabellen: `roles`, `user_roles`
 
-Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_sicherheit.py
+Tests: test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py
 
 - `required(method, path)` – Nötiges Recht für eine Adresse; unbekannte Adressen verlangen „Verwaltung schreiben“.
 - `allowed(rights, need)`
