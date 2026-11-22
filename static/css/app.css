@@ -1089,7 +1089,10 @@ table.aw-kv th, table.aw-kv td { padding-left: 8px; padding-right: 8px; }
 @media (max-width: 900px) {
   .blatt-teil { padding: 22px 18px 20px; }
   .blatt-reihe > .blatt-teil.schmal { border-left: 0; border-top: 1px solid var(--line); }
-  .kz, .kz:first-child { padding: 16px 18px; }
+  .kz-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kz, .kz:first-child { padding: 16px 18px; border-left: 0; border-top: 1px solid var(--line); }
+  .kz:nth-child(-n+2) { border-top: 0; }
+  .kz:nth-child(even) { border-left: 1px solid var(--line); }
   .blatt-aussage, .blatt-aussage.gross { font-size: 22px; }
 }
 
