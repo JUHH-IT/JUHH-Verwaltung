@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.51'
+VERSION='0.52'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -58,7 +58,7 @@ NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltun
 # Regel (AGENTS.md): alles, was alle Daten ausliefert, löscht, Zugänge/Rechte ändert oder Mail und Bankverbindung umlenken kann
 CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-listen.zip'),('GET','/api/sepa.xml'),
          ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
-         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/zusammenfuehren'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
+         ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/zusammenfuehren'),('POST','/api/ov-abgleich'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
          ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
@@ -641,6 +641,11 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/karte-gebiete': return self.send(200,__import__('karte').gebiete())   # Bezirke/Stadtteile (öffentliche Daten)
                 if path=='/api/regelwerk': return self.send(200,__import__('regelwerk').regeln(store.config()))   # Regelwerk für alle Angemeldeten (0.43)
                 if path=='/api/doppelte': return self.send(200,{'gruppen':__import__('doppelte').gruppen(store)})   # mögliche doppelte Mitglieder (0.45)
+                if path=='/api/ov-abgleich': return self.send(200,__import__('ovabgleich').abgleich(store,DATA))   # Ortsverband nach Adresse (0.52)
+                if path=='/api/ov-gebiete':   # Stadtteile je Ortsverband, Stadtteile der Adressdaten und Vorschlag aus den Namen (0.52)
+                    import ovabgleich
+                    teile,geb=ovabgleich.stadtteile(DATA),ovabgleich.gebiete(store.db)
+                    return self.send(200,{'stadtteile':teile,'gebiete':geb,'vorschlag':ovabgleich.namensvorschlag(gliederung.ovs(store),teile,geb)})
                 if path=='/api/adressen-status': return self.send(200,__import__('adressen').status(DATA))
                 if path=='/api/klaerfaelle':   # Klärfälle der Mitgliederverwaltung (klaerfaelle.py)
                     import klaerfaelle
@@ -885,6 +890,11 @@ class Handler(BaseHTTPRequestHandler):
                     saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-zusammenfuehren')
                     doppelte.zusammenfuehren(store,data.get('keep'),data.get('drop'),actor,bh);result={'backup':saved.name}
                 else: result={k:v for k,v in doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh).items() if k!='neu'}
+            elif path=='/api/ov-gebiet': result={'stadtteile':__import__('ovabgleich').gebiet_speichern(store,DATA,data.get('id'),data.get('stadtteile'),actor)}
+            elif path=='/api/ov-abgleich':   # ausgewählte Vorschläge übernehmen – vorher sichern (viele Mitglieder auf einmal)
+                __import__('ovabgleich').auswahl(data.get('aendern',[]),data.get('fest',[]))   # ungültige oder leere Auswahl: keine Sicherung
+                saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-ov-abgleich')
+                result={**__import__('ovabgleich').uebernehmen(store,DATA,data.get('aendern',[]),data.get('fest',[]),actor),'backup':saved.name}
             elif path=='/api/mitglieder-liste':   # Auswahl als CSV, Etiketten oder Anschreiben (mitgliederlisten.py, 0.43) – enthält Kontaktdaten
                 body,kind,name=__import__('mitgliederlisten').datei(store,data,actor);return self.send(200,body,kind,attachment=name)
             elif path=='/api/members-preview':
@@ -955,6 +965,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/adresse-pruefen':   # Anschrift im amtlichen Bestand auf diesem Rechner prüfen (POST: keine Anschrift in der Adresszeile); speichert nichts
                 text=lambda k,n: data.get(k)[:n] if isinstance(data.get(k),str) else ''
                 result=__import__('adressen').check(DATA,text('street',200),text('zip',10),text('city',100))
+                result['ovs']=__import__('ovabgleich').ovs_fuer(store.db,result.get('kv'),result.get('stadtteil'))   # Ortsverband nach Adresse (0.52)
             elif path=='/api/strassen-suche':    # Straßensuche der Karte im amtlichen Bestand – POST, weil der Suchtext auch ein Name sein kann (nie in der Adresszeile)
                 ix=__import__('adressen').index(DATA)
                 try: result=ix.streets(data.get('q')[:80] if isinstance(data.get('q'),str) else '') if ix else []

@@ -6,6 +6,7 @@ import { toInput, weekdayDate } from '../format.js';
 import { store, refresh, can } from '../store.js';
 import { pageHead, safe, toast, icon, mailPreview, dialog, table, badge, empty, confirmAction, uploadProtected } from '../ui.js';
 import { ovLabel } from '../gliederung.js';
+import { gebietVon, gebietText, gebietFelder, gebietVorschlaege } from '../ov-gebiete.js';
 import { accountField, bindAccountPickers } from '../account-picker.js';
 import { addressState, addressSummary, addressCredit, loadAddressData, loadedText } from '../adressdaten.js';
 
@@ -150,7 +151,7 @@ function beitraege(s) {
 const kvList = () => store.data.kv.filter((k) => k.code !== 'LV');
 const kvShort = (code) => store.data.kv.find((k) => k.code === code)?.name || code;
 
-function gliederung() {
+function gliederung(geb) {
   const ovs = store.data.ovs || [];
   const members = (code) => store.data.members.filter((m) => m.kv === code).length;
   const shown = ovs.filter((o) => !ovKv || o.kv === ovKv);
@@ -175,9 +176,13 @@ function gliederung() {
       <p class="small muted">Im Mitglied ist nur ein Ortsverband des gewählten Kreisverbands auswählbar. Nummer 0 = ohne Nummer (z. B. „Kreisverband“
         oder „OV Schüler Union“ aus der Mitgliederverwaltung). Ein Ortsverband mit Mitgliedern lässt sich nicht löschen, nur deaktivieren – er ist dann
         nicht mehr auswählbar, vorhandene Zuordnungen bleiben.</p>
-      ${shown.length ? table(['Kreisverband', { label: 'Nr.', className: 'num' }, 'Ortsverband', { label: 'Mitglieder', className: 'num' }, 'Status', ''],
+      ${geb ? html`<p class="small muted" data-ov-gebiete-info>Gebiet = Stadtteile, deren Mitglieder zum Ortsverband gehören (Vorschlag im Mitglied und
+        „Ortsverbände abgleichen“ in der Mitgliederliste). ${geb.stadtteile.length ? '' : 'Dafür zuerst die amtlichen Adressdaten laden (Reiter „Schalter“).'}</p>
+        ${geb.stadtteile.length && Object.keys(geb.vorschlag || {}).length ? html`<p><button type="button" class="btn small" data-ov-vorschlaege>
+          Gebiete aus den Namen vorschlagen (${Object.keys(geb.vorschlag).length})</button></p>` : ''}` : ''}
+      ${shown.length ? table(['Kreisverband', { label: 'Nr.', className: 'num' }, 'Ortsverband', ...(geb ? ['Gebiet'] : []), { label: 'Mitglieder', className: 'num' }, 'Status', ''],
         shown.map((o) => html`<tr class="${o.active ? '' : 'muted'}"><td>${kvShort(o.kv)}</td><td class="num">${o.number || '—'}</td><td>${o.name}</td>
-          <td class="num">${o.members}</td><td>${o.active ? badge('aktiv', 'ok') : badge('deaktiviert', '')}</td>
+          ${geb ? html`<td data-ov-gebiet="${o.id}">${gebietText(geb, o)}</td>` : ''}<td class="num">${o.members}</td><td>${o.active ? badge('aktiv', 'ok') : badge('deaktiviert', '')}</td>
           <td class="nowrap"><button type="button" class="btn small" data-ov-edit="${o.id}">Bearbeiten</button>
             <button type="button" class="btn small" data-ov-toggle="${o.id}">${o.active ? 'Deaktivieren' : 'Aktivieren'}</button>
             ${o.members ? '' : html`<button type="button" class="btn small ghost" data-ov-delete="${o.id}">Löschen</button>`}</td></tr>`))
@@ -185,8 +190,10 @@ function gliederung() {
     </section></div>`;
 }
 
-function ovDialog(o = null) {
+function ovDialog(o = null, geb = null) {
   const locked = o && o.members > 0;   // Kreisverband nur ohne zugeordnete Mitglieder änderbar
+  const vorher = o ? gebietVon(geb, o.id) : [];
+  const vorschlag = o ? geb?.vorschlag?.[o.id] || [] : [];
   const el = dialog(o ? `Ortsverband bearbeiten · ${ovLabel(o)}` : 'Ortsverband anlegen', html`<form id="ov-form" style="display:flex;flex-direction:column;gap:14px">
     <div class="formgrid">
       <label class="field">Kreisverband<select name="kv" required ${locked ? 'disabled' : ''}>
@@ -196,14 +203,27 @@ function ovDialog(o = null) {
       <label class="field">Nummer<input name="number" inputmode="numeric" maxlength="4" autocomplete="off" value="${o ? o.number : ''}" placeholder="0 = ohne Nummer"></label>
       <label class="field span">Name<input name="name" required maxlength="100" autocomplete="off" value="${o ? o.name : ''}" placeholder="z. B. Blankenese"></label>
     </div>
+    ${geb ? html`<fieldset class="ov-gebiet"><legend>Gebiet (Stadtteile)</legend>
+      <p class="small muted">Mitglieder mit Adresse in diesen Stadtteilen bekommen diesen Ortsverband vorgeschlagen. Ein Stadtteil kann zu mehreren
+        Ortsverbänden gehören – dann wird im Mitglied gewählt.</p>
+      ${vorschlag.length ? html`<p><button type="button" class="btn small" data-gebiet-vorschlag>Vorschlag aus dem Namen: ${vorschlag.join(', ')}</button></p>` : ''}
+      <div data-gebiet-felder>${gebietFelder(geb, o ? o.kv : ovKv, o?.id, new Set(vorher))}</div></fieldset>` : ''}
     <div class="form-actions"><button type="button" class="btn ghost" data-cancel>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></div></form>`);
   const form = el.querySelector('#ov-form');
   el.querySelector('[data-cancel]').onclick = () => el.close();
+  const felder = el.querySelector('[data-gebiet-felder]');
+  const gewaehlt = () => [...form.querySelectorAll('input[name="stadtteil"]:checked')].map((x) => x.value);
+  if (felder && !locked) form.elements.namedItem('kv').onchange = (e) => mount(felder, gebietFelder(geb, e.target.value, o?.id, new Set()));
+  const vorBtn = el.querySelector('[data-gebiet-vorschlag]');
+  if (vorBtn) vorBtn.onclick = () => form.querySelectorAll('input[name="stadtteil"]').forEach((x) => { if (vorschlag.includes(x.value)) x.checked = true; });
   form.onsubmit = (e) => {
     e.preventDefault();
     safe(async () => {
       const f = form.elements;   // form.name wäre der Name des Formulars, nicht das Feld
-      await api('/api/ortsverband', { id: o ? o.id : null, kv: locked ? o.kv : f.namedItem('kv').value, number: f.namedItem('number').value, name: f.namedItem('name').value });
+      const r = await api('/api/ortsverband', { id: o ? o.id : null, kv: locked ? o.kv : f.namedItem('kv').value, number: f.namedItem('number').value, name: f.namedItem('name').value });
+      const neu = gewaehlt().sort();
+      // ohne Adressdaten keine Stadtteile zum Ankreuzen – dann das gespeicherte Gebiet nicht versehentlich leeren
+      if (felder && geb.stadtteile.length && neu.join('|') !== [...vorher].sort().join('|')) await api('/api/ov-gebiet', { id: r.id, stadtteile: neu });
       el.close();
       await refresh();
       toast(o ? 'Ortsverband gespeichert.' : 'Ortsverband angelegt.');
@@ -367,7 +387,8 @@ export async function settings(main) {
   if (!tabs().some(([id]) => id === tab)) tab = tabs()[0][0];   // Reiter ohne Recht: auf den ersten erlaubten
   const status = tab === 'versand' ? await safe(() => api('/api/mail-status')) : null;
   if (!tabs().some(([id]) => id === tab)) tab = 'schalter';
-  const views = { schalter, verein, beitraege, gliederung, versand: (x) => versand(x, status), vorlagen, sicherung, zugang };
+  const gebiete = tab === 'gliederung' ? await safe(() => api('/api/ov-gebiete')) : null;   // Stadtteile je Ortsverband (0.52)
+  const views = { schalter, verein, beitraege, gliederung: () => gliederung(gebiete), versand: (x) => versand(x, status), vorlagen, sicherung, zugang };
   mount(main, html`<div class="page">
     ${pageHead('Verwaltung · Schalter und Stammdaten für Rechnungen, Beiträge, Gliederung und Versand', 'Einstellungen')}
     <div class="tabs" role="tablist" aria-label="Bereich">${tabs().map(([id, label]) => html`
@@ -457,10 +478,11 @@ export async function settings(main) {
     });
   };
   main.querySelector('#ov-kv')?.addEventListener('change', (e) => { ovKv = e.target.value; rerender(); });
-  main.querySelector('#ov-new')?.addEventListener('click', () => ovDialog());
+  main.querySelector('#ov-new')?.addEventListener('click', () => ovDialog(null, gebiete));
   main.querySelector('#ov-import')?.addEventListener('click', importDialog);
   const ovOf = (id) => store.data.ovs.find((o) => o.id === Number(id));
-  main.querySelectorAll('[data-ov-edit]').forEach((b) => (b.onclick = () => ovDialog(ovOf(b.dataset.ovEdit))));
+  main.querySelectorAll('[data-ov-edit]').forEach((b) => (b.onclick = () => ovDialog(ovOf(b.dataset.ovEdit), gebiete)));
+  main.querySelector('[data-ov-vorschlaege]')?.addEventListener('click', () => gebietVorschlaege(gebiete, rerender));
   main.querySelectorAll('[data-ov-toggle]').forEach((b) => (b.onclick = () => safe(async () => {
     const o = ovOf(b.dataset.ovToggle);
     await api('/api/ortsverband-status', { id: o.id, active: !o.active });

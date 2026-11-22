@@ -184,6 +184,14 @@ def vorschau(store, keep, drop, buchhaltung=False):
             neu.update({k: b[k] for k in ('ov_id', 'kv_joined') if not a.get(k) and b.get(k)})
         if b['joined'] < a['joined']:
             neu['joined'] = b['joined']                  # dieselbe Mitgliedschaft: der frühere Eintritt zählt
+        # „Ortsverband fest“ (0.52) nur, wenn der Ortsverband danach der des aufgehenden ist; „geworben von“ nur in derselben Mitgliedschaft
+        if b.get('ov_fest') and not a.get('ov_fest') and neu.get('ov_id', a['ov_id']) == b['ov_id']:
+            neu['ov_fest'] = 1
+        if not a.get('geworben_von') and not a.get('geworben_text'):   # Mitglied oder Text, nie auf sich selbst
+            if b.get('geworben_von') and b['geworben_von'] != keep:
+                neu['geworben_von'] = b['geworben_von']
+            elif b.get('geworben_text') and not b.get('geworben_von'):
+                neu['geworben_text'] = b['geworben_text']
     if b['no_mail'] and not a['no_mail']:
         neu['no_mail'] = 1                               # Postausschluss bleibt bestehen
     if b.get('note') and a['left_on'] and a['left_on'] <= date.today().isoformat():
@@ -241,6 +249,8 @@ def zusammenfuehren(store, keep, drop, actor, buchhaltung=False):
             store.db.execute(f'UPDATE {table} SET member_id=? WHERE member_id=?', (keep, drop))
         store.db.execute('DELETE FROM dues_rates WHERE member_id=?', (drop,))   # Beitragsverlauf: der des bleibenden Mitglieds gilt
         store.db.execute('DELETE FROM mitglieder_keine_doppelten WHERE a=? OR b=?', (drop, drop))
+        store.db.execute('UPDATE members SET geworben_von=? WHERE geworben_von=?', (keep, drop))   # „geworben von“ (0.52) zeigt aufs bleibende
+        store.db.execute('UPDATE members SET geworben_von=NULL WHERE id=? AND geworben_von=?', (keep, keep))   # nie sich selbst
         store.db.execute('DELETE FROM members WHERE id=?', (drop,))
         store.db.execute('INSERT OR IGNORE INTO deleted_members(id,deleted) VALUES(?,?)', (drop, datetime.now().isoformat(timespec='seconds')))
         store.audit(actor, 'Mitglieder zusammengeführt', {'id': keep, 'number': v['bleibt']['number'],   # id: im Verlauf des bleibenden Mitglieds

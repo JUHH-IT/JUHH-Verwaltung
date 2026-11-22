@@ -21,13 +21,13 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Einstellungen ändern:** `POST /api/mail-check`, `POST /api/mail-forget`, `POST /api/mail-password` ⚠, `POST /api/mail-test`, `POST /api/settings` ⚠
 
-**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`, `POST /api/zusammenfuehren-vorschau`
+**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/ov-abgleich`, `GET /api/ov-gebiete`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`, `POST /api/zusammenfuehren-vorschau`
 
 **Mitgliederverwaltung lesen oder Buchhaltung lesen:** `GET /api/beitrag-nach-alter`
 
 **Mitgliederverwaltung lesen oder Einstellungen lesen oder Benutzer und Rollen lesen:** `GET /api/adressen-status`
 
-**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/kein-duplikat`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-notiz`, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`, `POST /api/zusammenfuehren` ⚠
+**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/kein-duplikat`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-notiz`, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`, `POST /api/ov-abgleich` ⚠, `POST /api/ov-gebiet`, `POST /api/zusammenfuehren` ⚠
 
 **Mitgliederverwaltung ändern oder Benutzer und Rollen ändern:** `POST /api/adressen-laden`
 
@@ -57,11 +57,12 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/darstellung-start.js`
 - `static/js/darstellung.js`: bindDarstellung, darstellung, darstellungDialog, darstellungWahl, setDarstellung
 - `static/js/format.js`: bookingKind, date, dateTime, eur, findIban, parseCents, plain, shortDate, signed, toInput, todayIso, weekdayDate
-- `static/js/gliederung.js`: bindKvOv, kvLabel, kvOvFields, memberKvs, ovById, ovLabel, ovsOf
+- `static/js/gliederung.js`: bindKvOv, kvLabel, kvOvFields, memberKvs, ovById, ovLabel, ovsOf, setKvOv
 - `static/js/html.js`: esc, html, mount, raw
 - `static/js/main.js` → /api/bestaetigen, /api/keycloak, /api/login, /api/logout, /api/status
 - `static/js/member-picker.js`: CASE_REASON, EXTERNAL_REASON, addressLine, caseLabel, externalLabel, fold, matchMembers, membersLabel, membersPayload, pickMembers, sortName, suggestMembers
 - `static/js/mitglieder-listen.js`: anschriftVollstaendig, fehlt, gespeichert, isActive, listen, speichern
+- `static/js/ov-gebiete.js`: gebietFelder, gebietText, gebietVon, gebietVorschlaege, gebieteDialog → /api/ov-gebiet, /api/ov-gebiete
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
@@ -86,13 +87,14 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/sepa-mandat-vergessen
 - `static/js/views/mitglieder-ueberblick.js`: mitgliederUeberblick → /api/doppelte, /api/regelwerk
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
+- `static/js/views/ov-abgleich.js`: ovAbgleichDialog → /api/ov-abgleich
 - `static/js/views/overview.js`: overview → /api/monatsbericht.pdf, /api/pruefpaket.zip
 - `static/js/views/reconcile.js`: reconcileDialog → /api/abgleich
 - `static/js/views/regelwerk.js`: regelwerk → /api/regelwerk
 - `static/js/views/rpj.js`: assignDialog, projectDialog, rpj → /api/rpj, /api/rpj-abruf, /api/rpj-abruf-loeschen, /api/rpj-buchungen.csv, /api/rpj-import, /api/rpj-import-vorschau, /api/rpj-jahr, /api/rpj-offen, /api/rpj-projekt, /api/rpj-projekt-loeschen, /api/rpj-projekt.pdf, /api/rpj-vorlage.csv, /api/rpj-zuordnen, /api/rpj-zuordnen-mehrere, /api/rpj.csv, /api/rpj.pdf
 - `static/js/views/sepa-datei.js`: sepaFileDialog → /api/sepa-aufteilen, /api/sepa-begleitzettel, /api/sepa-vorschau
 - `static/js/views/sepa.js`: activeMandate, bindMandateSection, mandateSection, sepaDialog → /api/debit-notice, /api/mandate, /api/mandate-revoke, /api/mandate.pdf, /api/sepa, /api/sepa-batch, /api/sepa-batch-status, /api/sepa-debit-reject, /api/sepa-debit-remove, /api/sepa.xml
-- `static/js/views/settings.js`: settings → /api/backup, /api/gliederung-import, /api/gliederung-vorschau, /api/keycloak, /api/kv-nummern, /api/mail-check, /api/mail-forget, /api/mail-password, /api/mail-status, /api/mail-test, /api/mandate.pdf, /api/ortsverband, /api/ortsverband-loeschen, /api/ortsverband-status, /api/password, /api/preview.pdf, /api/settings
+- `static/js/views/settings.js`: settings → /api/backup, /api/gliederung-import, /api/gliederung-vorschau, /api/keycloak, /api/kv-nummern, /api/mail-check, /api/mail-forget, /api/mail-password, /api/mail-status, /api/mail-test, /api/mandate.pdf, /api/ortsverband, /api/ortsverband-loeschen, /api/ortsverband-status, /api/ov-gebiet, /api/ov-gebiete, /api/password, /api/preview.pdf, /api/settings
 - `static/js/views/sicherheit.js`: sicherheit → /api/dateipruefung, /api/notfall-an, /api/notfall-aus, /api/schutz, /api/schutz-einstellungen, /api/schutz-freigeben, /api/schutz-liste-laden, /api/schutz-mitschnitt, /api/schutz-sperren, /api/sicherheit, /api/sicherheit-ereignisse, /api/sicherheit-ereignisse.csv, /api/sicherheit-verwaltung, /api/sitzung-beenden, /api/sperre-aufheben, /api/wartung
 - `static/js/views/wahlrecht.js`: wahlrecht → /api/wahlrecht, /api/wahlrecht.csv, /api/wahlrecht.pdf
 
@@ -176,7 +178,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -280,7 +282,7 @@ Mitglieder-Stammdaten: Vorname/Nachname und Anschrift in Feldern, Prüfung, Mitg
 
 Tabellen: `deleted_members`, `dues_rates`
 
-Tests: test_doppelte.py, test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_pruefung.py, test_wahlrecht.py
+Tests: test_doppelte.py, test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_ovabgleich.py, test_pruefung.py, test_wahlrecht.py
 
 - `next_id(db)` – Nächste Mitglieds-id: nie eine schon einmal vergebene (auch nicht die eines gelöschten Mitglieds).
 - `insert(db, v)` – Mitglied mit geprüften Werten (values) anlegen; liefert die id.
@@ -330,7 +332,7 @@ Doppelte Mitglieder finden (ab 0.45, Wunsch Lennert Gust 21.11.2026: „eine Fun
 
 Tabellen: `mitglieder_keine_doppelten`
 
-Tests: test_doppelte.py
+Tests: test_doppelte.py, test_ovabgleich.py
 
 - `init(db)`
 - `paare(members)` – {(a, b): {Grund, …}} für alle Paare möglicher Doppelter (a < b); members: Zeilen mit id, name, first_name, last_name, birth,
@@ -346,7 +348,7 @@ Gliederung: Kreisverbände (mit Nummer der CDU-Mitgliederverwaltung) und Ortsver
 
 Tabellen: `ortsverbaende`
 
-Tests: test_auswertung.py, test_doppelte.py, test_gliederung.py, test_opliste.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_doppelte.py, test_gliederung.py, test_opliste.py, test_ovabgleich.py, test_wahlrecht.py
 
 - `digits(text)`
 - `init(db)` – Tabelle der Ortsverbände und Nummer der Mitgliederverwaltung je Kreisverband (additiv).
@@ -369,6 +371,24 @@ Tests: test_auswertung.py, test_doppelte.py, test_gliederung.py, test_opliste.py
 - `map_header(cells)`
 - `preview(store, raw, filename, password=…)` – Ortsverbände aus einer Datei wie dem Export der Mitgliederverwaltung (eine Zeile je Mitglied oder je Ortsverband):
 - `apply_import(store, prev, actor)` – Neue Ortsverbände der Vorschau anlegen (vorhandene bleiben unverändert) – alles oder nichts.
+
+### ovabgleich.py
+
+Ortsverband nach der Adresse (ab 0.52, Wunsch Lennert Gust 22.11.2026): Gebiete der Ortsverbände, Vorschlag je Anschrift und
+
+Tabellen: `ortsverband_gebiete`
+
+Tests: test_ovabgleich.py
+
+- `init(db)` – Tabelle der Gebiete (additiv): je Ortsverband die Stadtteile – Namen wie im amtlichen Adressbestand.
+- `gebiete(db)` – {ov_id: [Stadtteil, …]} – nur Ortsverbände mit Gebiet.
+- `stadtteile(data_dir)` – Stadtteile aus den amtlichen Adressdaten [{'name', 'bezirk', 'kv'}]; ohne Adressdaten leer.
+- `namensvorschlag(ovs, teile, vorhanden)` – Gebiet aus dem Namen für aktive Ortsverbände ohne Gebiet – nur ein Vorschlag zum Bestätigen. {ov_id: [Stadtteil]}
+- `gebiet_speichern(store, data_dir, ov_id, namen, actor)` – Stadtteile eines Ortsverbands festlegen (ersetzt die bisherigen). Mit Adressdaten muss jeder Stadtteil im Bezirk des
+- `ovs_fuer(db, kv, stadtteil)` – Aktive Ortsverbände eines Kreisverbands, zu deren Gebiet der Stadtteil gehört (Vorschlag im Mitgliedsdialog und im Abgleich).
+- `abgleich(store, data_dir, today=…)` – Alle aktiven Mitglieder mit dem Ortsverband nach ihrer Adresse vergleichen.
+- `auswahl(aenderungen, fest)` – Eingabe der Übernahme prüfen (vor der Sicherung): [{id, ov, ov_alt, kv_alt}] und [id]. ov_alt/kv_alt = Stand, den die Person
+- `uebernehmen(store, data_dir, aenderungen, fest, actor, today=…)` – Ausgewählte Vorschläge übernehmen – der Kreisverband folgt dem Ortsverband – und Mitglieder als „Ortsverband fest“ markieren.
 
 ### klaerfaelle.py
 
@@ -423,7 +443,7 @@ Tests: test_karte.py
 
 Amtliche Hamburger Adressen (ab 0.32) – Grundlage für die Karte und die Adressprüfung beim Mitglied.
 
-Tests: test_http.py, test_karte.py
+Tests: test_http.py, test_karte.py, test_ovabgleich.py
 
 - `norm_street(name)` – Straßenname zum Vergleichen: „Musterstr.“, „Muster Straße“ und „Musterstrasse“ sind dasselbe.
 - `split_street(text)` – „Musterstraße 12 a“ → ('Musterstraße', 12, 'a'); ohne Hausnummer (name, None, '').
@@ -447,6 +467,7 @@ Tests: test_http.py, test_karte.py
   - `Index.norms()`
   - `Index.places()` – Namen der Bezirke und Stadtteile (als Ort in der Anschrift gilt das als Hamburg), auch ohne „Hamburg-“ davor.
   - `Index.zips()`
+  - `Index.stadtteile()` – Stadtteile des Bestands mit Bezirk und Kreisverband, sortiert: [{'name', 'bezirk', 'kv'}] (Gebiete der Ortsverbände, ab 0.52).
   - `Index.lookup(street, plz=…, city=…)` – Anschrift prüfen. status: 'haus' (Hausnummer gefunden), 'strasse' (Straße gefunden, Hausnummer nicht – Lage ungefähr),
   - `Index.streets(query, limit=…)` – Straßensuche für die Karte: Namen, die mit dem Suchtext beginnen (sonst: ihn enthalten), mit Lage.
 - `index(data_dir)`

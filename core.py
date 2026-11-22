@@ -69,6 +69,7 @@ class Store:
         import mitglieder
         mitglieder.init(self.db)   # Vorname/Nachname, Straße/PLZ/Ort (vorhandene Mitglieder einmalig aufgeteilt)
         __import__('doppelte').init(self.db)   # bestätigte „kein Duplikat“-Paare (0.45)
+        __import__('ovabgleich').init(self.db)   # Gebiete der Ortsverbände (Stadtteile) für den Ortsverband nach Adresse (0.52)
         gliederung.link_legacy(self.db)   # Ortsverband-Texte aus 0.24 einmalig in Ortsverbände überführen
         import beitraege
         beitraege.init(self.db)    # Zuordnung von 8100-Zahlungen zu Mitgliedern
@@ -159,9 +160,12 @@ class Store:
                 self.db.execute('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(k,v))
             self.audit(actor,'Stammdaten geändert',{k:(v if k not in stammdaten.TEMPLATE_KEYS else '…') for k,v in values.items()})
 
-    def _member_values(self,data,current_ov=None):
+    def _member_values(self,data,current_ov=None,mid=None):
         import mitglieder,gliederung   # deaktivierter Ortsverband nur, wenn er schon der bisherige des Mitglieds ist
-        return mitglieder.values(data,{k for k,_ in KVS},gliederung.ov_map(self.db),inactive={current_ov} if current_ov else set())
+        v=mitglieder.values(data,{k for k,_ in KVS},gliederung.ov_map(self.db),inactive={current_ov} if current_ov else set())
+        if v['geworben_von'] is not None and (v['geworben_von']==mid or not self.db.execute('SELECT 1 FROM members WHERE id=?',(v['geworben_von'],)).fetchone()):
+            raise ValueError('„Geworben von“: Mitglied nicht gefunden – bitte neu auswählen.')
+        return v
 
     def member(self,data,actor):
         from mitglieder import STORED
@@ -176,7 +180,7 @@ class Store:
         old=self.db.execute('SELECT * FROM members WHERE id=?',(mid,)).fetchone()
         if not old: raise ValueError('Mitglied nicht gefunden.')
         from mitglieder import STORED,EXTRA
-        v=self._member_values({**{k:old[k] for k in EXTRA if k not in data},**data},old['ov_id'])   # nicht mitgeschickte Zusatzangaben bleiben
+        v=self._member_values({**{k:old[k] for k in EXTRA if k not in data},**data},old['ov_id'],mid)   # nicht mitgeschickte Zusatzangaben bleiben
         changed={k:[old[k],v[k]] for k in STORED if old[k]!=v[k]}
         if not changed: return mid
         with self.db:

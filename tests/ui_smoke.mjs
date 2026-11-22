@@ -234,8 +234,9 @@ try {
   await page.click('#ov-confirm');
   check((await toast()).includes('2 Ortsverbände angelegt'), 'Gliederung importiert');
   check((await page.locator('main table').last().textContent()).includes('Testtal'), 'Ortsverband aus dem Import in der Liste');
-  await page.selectOption('#ov-kv', '5300');
-  check((await page.locator('main table').last().locator('tbody tr').count()) === 1, 'Ortsverbände nach Kreisverband filtern');
+  await page.selectOption('#ov-kv', '5300');   // ab 0.52 lädt der Reiter dazu die Gebiete – neu gezeichnet wird nach der Antwort
+  check(await page.waitForFunction(() => [...document.querySelectorAll('main table')].pop()?.querySelectorAll('tbody tr').length === 1, null, { timeout: 5000 })
+    .then(() => true, () => false), 'Ortsverbände nach Kreisverband filtern');
   await shot('12b-gliederung');
 
   // Mitglied anlegen und bearbeiten
@@ -1597,6 +1598,95 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check(tiles.length === before && (await page.locator('main .map-side').textContent()).includes('Kartenhintergrund ist ausgeschaltet'), 'Schalter aus: keine Kartenbilder aus dem Netz');
   await shot('46-karte-ohne-hintergrund');
   check(outside.length === 0, 'Keine Anfrage an fremde Adressen' + (outside.length ? ': ' + outside.slice(0, 3).join(' | ') : ''));
+
+  // 0.52: Ortsverband nach Adresse – Gebiet festlegen, abgleichen, Vorschlag im neuen Mitglied, „geworben von“ (erfundene Mitglieder)
+  await page.click('[data-page=settings]');
+  await page.click('[data-tab=gliederung]');
+  await page.waitForSelector('main [data-ov-gebiete-info]');
+  await page.selectOption('#ov-kv', '5100');
+  await page.locator('main tbody tr', { hasText: 'Testdorf' }).locator('[data-ov-edit]').click();
+  await page.waitForSelector('#ov-form input[name=stadtteil][value=Ottensen]');
+  check(await page.locator('#ov-form input[name=stadtteil][value="Eimsbüttel"]').count() === 0, 'Gebiet: nur Stadtteile des eigenen Kreisverbands');
+  await page.check('#ov-form input[name=stadtteil][value=Ottensen]');
+  await shot('47-ov-gebiet');
+  await page.click('#ov-form button[type=submit]');
+  await toast();
+  check(await page.waitForFunction(() => [...document.querySelectorAll('main [data-ov-gebiet]')].some((td) => td.textContent.includes('Ottensen')), null, { timeout: 5000 })
+    .then(() => true, () => false), 'Gebiet gespeichert und in der Tabelle der Ortsverbände');
+  const ova = await page.evaluate(async () => {
+    const { csrf } = await (await fetch('/api/status')).json();
+    const add = async (number, street, zip, city, kv) => (await (await fetch('/api/member', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ number, first_name: 'Ole', last_name: `Abgleich${number}`, birth: '2001-01-01', joined: '2025-01-01', kv, street, zip, city,
+        mobile: '0151 00000042', gender: 'D' }) })).json()).id;
+    const data = await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json();
+    return { gleich: await add('O-1', 'Musterweg 4', '20000', 'Hamburg', '5100'), anders: await add('O-2', 'Musterweg 5', '20000', 'Hamburg', '5300'),
+      kiel: await add('O-3', 'Testgasse 1', '24103', 'Kiel', '5100'), testdorf: data.ovs.find((o) => o.name === 'Testdorf').id };
+  });
+  await page.reload();
+  await page.waitForSelector('.sidebar');
+  await page.click('[data-page=members]');
+  await page.click('main [data-ov-abgleich]');
+  await page.waitForSelector('#modal [data-ova-form]');
+  // Gebiete auch aus der Mitgliederverwaltung (Prüfbefund 0.52: der Landesmitgliederbeauftragte hat kein Einstellungsrecht)
+  await page.click('#modal [data-ova-gliederung]');
+  check(await page.waitForFunction(() => [...document.querySelectorAll('#modal [data-gebiet-zelle]')].some((td) => td.textContent.includes('Ottensen')), null, { timeout: 5000 })
+    .then(() => true, () => false), 'Abgleich → Gebiete der Ortsverbände (ohne Einstellungen)');
+  await page.click('#modal [data-gebiete-zurueck]');
+  await page.waitForSelector('#modal [data-ova-form]');
+  const wahl = (id) => page.inputValue(`#modal [data-ova-wahl="${id}"]`);
+  check(await wahl(ova.gleich) === `ov:${ova.testdorf}`, 'Abgleich: Vorschlag im selben Kreisverband vorausgewählt');
+  check(await wahl(ova.anders) === '' && (await page.locator(`#modal [data-ova-row="${ova.anders}"]`).textContent()).includes('anderer Kreisverband'),
+    'Abgleich: Wechsel des Kreisverbands markiert und nicht vorausgewählt');
+  check((await page.locator(`#modal [data-ova-fehler] [data-ova-row="${ova.kiel}"]`).textContent()).includes('außerhalb Hamburgs'), 'Abgleich: Adresse außerhalb Hamburgs unter „Adresse prüfen“');
+  await page.click(`#modal [data-ova-edit="${ova.kiel}"]`);   // aus dem Abgleich bearbeiten: Angaben, die nur in der Akte stehen, bleiben erhalten
+  await page.waitForSelector('#member-form');
+  check(await page.inputValue('#member-form input[name=mobile]') === '0151 00000042', 'Abgleich → Bearbeiten: Dialog mit allen Angaben (auch Handy)');
+  await page.click('#member-form button[type=submit]');
+  await page.waitForSelector('#modal [data-ova-form]');
+  check(await page.evaluate(async (id) => (await (await fetch(`/api/member-account?id=${id}`)).json()).member.mobile === '0151 00000042', ova.kiel),
+    'Abgleich → Bearbeiten → Speichern: Handy bleibt erhalten');
+  await page.selectOption(`#modal [data-ova-wahl="${ova.kiel}"]`, 'fest');
+  await shot('48-ov-abgleich');
+  await page.click('#modal [data-ova-ok]');
+  const ovaToast = await toast();
+  check(/\d+ Mitglieder? geändert, 1 mit festem Ortsverband/.test(ovaToast) && ovaToast.includes('Sicherung vorher'), `Abgleich übernommen, vorher gesichert (${ovaToast})`);
+  check(await page.evaluate(async (o) => {
+    const ms = (await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json()).members;
+    const by = (id) => ms.find((m) => m.id === id);
+    return by(o.gleich).ov_id === o.testdorf && by(o.anders).kv === '5300' && !by(o.anders).ov_id && by(o.kiel).ov_fest === 1;
+  }, ova), 'Abgleich: nur die Auswahl übernommen (Wechsel des Kreisverbands nicht), „Ortsverband fest“ gesetzt');
+  await page.waitForFunction((id) => document.querySelector('#modal [data-ova-form]') && !document.querySelector(`#modal [data-ova-row="${id}"]`), ova.gleich, { timeout: 5000 }).catch(() => {});
+  check(await page.locator(`#modal [data-ova-row="${ova.gleich}"], #modal [data-ova-row="${ova.kiel}"]`).count() === 0
+    && await page.locator(`#modal [data-ova-row="${ova.anders}"]`).count() === 1, 'Abgleich danach: übernommene und feste Mitglieder sind weg, der Rest bleibt');
+  await page.setViewportSize({ width: 390, height: 844 });
+  check(await page.evaluate(() => document.querySelector('#modal').scrollWidth - document.querySelector('#modal').clientWidth) <= 0, 'Abgleich auf dem Handy ohne seitliches Scrollen');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await dialogClose();
+  await page.click('[data-new]');
+  await page.fill('#member-form input[name=number]', 'O-4');
+  await page.fill('#member-form input[name=first_name]', 'Nele');
+  await page.fill('#member-form input[name=last_name]', 'Neumitglied');
+  await page.fill('#member-form input[name=birth]', '2002-02-02');
+  await page.fill('#member-form input[name=joined]', '2026-01-01');
+  await page.fill('#member-form input[name=street]', 'Musterweg 6');
+  await page.fill('#member-form input[name=zip]', '20000');
+  await page.fill('#member-form input[name=city]', 'Hamburg');
+  await page.locator('#member-form input[name=street]').focus();
+  check(await page.waitForFunction(() => (document.querySelector('#member-form [data-ov-vorschlag]')?.textContent || '').includes('vorausgewählt'), null, { timeout: 6000 })
+    .then(() => true, () => false) && await page.inputValue('#member-form select[name=kv]') === '5100'
+    && await page.inputValue('#member-form select[name=ov_id]') === String(ova.testdorf), 'Neues Mitglied: Kreis- und Ortsverband nach der Adresse vorausgewählt');
+  await page.click('#member-form [data-werber-pick]');
+  await page.fill('#preview #member-query', 'AbgleichO-1');
+  await page.click('#preview [data-member]');
+  check((await page.locator('#member-form [data-werber-name]').textContent()).includes('O-1') && await page.locator('#member-form input[name=geworben_text]').isHidden(),
+    'Geworben von: Mitglied ausgewählt, Freitext ausgeblendet');
+  await shot('49-mitglied-ov-vorschlag');
+  await page.click('#member-form button[type=submit]');
+  check((await toast()).includes('angelegt'), 'Neumitglied mit Vorschlag angelegt');
+  check(await page.evaluate(async (o) => {
+    const m = (await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json()).members.find((x) => x.number === 'O-4');
+    return m.ov_id === o.testdorf && m.geworben_von === o.gleich;
+  }, ova), 'Neumitglied: Ortsverband und „geworben von“ gespeichert');
 
   // Kleiner Bildschirm
   await page.setViewportSize({ width: 390, height: 844 });

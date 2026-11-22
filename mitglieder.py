@@ -28,8 +28,9 @@ from formate import email_address, euro, german_date, iso, money
 # Mitgliederverwaltung folgen wird“). Alter und Jubiläumsjahre der Datei werden nicht gespeichert – sie ergeben sich aus Geburt und Eintritt.
 # Ortsverband ab 0.27 über ov_id (Stammdaten gliederung.py); die Textspalten ov_number/ov_name aus 0.24 bleiben nur in der Datenbank.
 TEXTS = ('salutation', 'letter_salutation', 'letter_salutation2', 'title', 'name_prefix', 'name_suffix', 'gender', 'nationality', 'clubs',
-         'club', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method', 'address_extra2', 'left_reason')   # left_reason ab 0.37
-EXTRA = TEXTS + ('kv_joined', 'external_balance', 'dues_free', 'guest', 'no_mail', 'email_work', 'ov_id')
+         'club', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method', 'address_extra2', 'left_reason',   # left_reason ab 0.37
+         'geworben_text')   # ab 0.52: „geworben von“ als Freitext, wenn die Person kein Mitglied ist
+EXTRA = TEXTS + ('kv_joined', 'external_balance', 'dues_free', 'guest', 'no_mail', 'email_work', 'ov_id', 'ov_fest', 'geworben_von')
 FIELDS = ('number', 'first_name', 'last_name', 'address_extra', 'street', 'zip', 'city', 'country', 'email', 'birth', 'joined', 'left_on', 'kv',
           'dues') + EXTRA
 LEGACY = ('ov_number', 'ov_name')
@@ -43,11 +44,12 @@ LABELS = {'number': 'Mitgliedsnummer', 'first_name': 'Vorname', 'last_name': 'Na
           'mobile_work': 'Handy dienstlich', 'email_work': 'E-Mail dienstlich', 'payment_method': 'Zahlungsart',
           'address_extra2': 'Adresszusatz 2 (Name 3)', 'kv_joined': 'Eintritt Kreisverband', 'external_balance': 'Kontostand Mitgliederverwaltung',
           'dues_free': 'Beitragsfrei', 'guest': 'Gastmitglied', 'no_mail': 'Postausschluss', 'ov_id': 'Ortsverband',
+          'ov_fest': 'Ortsverband fest (nicht nach Adresse)', 'geworben_von': 'Geworben von', 'geworben_text': 'Geworben von (kein Mitglied)',
           # nur Importspalten
           'kv_number': 'Kreisverband (Nr.)', 'ov_number': 'Ortsverband (Nr.)', 'ov_name': 'Ortsbezeichnung'}
 MAX_TEXT = 200
 PRIVATE = ('gender', 'nationality', 'phone', 'phone_work', 'mobile', 'mobile_work', 'email_work', 'letter_salutation', 'letter_salutation2',
-           'payment_method', 'external_balance', 'left_reason', 'note') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
+           'payment_method', 'external_balance', 'left_reason', 'note', 'geworben_text') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
 PARTICLES = {'von', 'van', 'de', 'der', 'den', 'zu', 'vom', 'zum', 'zur', 'ten', 'ter', 'du', 'da', 'di', 'del', 'la', 'le', 'dos'}
 MAX_ROWS = 5000
 
@@ -72,9 +74,10 @@ def init(db):
         db.execute(f'ALTER TABLE members ADD COLUMN {col} TEXT')
     extra = {**{col: 'TEXT' for col in TEXTS + LEGACY + ('kv_joined', 'email_work', 'note')}, 'external_balance': 'INTEGER',
              'dues_free': 'INTEGER NOT NULL DEFAULT 0 CHECK(dues_free IN (0,1))', 'guest': 'INTEGER NOT NULL DEFAULT 0 CHECK(guest IN (0,1))',
-             'no_mail': 'INTEGER NOT NULL DEFAULT 0 CHECK(no_mail IN (0,1))', 'ov_id': 'INTEGER REFERENCES ortsverbaende(id)'}
+             'no_mail': 'INTEGER NOT NULL DEFAULT 0 CHECK(no_mail IN (0,1))', 'ov_id': 'INTEGER REFERENCES ortsverbaende(id)',
+             'ov_fest': 'INTEGER NOT NULL DEFAULT 0 CHECK(ov_fest IN (0,1))', 'geworben_von': 'INTEGER REFERENCES members(id)'}   # ab 0.52
     more = [col for col in extra if col not in cols]
-    for col in more:                              # ab 0.24 bzw. 0.27: Angaben der Mitgliederverwaltung (additiv)
+    for col in more:                              # ab 0.24 bzw. 0.27 (Mitgliederverwaltung), 0.52 (Ortsverband fest, geworben von) – additiv
         db.execute(f'ALTER TABLE members ADD COLUMN {col} {extra[col]}')
     db.execute('CREATE TABLE IF NOT EXISTS dues_rates(member_id INTEGER NOT NULL REFERENCES members(id),valid_from INTEGER NOT NULL,'
                'amount INTEGER CHECK(amount IS NULL OR amount>=0),created TEXT NOT NULL,PRIMARY KEY(member_id,valid_from))')
@@ -254,7 +257,7 @@ def verlauf(store, member_id, limit=50):
         detail = json.loads(raw or '{}')
         text = action
         if action == 'Mitglied geändert' and detail.get('fields'):
-            text = 'Geändert: ' + ', '.join(LABELS.get(f, f) for f in detail['fields'])
+            text = 'Geändert: ' + ', '.join(LABELS.get(f, f) for f in detail['fields']) + (f" ({detail['grund']})" if detail.get('grund') else '')
         elif action == 'Austritt eingetragen' and (detail.get('nachher') or {}).get('austritt'):
             text = f"Austritt zum {german_date(detail['nachher']['austritt'])} eingetragen"
         elif action == 'Notiz zum Mitglied geändert':
@@ -277,12 +280,17 @@ def angaben(store, m):
     out = []
     for key, label in LABELS.items():
         value = m.get(key)
-        if key in ('kv_number', 'ov_number', 'ov_name') or value is None or value == '' or (key in ('dues_free', 'guest', 'no_mail') and not value):
+        if key in ('kv_number', 'ov_number', 'ov_name') or value is None or value == '' or (key in ('dues_free', 'guest', 'no_mail', 'ov_fest') and not value):
             continue
         if key in ('birth', 'joined', 'left_on', 'kv_joined'):
             value = german_date(value)
-        elif key in ('dues_free', 'guest', 'no_mail'):
+        elif key in ('dues_free', 'guest', 'no_mail', 'ov_fest'):
             value = 'ja'
+        elif key == 'geworben_von':
+            w = store.db.execute('SELECT name,number FROM members WHERE id=?', (value,)).fetchone()
+            if not w:
+                continue
+            value = f"{w['name']} ({w['number']})"
         elif key in ('dues', 'external_balance'):
             value = euro(value)
         elif key == 'kv':
@@ -395,6 +403,16 @@ def values(data, kvs, ovs=None, inactive=None):
     v['external_balance'] = raw if isinstance(raw, int) and not isinstance(raw, bool) else (money(_clean(raw)) if _clean(raw) else None)
     v['dues_free'], v['guest'] = flag(data.get('dues_free'), 'Beitragsfrei'), flag(data.get('guest'), 'Gastmitglied')
     v['no_mail'] = flag(data.get('no_mail'), 'Postausschluss')
+    v['ov_fest'] = flag(data.get('ov_fest'), 'Ortsverband fest')
+    werber = data.get('geworben_von')   # Kennung eines Mitglieds; ob es das gibt, prüft core (Datenbank)
+    if werber in (None, '', 0, '0'):
+        v['geworben_von'] = None
+    elif isinstance(werber, bool) or not re.fullmatch(r'[0-9]{1,9}', str(werber).strip()):
+        raise ValueError('„Geworben von“ ungültig – bitte ein Mitglied auswählen.')
+    else:
+        v['geworben_von'] = int(str(werber).strip())
+    if v['geworben_von'] is not None:
+        v['geworben_text'] = None                 # entweder ein Mitglied oder ein Freitext
     v['country'] = country(v['country']) or ''   # Inland bzw. Bundesland: kein Land in der Anschrift
     for k in ('address_extra', 'zip', 'city', 'country'):
         v[k] = v[k] or None
@@ -700,7 +718,7 @@ def preview(store, raw, filename, password=None):
             data['kv'], kv_note, kv_error = None, '', str(e)
         if kv_note:
             warnings.append(kv_note)
-        item = {'row_no': row_no, 'action': 'error', 'error': None, 'warning': '', 'changes': [], 'new_ov': None}
+        item = {'row_no': row_no, 'action': 'error', 'error': None, 'warning': '', 'changes': [], 'new_ov': None, 'ov_hinweis': ''}
         club = data.get('club')
         if club and _fold(club) not in ('ju', 'jungeunion', 'jungeunionhamburg'):
             warnings.append(f'Verein laut Datei „{club[:20]}“ – nicht Junge Union, bitte prüfen.')
@@ -732,6 +750,9 @@ def preview(store, raw, filename, password=None):
             elif merged.get('ov_id') and (ov_by_id.get(merged['ov_id']) or {}).get('kv') != merged['kv']:
                 merged['ov_id'] = None
                 warnings.append('Ortsverband entfällt: Kreisverband laut Datei ist ein anderer.')
+            if old and old['ov_id'] and (merged.get('ov_id') != old['ov_id'] or item.get('new_ov')):   # ab 0.52: die Datei gilt (Entscheidung
+                item['ov_hinweis'] = ('Ortsverband laut Datei ersetzt den im Programm' + (' (dort „Ortsverband fest“)' if old['ov_fest'] else '')
+                                      + '.')   # 22.11.2026) – nur ein Hinweis: die Zeile bleibt vorausgewählt, damit die übrigen Änderungen nicht liegen bleiben
             if merged.get('email_work'):
                 try:
                     email_address(merged['email_work'])
@@ -781,6 +802,7 @@ def preview(store, raw, filename, password=None):
     extra = [label for f, label in (('birth_day', 'Geburtsdatum'), ('zip_city', 'PLZ/Ort')) if f in mapping]
     return {'filename': filename, 'columns': [LABELS.get(f, f) for f in mapping if f in LABELS] + (['Name'] if 'full_name' in mapping else []) + extra,
             'rows': out, 'counts': counts, 'guests': sum(1 for r in out if (r.get('values') or {}).get('guest')),
+            'ov_ersetzt': sum(1 for r in out if r['ov_hinweis'] and r['action'] == 'update'),
             'missing': sorted(missing, key=lambda m: (m['kv'], m['name'])),
             'new_ovs': sorted(new_ovs.values(), key=lambda o: (o['kv'], o['number'] == 0, o['number'], gliederung.fold(o['name'])))}
 
@@ -873,6 +895,7 @@ def delete(store, member_id, actor, arrears_ok=False):
         for table in OWNED:
             if table in tables:
                 store.db.execute(f'DELETE FROM {table} WHERE member_id=?', (member_id,))
+        store.db.execute('UPDATE members SET geworben_von=NULL WHERE geworben_von=?', (member_id,))   # Verweis „geworben von“ entfällt
         store.db.execute('DELETE FROM members WHERE id=?', (member_id,))
         store.db.execute('INSERT OR IGNORE INTO deleted_members(id,deleted) VALUES(?,?)', (member_id, datetime.now().isoformat(timespec='seconds')))
         store.audit(actor, 'Mitglied gelöscht', {'id': member_id, 'number': m['number'], 'rueckstand_bestaetigt': arrears_ok is True})
