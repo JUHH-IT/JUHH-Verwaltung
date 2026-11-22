@@ -32,6 +32,7 @@ ARTEN = {
     'notfall_aus': 'Notfall beendet',
     'wartung_an': 'Wartung eingeschaltet',
     'wartung_aus': 'Wartung ausgeschaltet',
+    'wartung_text': 'Wartungshinweis geändert',   # ab 0.51: wer den Text geändert hat, den alle Gesperrten sehen (ohne den Text)
     'sicherung': 'Sicherung heruntergeladen',
     'dateipruefung': 'Dateiprüfung',
     # Abwehr (schutz.py, ab 0.39)
@@ -119,14 +120,28 @@ def notfall_aus(db, actor, geraet=''):
     ereignis(db, 'notfall_aus', actor, geraet, {'seit': z['seit'], 'von': z['von']})
 
 
-def wartung(db, actor, an, text='', geraet=''):
+def wartung(db, actor, an, text='', geraet='', nur_text=False):
+    """Wartung ein- oder ausschalten bzw. mit nur_text den Hinweis einer laufenden Wartung ändern (Beginn und Auslöser bleiben).
+    Veraltete Dialoge ändern nie still den Zustand: `nur_text` ohne laufende Wartung und `an` bei schon laufender Wartung sind Fehler."""
+    text = ' '.join(str(text or '').split())[:300]
     with db:
         db.execute('BEGIN IMMEDIATE')
-        aktiv = bool(_lesen(db, 'wartung'))
-        if an == aktiv:
+        aktiv = _lesen(db, 'wartung')
+        if nur_text and not aktiv:
+            raise ValueError('Die Wartung läuft nicht mehr – der Hinweis wurde nicht gespeichert.')
+        if an and aktiv and not nur_text:
+            raise ValueError('Die Wartung läuft bereits – den Hinweis über „Wartung“ ändern.')
+        if nur_text and aktiv:
+            if aktiv.get('text', '') == text:
+                return
+            _schreiben(db, 'wartung', {**aktiv, 'text': text})
+            art = 'wartung_text'
+        elif not an and not aktiv:
             return
-        _schreiben(db, 'wartung', {'seit': _jetzt(), 'von': actor, 'text': ' '.join(str(text or '').split())[:300]} if an else None)
-    ereignis(db, 'wartung_an' if an else 'wartung_aus', actor, geraet)
+        else:
+            _schreiben(db, 'wartung', {'seit': _jetzt(), 'von': actor, 'text': text} if an else None)
+            art = 'wartung_an' if an else 'wartung_aus'
+    ereignis(db, art, actor, geraet)
 
 
 def notzugang_offen(db):

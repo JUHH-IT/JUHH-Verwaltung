@@ -815,7 +815,7 @@ class PruefungTests(Basis):
         self.assertEqual(list(p), ['keycloak', 'authenticator', 'notzugang', 'firewall', 'aufrufer', 'bedrohungsliste', 'dateipruefung', 'sicherung', 'https',
                                    'ungenutzt', 'verwaltung', 'serverschutz'])
         for eintrag in p.values():
-            self.assertEqual(set(eintrag), {'id', 'titel', 'stand', 'detail', 'ziel'})
+            self.assertEqual(set(eintrag), {'id', 'titel', 'stand', 'detail', 'ziel', 'aktion'})
             self.assertIn(eintrag['stand'], schutz.STAENDE)
             self.assertTrue(eintrag['titel'] and eintrag['detail'])
         staende = {k: v['stand'] for k, v in p.items()}
@@ -850,9 +850,12 @@ class PruefungTests(Basis):
         p = self.pruefung(bericht, keycloak=True, https=True, sicherung=(datetime.now() - timedelta(days=4)).date().isoformat())
         self.assertEqual({k: v['stand'] for k, v in p.items() if v['stand'] != 'ok'},
                          {'notzugang': 'hinweis', 'firewall': 'kritisch', 'dateipruefung': 'hinweis', 'sicherung': 'kritisch', 'serverschutz': 'kritisch'})
+        bis = datetime.fromisoformat(sicherheit.notzugang_offen(self.db)['bis'])
+        self.assertIn(f"offen bis {bis:%d.%m.%Y, %H:%M} Uhr", p['notzugang']['detail'])         # Ende des Notzugangs steht im Text
         self.setze(modus='protokollieren', liste=False)
         p = self.pruefung(bericht, keycloak=True, https=True)
         self.assertEqual((p['firewall']['stand'], p['bedrohungsliste']['stand']), ('hinweis', 'hinweis'))
+        self.assertFalse(p['bedrohungsliste']['aktion'])                                    # ausgeschaltet: „Jetzt laden“ behebt es nicht
 
 
 class SchutzHttpTests(unittest.TestCase):
