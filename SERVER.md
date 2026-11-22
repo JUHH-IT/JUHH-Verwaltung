@@ -245,7 +245,8 @@ als `resources/js/darstellung.js` dazu: Die Seiten folgen damit der Darstellung,
 wurde (gleiche Adresse, daher derselbe Speicher). Es enthält bewusst keine eigenen Vorlagen:
 Aufbau und Formulare kommen weiter von Keycloak, Updates brechen es nicht. Alles liegt lokal und kommt über den schon
 freigegebenen Pfad `/auth/resources`; die Content-Security-Policy von Keycloak bleibt unverändert.
-- Nach einem Update des Programms, das das Theme ändert, einmal `sudo ju-finanzen keycloak-einrichten` ausführen (kopiert
+- Nach einem Update des Programms, das das Theme ändert (auch `static/js/darstellung-start.js`, ab 0.49 Teil des Themes), einmal
+  `sudo ju-finanzen keycloak-einrichten` ausführen (kopiert
   das Theme neu und startet Keycloak neu – Vorlagen und Texte liest Keycloak nur beim Start). Der Befehl hängt eine
   Prüfsumme an die Adressen von CSS, Skript und Logo und leert Keycloaks Zwischenspeicher gepackter Dateien
   (`/var/lib/keycloak/tmp/kc-gzip-cache`); sonst sähen Browser bis zu 30 Tage das alte Aussehen.

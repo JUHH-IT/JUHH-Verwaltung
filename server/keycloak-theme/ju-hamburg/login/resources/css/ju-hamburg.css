@@ -1,7 +1,7 @@
 /* JU Hamburg Verwaltung – Anmeldeseiten von Keycloak im Aussehen der Anwendung.
    Werte (Farben, Schrift, Rundungen, Knöpfe) aus static/css/app.css, Abschnitte Tokens und Anmeldung – dort ändern heißt hier ändern.
    Liegt über dem Standard-Theme keycloak.v2 (PatternFly 5): CSS und das Skript der Darstellung, keine eigenen Vorlagen, nichts von außen
-   geladen. Darstellung „Glas“ (ab 0.49, unten): gleiche Werte wie static/css/glas.css, gilt nur mit html[data-design="glas"]. */
+   geladen. Darstellung „Glas“ (ab 0.49, unten): Werte aus static/css/glas.css, gilt nur mit html[data-design="glas"]. */
 
 :root {
   --ju-navy: #043770;
@@ -97,7 +97,7 @@ div.pf-v5-c-form { margin-bottom: 16px; }   /* Zeile „angemeldet als“ über 
 /* Hinweis am Knopf „anderer Benutzername“: unter dem Knopf – daneben ragte er aus der Seite (seitliches Scrollen am Handy) */
 .kc-login-tooltip .kc-tooltip-text {
   top: calc(100% + 6px); left: auto; right: 0; width: max-content; max-width: 220px; min-width: 0; padding: 6px 10px;
-  border-radius: 8px; background: var(--ju-tipp); box-shadow: none; font-size: 13px; font-weight: 400;
+  border-radius: 8px; background: var(--ju-tipp); box-shadow: none; font-size: 13px; font-weight: 400; white-space: normal;
 }
 .kc-login-tooltip:is(:hover, :focus-visible) .kc-tooltip-text { visibility: visible; opacity: 1; }
 .kc-login-tooltip .kc-tooltip-text::after { content: none; }
@@ -160,7 +160,8 @@ a.pf-v5-c-button.pf-m-primary, a.pf-v5-c-button.pf-m-secondary { display: flex; 
 
 /* ---------- Darstellung „Glas“ (ab 0.49, REGELN Nr. 31) ----------
    js/darstellung.js setzt html[data-design="glas"][data-farbe="hell|dunkel"] aus der Wahl der Anwendung (localStorage, gleiche
-   Adresse). Werte aus static/css/glas.css (hell, dunkel „Hafen bei Nacht“) – dort ändern heißt hier ändern. Ohne Wahl bleibt alles
+   Adresse). Werte aus static/css/glas.css (hell, dunkel „Hafen bei Nacht“) – dort ändern heißt hier ändern; nur hier: --ju-danger-ink
+   (Fehlerhinweis) und --ju-tipp (Hinweis am Knopf), beide mit Kontrast ≥ 4,5 : 1. Ohne Wahl bleibt alles
    oben klassisch. Unschärfe nur auf der Karte. */
 [data-design="glas"] {
   --ju-navy: #043770; --ju-navy-700: #0a2a52; --ju-navy-50: rgba(4, 55, 112, 0.08);
@@ -216,8 +217,8 @@ a.pf-v5-c-button.pf-m-primary, a.pf-v5-c-button.pf-m-secondary { display: flex; 
     #060d1b;
   color-scheme: dark;
 }
-@media (prefers-reduced-transparency: reduce) {
-  [data-design="glas"] { --jg-karte: var(--ju-surface); }
+@media (prefers-reduced-transparency: reduce) {   /* beide Selektoren: der Dunkel-Block oben ist spezifischer */
+  [data-design="glas"], [data-design="glas"][data-farbe="dunkel"] { --jg-karte: var(--ju-surface); }
 }
 
 [data-design="glas"] body { background: var(--jg-grund); background-attachment: fixed; }

@@ -261,6 +261,7 @@ main() {
     /usr/local/bin/ju-finanzen keycloak-sicherung
   fi
   [ -f "$src/keycloak-theme/$KC_THEME/login/theme.properties" ] || die "Theme fehlt: $src/keycloak-theme/$KC_THEME"
+  [ -f "$src/../static/js/darstellung-start.js" ] || die "Darstellung fehlt: $src/../static/js/darstellung-start.js"   # vor dem Anhalten
   systemctl stop "$SERVICE" 2>/dev/null || true
   kc_konfiguration "$home/conf/keycloak.conf" "$adresse" "$db_pw"
   theme_installieren "$home" "$src"

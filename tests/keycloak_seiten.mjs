@@ -3,7 +3,8 @@
 // Glas dunkel, Glas automatisch (Gerät dunkel) – Laptop und Handy ohne seitliches Scrollen, Kontrast der Texte.
 // Mit einer erfundenen Person (angelegt und am Ende gelöscht, Passwörter nur zufällig und nie ausgegeben): falsches Passwort,
 // neues Passwort festlegen, Authenticator-App einrichten. Die Seiten kommen über die öffentliche Adresse der Probe
-// (KC_PROBE_ADRESSE) und werden im Browser auf 127.0.0.1:8180 umgeleitet – jede andere Anfrage ist ein Fehler.
+// (KC_PROBE_ADRESSE) und werden im Browser auf 127.0.0.1:8180 umgeleitet – nur /auth/realms/ju-hamburg und /auth/resources wie Tailscale
+// Serve; jede andere Anfrage ist ein Fehler. Dazu zweite Anmeldung mit Code aus der App und die Abmelden-Seite.
 // Aufruf: sudo tests/keycloak_probe.sh start && sudo NODE_PATH=$(npm root -g) node tests/keycloak_seiten.mjs [Ordner für Bildschirmfotos]
 import { createRequire } from 'node:module';
 import { mkdirSync, readFileSync } from 'node:fs';
@@ -19,17 +20,18 @@ const probe = process.env.KC_PROBE_DIR || join(process.env.TMPDIR || '/tmp', 'ju
 const intern = 'http://127.0.0.1:8180';
 const realm = `${adresse}/auth/realms/ju-hamburg`;
 const rueckkehr = `${adresse}/api/keycloak/rueckkehr`;
-const anmelden = (redirect = rueckkehr) => `${realm}/protocol/openid-connect/auth?${new URLSearchParams({ client_id: 'ju-verwaltung',
+const anmelden = (redirect = rueckkehr, extra = {}) => `${realm}/protocol/openid-connect/auth?${new URLSearchParams({ client_id: 'ju-verwaltung',
   response_type: 'code', scope: 'openid', redirect_uri: redirect, state: 'probe', code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
-  code_challenge_method: 'S256' })}`;
+  code_challenge_method: 'S256', ...extra })}`;
 const failures = [];
 const check = (ok, message) => { if (!ok) failures.push(message); console.log((ok ? 'ok   ' : 'FEHLER ') + message); };
 const zufall = () => `${randomBytes(18).toString('base64url')}-Aa1`;
-/** Code der Authenticator-App (RFC 6238, SHA-1, 6 Stellen, 30 s) zum Schlüssel, den Keycloak beim Einrichten zeigt. */
-function totp(schluessel) {
+/** Code der Authenticator-App (RFC 6238, SHA-1, 6 Stellen, 30 s) zum Schlüssel, den Keycloak beim Einrichten zeigt; `schritt` = Zeitfenster
+ *  später (Keycloak nimmt ±1 Fenster an und lehnt einen schon benutzten Code ab). */
+function totp(schluessel, schritt = 0) {
   const bits = [...schluessel.replace(/[\s=]/g, '').toUpperCase()].map((c) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(c).toString(2).padStart(5, '0')).join('');
   const zaehler = Buffer.alloc(8);
-  zaehler.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000)));
+  zaehler.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + schritt));
   const h = createHmac('sha1', Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)))).update(zaehler).digest();
   return String((h.readUInt32BE(h[19] & 15) & 0x7fffffff) % 1e6).padStart(6, '0');
 }
@@ -73,7 +75,7 @@ async function kontext(wahl, farbschema, viewport) {
   if (wahl) await context.addInitScript((w) => { try { localStorage.setItem('ju-finanzen-darstellung', w); } catch { /* sandbox */ } }, JSON.stringify(wahl));
   await context.route('**/*', async (route) => {
     const url = route.request().url();
-    if (url.startsWith(`${adresse}/auth/`)) {
+    if (url.startsWith(`${adresse}/auth/realms/ju-hamburg/`) || url.startsWith(`${adresse}/auth/resources/`)) {   // nur diese veröffentlicht Tailscale Serve
       const antwort = await route.fetch({ url: intern + url.slice(adresse.length), maxRedirects: 0 });
       const ziel = antwort.status() >= 300 && antwort.status() < 400 && antwort.headers().location;
       // shortcut: Weiterleitungen folgt der Browser an route vorbei – daher als Seite mit „refresh“ (Cookies bleiben); bei Bedarf TLS-Proxy
@@ -126,7 +128,7 @@ async function pruefe(page, name, erwartet, datei) {
 
 const LAPTOP = { width: 1280, height: 860 };
 const HANDY = { width: 390, height: 844 };
-let token = null;
+let token = null;   // nur als Zeichen, dass die Admin-API erreichbar ist – jede Verwendung holt einen frischen (er lebt 60 s)
 try {
   if (admin?.passwort) token = await adminToken();
   else console.log('Hinweis: keine Admin-Daten der Probe lesbar – nur Seiten ohne Anmeldung (als root ausführen).');
@@ -147,7 +149,7 @@ try {
       }
       if (token && (geraet === 'laptop' || name === 'glas-dunkel')) {   // mit Person: falsches Passwort, neues Passwort, App einrichten
         const start = zufall();
-        await person(token, start);
+        await person(await adminToken(), start);
         await page.goto(anmelden());
         await page.fill('#username', PERSON);
         await page.fill('#password', zufall());
@@ -156,6 +158,8 @@ try {
         await pruefe(page, `${name} ${geraet} falsches Passwort`, erwartet, `k${n}-${name}-${geraet}-fehlanmeldung`);
         await page.fill('#password', start);
         await page.click('#kc-login');
+        let geheim = '';
+        let passwort = start;
         for (let schritt = 0; schritt < 2; schritt++) {   // Pflichtschritte in der Reihenfolge von Keycloak: App einrichten, neues Passwort
           await page.waitForSelector('#kc-totp-settings, #password-new');
           if (await page.locator('#kc-totp-settings').count()) {
@@ -168,30 +172,45 @@ try {
               check(ring.includes('44, 194, 207'), `${name}: Fokusring am Knopf „Speichern“ sichtbar (${ring.slice(0, 60)})`);
             }
             await page.click('#mode-manual');
-            await page.fill('#totp', totp(await page.textContent('#kc-totp-secret-key')));
+            geheim = await page.textContent('#kc-totp-secret-key');
+            await page.fill('#totp', totp(geheim));
             await page.locator('#totp').press('Enter');
             await page.waitForSelector('#kc-totp-settings', { state: 'detached' });
           } else {
             await pruefe(page, `${name} ${geraet} neues Passwort`, erwartet, `k${n}-${name}-${geraet}-neues-passwort`);
-            const neu = zufall();
-            await page.fill('#password-new', neu);
-            await page.fill('#password-confirm', neu);
+            passwort = zufall();
+            await page.fill('#password-new', passwort);
+            await page.fill('#password-confirm', passwort);
             await page.locator('#password-confirm').press('Enter');
             await page.waitForSelector('#password-new', { state: 'detached' });
           }
         }
         await page.waitForURL(`${rueckkehr}**`);
         check(true, `${name} ${geraet}: Anmeldung mit App und neuem Passwort bis zur Rückkehr in die Anwendung`);
+        // zweite Anmeldung wie jeden Tag: Passwort, dann der Code aus der App (login-otp); danach Abmelden
+        await page.goto(anmelden(rueckkehr, { prompt: 'login' }));
+        if (await page.locator('#username').isEditable().catch(() => false)) await page.fill('#username', PERSON);
+        await page.fill('#password', passwort);
+        await page.click('#kc-login');
+        await page.waitForSelector('#otp');
+        await pruefe(page, `${name} ${geraet} Code eingeben`, erwartet, `k${n}-${name}-${geraet}-code`);
+        await page.fill('#otp', totp(geheim, 1));
+        await page.locator('#otp').press('Enter');
+        await page.waitForURL(`${rueckkehr}**`);
+        check(true, `${name} ${geraet}: zweite Anmeldung mit Code aus der App`);
+        await page.goto(`${realm}/protocol/openid-connect/logout`);
+        await page.waitForSelector('#kc-logout');
+        await pruefe(page, `${name} ${geraet} Abmelden`, erwartet, `k${n}-${name}-${geraet}-abmelden`);
       }
       await context.close();
     }
   }
-  check(!nachAussen.length, `keine Anfrage nach außen${nachAussen.length ? ' – ' + nachAussen.slice(0, 3).join(', ') : ''}`);
+  check(!nachAussen.length, `keine Anfrage nach außen oder an nicht veröffentlichte Pfade von Keycloak${nachAussen.length ? ' – ' + nachAussen.slice(0, 3).join(', ') : ''}`);
 } catch (e) {
   failures.push(String(e?.message || e));
   console.log('FEHLER ' + (e?.message || e));
 } finally {
-  if (token) await person(await adminToken(), null).catch(() => {});
+  if (token) await adminToken().then((t) => person(t, null)).catch((e) => check(false, `Testperson löschen: ${e.message}`));
   await browser.close();
 }
 console.log(`\n${failures.length ? failures.length + ' Prüfung(en) fehlgeschlagen.' : 'Alle Prüfungen bestanden.'} Bildschirmfotos: ${shots}`);
