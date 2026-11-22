@@ -117,11 +117,15 @@ EOF
 theme_installieren() {
   local ziel="$1/themes/$KC_THEME" h
   [ -f "$2/keycloak-theme/$KC_THEME/login/theme.properties" ] || die "Theme fehlt: $2/keycloak-theme/$KC_THEME"
+  [ -f "$2/../static/js/darstellung-start.js" ] || die "Darstellung fehlt: $2/../static/js/darstellung-start.js"
   rm -rf -- "$ziel"
   cp -R --no-preserve=all "$2/keycloak-theme/$KC_THEME" "$ziel"
+  # Darstellung (Klassisch/Glas, ab 0.49): dasselbe Skript wie die Anwendung – gleiche Adresse, daher dieselbe Wahl im Browser
+  install -d "$ziel/login/resources/js"
+  cp --no-preserve=all "$2/../static/js/darstellung-start.js" "$ziel/login/resources/js/darstellung.js"
   # Browser behalten Theme-Dateien 30 Tage, und die Adresse ändert sich nur mit der Keycloak-Version – daher die Prüfsumme anhängen
-  h="$(cat "$ziel"/login/resources/css/* "$ziel"/login/resources/img/* | sha256sum | cut -c1-8)"
-  sed -i "s|css/$KC_THEME\.css|&?v=$h|" "$ziel/login/theme.properties"
+  h="$(cat "$ziel"/login/resources/css/* "$ziel"/login/resources/img/* "$ziel"/login/resources/js/* | sha256sum | cut -c1-8)"
+  sed -i "s|css/$KC_THEME\.css|&?v=$h|; s|^scripts=js/darstellung\.js$|&?v=$h|" "$ziel/login/theme.properties"
   sed -i "s|img/logo\.svg|&?v=$h|" "$ziel/login/resources/css/$KC_THEME.css"
   chown -R root:root "$ziel"; chmod -R u=rwX,go=rX "$ziel"
   [ ! -L "$KC_DATA/tmp" ] || die "$KC_DATA/tmp ist ein Verweis – bitte prüfen."

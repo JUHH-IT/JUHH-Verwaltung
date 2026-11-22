@@ -171,7 +171,7 @@ Auf der Anmeldeseite (unter „Mit JU-Konto anmelden“ bzw. „Anmelden“) und
 - **Klassisch** – das bisherige Design, unverändert.
 - **Glas** – das neue Design: Seitenleiste, Kopfzeile, Dialoge und die Auswahlleiste schweben als Glas über einem ruhigen Grund, Reiter als Glasleiste mit hervorgehobener Auswahl. **Hell**, **Dunkel** oder **Automatisch** (folgt der Einstellung des Geräts).
 
-Die Wahl gilt sofort – auf der Anmeldeseite schon vor dem Anmelden – und bleibt in diesem Browser gespeichert (auf jedem Gerät einmal wählen; nichts davon liegt auf dem Server). Ohne Wahl gilt Klassisch. Drucken und PDFs sehen in beiden Darstellungen gleich aus. Die Anmeldeseite von Keycloak (Benutzername, Passwort, Code) bleibt im bisherigen Aussehen. Wer im System weniger Transparenz eingestellt hat, bekommt im Glas-Design undurchsichtige Flächen.
+Die Wahl gilt sofort – auf der Anmeldeseite schon vor dem Anmelden – und bleibt in diesem Browser gespeichert (auf jedem Gerät einmal wählen; nichts davon liegt auf dem Server). Ohne Wahl gilt Klassisch. Drucken und PDFs sehen in beiden Darstellungen gleich aus. Ab 0.49 folgen auch die Anmeldeseiten von Keycloak (Benutzername, Passwort, Code, Authenticator-App einrichten) der Wahl – im selben Browser, weil sie unter derselben Adresse liegen. Wer im System weniger Transparenz eingestellt hat, bekommt im Glas-Design undurchsichtige Flächen.
 
 ## Sicherung
 

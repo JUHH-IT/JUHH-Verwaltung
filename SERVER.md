@@ -238,13 +238,16 @@ sudo systemctl start ju-keycloak
 **Aussehen der Anmeldeseiten (Theme `ju-hamburg`):** Anmeldung, neues Passwort, Authenticator-App einrichten,
 Code-Eingabe, Fehler- und Abmeldeseiten sehen aus wie die Anwendung (Farben, Schrift, Rundungen, Knöpfe, Logo, Titel
 „JU Hamburg Verwaltung“). Das Theme liegt im Programm unter `server/keycloak-theme/ju-hamburg/login/`:
-`theme.properties` (Eltern-Theme `keycloak.v2`), `resources/css/ju-hamburg.css` (Werte aus `static/css/app.css`),
-`resources/img/` (Logo, Symbol) und `messages/messages_de.properties` (Texte). Es enthält bewusst keine eigenen Vorlagen:
+`theme.properties` (Eltern-Theme `keycloak.v2`), `resources/css/ju-hamburg.css` (Werte aus `static/css/app.css`, ab 0.49
+dazu die Darstellung „Glas“ hell/dunkel aus `static/css/glas.css`), `resources/img/` (Logo, Symbol) und
+`messages/messages_de.properties` (Texte). Ab 0.49 kopiert `keycloak-einrichten` außerdem `static/js/darstellung-start.js`
+als `resources/js/darstellung.js` dazu: Die Seiten folgen damit der Darstellung, die im selben Browser in der Anwendung gewählt
+wurde (gleiche Adresse, daher derselbe Speicher). Es enthält bewusst keine eigenen Vorlagen:
 Aufbau und Formulare kommen weiter von Keycloak, Updates brechen es nicht. Alles liegt lokal und kommt über den schon
 freigegebenen Pfad `/auth/resources`; die Content-Security-Policy von Keycloak bleibt unverändert.
 - Nach einem Update des Programms, das das Theme ändert, einmal `sudo ju-finanzen keycloak-einrichten` ausführen (kopiert
   das Theme neu und startet Keycloak neu – Vorlagen und Texte liest Keycloak nur beim Start). Der Befehl hängt eine
-  Prüfsumme an die Adressen von CSS und Logo und leert Keycloaks Zwischenspeicher gepackter Dateien
+  Prüfsumme an die Adressen von CSS, Skript und Logo und leert Keycloaks Zwischenspeicher gepackter Dateien
   (`/var/lib/keycloak/tmp/kc-gzip-cache`); sonst sähen Browser bis zu 30 Tage das alte Aussehen.
 - Seiten, die unsere Nutzer nicht erreichen (Registrierung, „Passwort vergessen“, Passkeys …), bekommen dieselben Farben,
   aber die Standardtexte von Keycloak. Die Admin-Konsole (nur SSH-Tunnel) behält das Aussehen von Keycloak.
