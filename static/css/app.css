@@ -974,4 +974,5 @@ table.aw-kv th, table.aw-kv td { padding-left: 8px; padding-right: 8px; }
 .ds-seg input:checked + span { background: var(--surface); color: var(--navy); font-weight: 600; box-shadow: 0 1px 2px rgba(20, 36, 58, 0.12); }
 .ds-seg input:focus-visible + span { box-shadow: var(--focus); }
 .sidebar-foot .ds-open { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; }
+.dialog-body > .ds-pick { border-top: 0; padding-top: 0; }   /* im Dialog trennt schon der Kopf */
 @media (max-width: 380px) { .ds-seg span { padding: 0 9px; } }

@@ -100,7 +100,7 @@
 [data-design="glas"] .nav button:hover { background: var(--g-hover); color: var(--ink); }
 [data-design="glas"] .nav button[aria-current="page"] { background: var(--g-linse); box-shadow: var(--g-linse-schatten); color: var(--ink); }
 [data-design="glas"] .nav button[aria-current="page"] svg { color: var(--teal); }
-[data-design="glas"] .nav .count { background: #087f8c; color: #fff; }
+[data-design="glas"] .nav .count, [data-design="glas"] .nav button[aria-current="page"] .count { background: #087f8c; color: #fff; }
 [data-design="glas"] .sidebar-foot { border-top-color: var(--line); }
 [data-design="glas"] .sidebar-foot .user { color: var(--ink); }
 [data-design="glas"] .sidebar-foot .avatar { background: linear-gradient(160deg, #0b4d94, #087f8c); color: #fff; }
@@ -156,6 +156,7 @@
 [data-design="glas"] .btn.ghost:hover { background: var(--g-hover); }
 [data-design="glas"] .btn.warn { background: var(--orange-50); border-color: transparent; color: var(--orange-ink); box-shadow: none; }
 [data-design="glas"] .btn.sec-danger { background: #b4233a; border-color: #b4233a; color: #fff; }
+[data-design="glas"] .btn.sec-danger:hover:not(:disabled) { background: #9d1f33; border-color: #9d1f33; filter: none; color: #fff; }
 [data-design="glas"] .btn .count { background: #087f8c; color: #fff; }
 [data-design="glas"] .btn:disabled { box-shadow: none; }
 
@@ -174,6 +175,7 @@
 [data-design="glas"] .tabs button { margin: 0; padding: 0 16px; min-height: 36px; border-bottom: 0; border-radius: 999px; }
 [data-design="glas"] .tabs button:hover { background: var(--g-hover); color: var(--ink); }
 [data-design="glas"] .tabs button[aria-selected="true"] { background: var(--g-linse); box-shadow: var(--g-linse-schatten); color: var(--ink); }
+[data-design="glas"] .tabs button[aria-selected="true"] .n { color: var(--ink-2); }
 [data-design="glas"] .segmented, [data-design="glas"] .ds-seg { background: var(--g-duenn); border-radius: 999px; box-shadow: var(--g-rand); }
 [data-design="glas"] .segmented button, [data-design="glas"] .ds-seg span { border-radius: 999px; }
 [data-design="glas"] .segmented button[aria-pressed="true"], [data-design="glas"] .ds-seg input:checked + span {
@@ -246,6 +248,8 @@ html.compact[data-design="glas"] .main { padding: 20px 20px 56px; }
   [data-design="glas"] dialog#modal, [data-design="glas"] dialog#modal.wide, [data-design="glas"] dialog#preview { border-radius: 0; }
   [data-design="glas"] .dialog-head { background: var(--g-dicht); -webkit-backdrop-filter: var(--g-unschaerfe); backdrop-filter: var(--g-unschaerfe); }
 }
+/* Fokus mit der Tastatur immer sichtbar – die Glas-Schatten der Knöpfe, Reiter und Linsen dürfen ihn nicht verdecken */
+[data-design="glas"] :focus-visible, [data-design="glas"] .ds-seg input:focus-visible + span { box-shadow: var(--focus) !important; }
 @media (prefers-reduced-transparency: reduce) {
   [data-design="glas"] { --g-flaeche: var(--surface); --g-dicht: var(--surface); --g-duenn: var(--surface-2); --g-kopf: var(--surface); }
 }

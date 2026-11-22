@@ -267,6 +267,11 @@ try {
   await login(gp, 'Test Schatzmeisterin', NEU);
   await gp.waitForSelector('.sidebar');
   check(await design(gp) === 'glas hell', 'Glas bleibt nach der Anmeldung');
+  // Fokus mit der Tastatur bleibt sichtbar (die Glas-Schatten der Knöpfe dürfen ihn nicht verdecken)
+  await gp.click('main h1');
+  await gp.keyboard.press('Tab');
+  const ring = await gp.evaluate(() => [document.activeElement?.className || '', getComputedStyle(document.activeElement).boxShadow]);
+  check(ring[0].includes('btn') && ring[1].includes('8, 127, 140'), `Glas: Fokusring auf Knöpfen sichtbar (${ring.join(' · ')})`);
   for (const id of PAGES) {
     await gp.click(`[data-page=${id}]`);
     await gp.waitForTimeout(250);
@@ -294,6 +299,22 @@ try {
   await gp.click('#modal .ds-option:has(input[value=klassisch])');
   check(await design(gp) === 'klassisch ' && await gp.locator('#modal .ds-farben').isHidden(), 'zurück zu Klassisch, Helligkeit dann ausgeblendet');
   await glass.close();
+
+  // Website-Daten blockiert: die Wahl gilt trotzdem für die Seite (wird nur nicht gespeichert)
+  const ohneSpeicher = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await guard(ohneSpeicher);
+  await ohneSpeicher.addInitScript(() => {
+    const nein = () => { throw new DOMException('blockiert', 'SecurityError'); };
+    Object.defineProperty(window, 'localStorage', { get: nein });
+  });
+  const bp = await ohneSpeicher.newPage();
+  watch(bp, 'ohne Speicher');
+  await bp.goto(url);
+  await bp.waitForSelector('#login-form [data-darstellung]');
+  await bp.click('.ds-option:has(input[value=glas])');
+  await bp.click('.ds-farben label:has(input[value=dunkel])');
+  check(await design(bp) === 'glas dunkel', 'ohne Browser-Speicher: Glas dunkel gilt trotzdem für die Seite');
+  await ohneSpeicher.close();
 
   const glassPhone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
   await guard(glassPhone);

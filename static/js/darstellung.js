@@ -7,10 +7,15 @@ import { dialog } from './ui.js';
 const KEY = 'ju-finanzen-darstellung';
 const DUNKEL = window.matchMedia('(prefers-color-scheme: dark)');
 
+let gemerkt = null;   // letzte Wahl dieser Seite – falls der Browser keinen Speicher erlaubt (Website-Daten blockiert)
+
 /** Gespeicherte Wahl {design: 'klassisch'|'glas', farbe: 'hell'|'dunkel'|'auto'} – ohne Wahl „klassisch“. */
 export function darstellung() {
-  let wahl = null;
-  try { wahl = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { wahl = null; }
+  let wahl = gemerkt;
+  try {
+    const roh = localStorage.getItem(KEY);
+    if (roh !== null) wahl = JSON.parse(roh);
+  } catch { /* kein Speicher oder kaputter Eintrag: die gemerkte Wahl bzw. Klassisch */ }
   const design = wahl?.design === 'glas' ? 'glas' : 'klassisch';
   const farbe = ['hell', 'dunkel', 'auto'].includes(wahl?.farbe) ? wahl.farbe : 'auto';
   return { design, farbe };
@@ -33,7 +38,8 @@ anwenden(darstellung());
 /** Wahl speichern und sofort anwenden (ohne Speicher im Browser gilt sie nur bis zum Neuladen). */
 export function setDarstellung(wahl) {
   const neu = { ...darstellung(), ...wahl };
-  try { localStorage.setItem(KEY, JSON.stringify(neu)); } catch { /* privates Fenster: nur für diese Seite */ }
+  gemerkt = neu;
+  try { localStorage.setItem(KEY, JSON.stringify(neu)); } catch { /* Speicher blockiert: gilt nur für diese Seite */ }
   anwenden(neu);
   return neu;
 }
