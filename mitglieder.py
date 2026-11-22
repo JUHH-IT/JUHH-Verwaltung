@@ -350,7 +350,7 @@ def naechste_nummer(db):
     for (nummer,) in db.execute('SELECT number FROM members'):
         m = re.fullmatch(r'(\D*)(\d+)', str(nummer or '').strip())
         if m:
-            vergeben.add((m[1].upper(), int(m[2])))           # „A0124“ = „A124“ – so vergleicht auch der Import (ohne führende Nullen)
+            vergeben.add((m[1].upper(), int(m[2])))           # beim Vorschlag gilt „A124“ wie „A0124“ als vergeben (nur hier)
             formate.setdefault((m[1], len(m[2])), []).append(int(m[2]))
     if not formate:
         return ''
@@ -449,7 +449,7 @@ def values(data, kvs, ovs=None, inactive=None):
     if v['iban'] and not iban_valid(v['iban']):
         raise ValueError('IBAN ungültig – bitte prüfen (Länge oder Prüfziffer stimmt nicht).')
     if v['iban'] and v['iban'][:2] not in _sepa_laender():
-        raise ValueError('IBAN aus einem Land außerhalb des EWR – dafür ist keine SEPA-Lastschrift möglich.')
+        raise ValueError('IBAN aus einem Land außerhalb des EWR – Lastschriften unterstützt das Programm nur für Konten im EWR.')
     if not v['iban']:
         v['kontoinhaber'] = None                  # Kontoinhaber nur zusammen mit einer IBAN
     v['country'] = country(v['country']) or ''   # Inland bzw. Bundesland: kein Land in der Anschrift
@@ -794,14 +794,22 @@ def preview(store, raw, filename, password=None):
             if old and old['ov_id'] and (merged.get('ov_id') != old['ov_id'] or item.get('new_ov')):   # ab 0.52: die Datei gilt (Entscheidung
                 item['ov_hinweis'] = ('Ortsverband laut Datei ersetzt den im Programm' + (' (dort „Ortsverband fest“)' if old['ov_fest'] else '')
                                       + '.')   # 22.11.2026) – nur ein Hinweis: die Zeile bleibt vorausgewählt, damit die übrigen Änderungen nicht liegen bleiben
-            if 'iban' in data:   # ab 0.53: Bankverbindung nur als Paar; leere Zelle lässt die vorhandene stehen (Entscheidung 22.11.2026)
+            inhaber_neu = False   # ab 0.53: Bankverbindung nur als Paar; leere Zellen lassen die vorhandene stehen (Entscheidung 22.11.2026)
+            if 'iban' in data:
                 neu_iban = _iban(data.get('iban'))
                 if not neu_iban or not iban_valid(neu_iban) or neu_iban[:2] not in _sepa_laender():
                     if neu_iban:
                         warnings.append('IBAN ungültig oder außerhalb des EWR – wird nicht übernommen.')
                     merged['iban'], merged['kontoinhaber'] = (old['iban'], old['kontoinhaber']) if old else (None, None)
-                elif old and old['iban'] and neu_iban != old['iban'] and 'kontoinhaber' not in data:
-                    merged['kontoinhaber'] = None   # neues Konto ohne Spalte Kontoinhaber: der alte Inhaber gehört zum alten Konto
+                elif old and old['iban'] and neu_iban == _iban(old['iban']):
+                    if not _clean(data.get('kontoinhaber')):
+                        merged['kontoinhaber'] = old['kontoinhaber']        # gleiches Konto, leere Zelle: Inhaber bleibt
+                elif old and old['iban'] and 'kontoinhaber' not in data:
+                    merged['kontoinhaber'], inhaber_neu = None, bool(old['kontoinhaber'])   # neues Konto: der alte Inhaber gehört zum alten
+            elif 'kontoinhaber' in data:
+                merged['kontoinhaber'] = old['kontoinhaber'] if old else None   # Inhaber ohne IBAN-Spalte: gehört zu keinem Konto der Datei
+            if inhaber_neu:
+                warnings.append('Neues Konto ohne Spalte Kontoinhaber – Kontoinhaber ist jetzt das Mitglied.')
             if merged.get('email_work'):
                 try:
                     email_address(merged['email_work'])
@@ -822,7 +830,8 @@ def preview(store, raw, filename, password=None):
                     item['changes'].append(LABELS['ov_id'])
                 item['action'] = 'update' if item['changes'] else 'same'
                 item['member_id'] = old['id']
-                cleared = [LABELS[k] for k in FIELDS if old[k] not in (None, '') and v[k] in (None, '') and not (k == 'ov_id' and item['new_ov'])]
+                cleared = [LABELS[k] for k in FIELDS if old[k] not in (None, '') and v[k] in (None, '') and not (k == 'ov_id' and item['new_ov'])
+                           and not (k == 'kontoinhaber' and inhaber_neu)]
                 if cleared:
                     warnings.append('Leere Zelle löscht: ' + ', '.join(cleared) + ' – bitte prüfen.')
             else:

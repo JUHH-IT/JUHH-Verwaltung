@@ -637,14 +637,15 @@ def filename(store, batch_id):
 
 # ---------------------------------------------------------------- Mandatsformular
 
-def mandate_pdf(store, member_id=None, member_ids=None):
+def mandate_pdf(store, member_id=None, member_ids=None, mit_mandat=True):
     """SEPA-Lastschriftmandat zum Unterschreiben (vorausgefüllt mit Mitglied, Bankdaten des Mitglieds und ggf. Mandat);
-    mit member_ids eine Seite je Mitglied (ab 0.53, Serie aus der Mitgliederverwaltung)."""
+    mit member_ids eine Seite je Mitglied (ab 0.53, Serie aus der Mitgliederverwaltung – dort mit_mandat=False: nie Daten eines
+    bestehenden Mandats, die sieht nur die Buchhaltung)."""
     from pdfschrift import exclusive
-    return exclusive(_mandate_pdf)(store, member_ids or [member_id])
+    return exclusive(_mandate_pdf)(store, member_ids or [member_id], mit_mandat)
 
 
-def _mandate_pdf(store, member_ids):
+def _mandate_pdf(store, member_ids, mit_mandat=True):
     import io
     from xml.sax.saxutils import escape
     from reportlab.lib import colors
@@ -665,18 +666,18 @@ def _mandate_pdf(store, member_ids):
     for member_id in member_ids:
         if story:
             story.append(PageBreak())
-        story += _mandat_seite(store, cfg, member_id, p, line, issuer)
+        story += _mandat_seite(store, cfg, member_id, p, line, issuer, mit_mandat)
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=A4, leftMargin=55, rightMargin=55, topMargin=50, bottomMargin=50,
                       title='SEPA-Lastschriftmandat').build(story)
     return buf.getvalue()
 
 
-def _mandat_seite(store, cfg, member_id, p, line, issuer):
+def _mandat_seite(store, cfg, member_id, p, line, issuer, mit_mandat=True):
     from reportlab.lib import colors
     from reportlab.platypus import Spacer, Table
     m = store.db.execute('SELECT * FROM members WHERE id=?', (member_id,)).fetchone() if member_id else None
-    mandate = active_mandate(store, member_id) if member_id else None
+    mandate = active_mandate(store, member_id) if member_id and mit_mandat else None
     if mandate and (expires(store, mandate) < date.today().isoformat() or (m and m['iban'] and m['iban'] != mandate['iban'])):
         mandate = None   # verfallen oder Kontowechsel: Formular für ein neues Mandat mit den Bankdaten des Mitglieds (ab 0.53)
     bank = {'holder': (m['kontoinhaber'] or m['name']) if m else '', 'iban': m['iban'] if m and m['iban'] else ''}   # Bankdaten am Mitglied (ab 0.53)

@@ -82,6 +82,22 @@ class BankTests(Basis):
             self.assertIn('wird mit der ersten Beitragsrechnung mitgeteilt', seite)
             self.assertNotIn('Alt Inhaber', seite)
 
+    def test_verfall_allein_und_serie_ohne_mandatsdaten(self):
+        self.s.save_settings({'creditor_id': CREDITOR}, 'Test')
+        gleich, ohne, gueltig = self.member('M1', iban=IBAN2), self.member('M2'), self.member('M3', iban=IBAN2)
+        for mid, signiert in ((gleich, '2021-01-15'), (ohne, '2021-01-15'), (gueltig, '2026-01-15')):   # zwei verfallen, eines gültig
+            lastschrift.create_mandate(self.s, mid, {'iban': IBAN2, 'holder': 'Alt Inhaber', 'signed_on': signiert}, 'Test')
+        for mid in (gleich, ohne):                                                          # Einzelformular der Buchhaltung
+            seite = PdfReader(io.BytesIO(lastschrift.mandate_pdf(self.s, mid))).pages[0].extract_text()
+            self.assertIn('wird mit der ersten Beitragsrechnung mitgeteilt', seite)
+            self.assertNotIn('JUHH-', seite)
+        einzeln = PdfReader(io.BytesIO(lastschrift.mandate_pdf(self.s, gueltig))).pages[0].extract_text()
+        self.assertIn('JUHH-M3-1', einzeln)                                                  # gültig: die Buchhaltung sieht ihr Mandat
+        body, _, _ = mitgliederlisten.datei(self.s, {'art': 'mandate', 'ids': [gueltig]}, 'Test')
+        serie = PdfReader(io.BytesIO(body)).pages[0].extract_text()
+        self.assertNotIn('JUHH-', serie)                                                    # Serie (Mitgliederverwaltung): nie Mandatsdaten
+        self.assertNotIn('Alt Inhaber', serie)
+
     def test_rechte_gesamtliste(self):
         self.member('M1', iban=IBAN)
         for rechte in ({'mitglieder': 'lesen'}, {'mitglieder': 'schreiben', 'auswertung': 'lesen'}, {'buchhaltung': 'schreiben'}):
@@ -140,6 +156,24 @@ class BankTests(Basis):
         self.assertEqual((self.m(leer)['iban'], self.m(leer)['kontoinhaber']), (IBAN, 'Mutter Muster'))       # leere Zelle lässt stehen
         self.assertEqual((self.m(falsch)['iban'], self.m(falsch)['kontoinhaber']), (IBAN, 'Mutter Muster'))   # ungültig: beides bleibt
         self.assertEqual((self.m(wechsel)['iban'], self.m(wechsel)['kontoinhaber']), (IBAN2, None))           # neues Konto: alter Inhaber entfällt
+        hinweis = {r['number']: r['warning'] for r in p['rows']}
+        self.assertIn('Kontoinhaber ist jetzt das Mitglied', hinweis['M3'])
+        self.assertNotIn('Leere Zelle', hinweis['M3'])
+
+    def test_import_kontoinhaber_und_ewr(self):
+        gleich, nur_inhaber = self.member('M1', iban=IBAN, kontoinhaber='Mutter Muster'), self.member('M2', iban=IBAN, kontoinhaber='Vater Muster')
+        zeile = 'M{};Erika;Muster;Musterweg 1;20095;Hamburg;01.02.2000;01.01.2024;Altona;{};{}'
+        raw = '\n'.join(['Mitgliedsnummer;Vorname;Name;Straße;PLZ;Ort;Geburtsdatum;Eintritt;Kreisverband;IBAN;Kontoinhaber',
+                         zeile.format(1, IBAN, ''), zeile.format(3, 'CH9300762011623852957', 'Fremd')]).encode()
+        p = mitglieder.preview(self.s, raw, 'liste.csv')
+        rows = {r['number']: r for r in p['rows']}
+        self.assertEqual(rows['M1']['values']['kontoinhaber'], 'Mutter Muster')            # gleiches Konto, leere Zelle: Inhaber bleibt
+        self.assertEqual((rows['M3']['action'], rows['M3']['values']['iban']), ('new', None))   # CH: Hinweis, keine Fehlerzeile
+        self.assertIn('außerhalb des EWR', rows['M3']['warning'])
+        raw = ('Mitgliedsnummer;Vorname;Name;Straße;PLZ;Ort;Geburtsdatum;Eintritt;Kreisverband;Kontoinhaber\n'
+               'M2;Erika;Muster;Musterweg 1;20095;Hamburg;01.02.2000;01.01.2024;Altona;\n').encode()
+        row = mitglieder.preview(self.s, raw, 'liste.csv')['rows'][0]
+        self.assertEqual((row['action'], row['values']['kontoinhaber']), ('same', 'Vater Muster'))   # Inhaber ohne IBAN-Spalte: ignoriert
 
     def test_zusammenfuehren_uebernimmt_bankverbindung_als_paar(self):
         keep, drop = self.member('M1'), self.member('M2', iban=IBAN, kontoinhaber='Erika Muster')

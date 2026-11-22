@@ -620,7 +620,7 @@ Tests: test_lastschrift.py, test_mitgliedbank.py, test_sepadatei.py, test_wahlre
 - `download(store, batch_id, actor)` – Datei zum Hochladen: nur solange nicht eingereicht und ohne Befund der erneuten Prüfung; Download wird vermerkt.
 - `xml_file(store, batch_id)` – pain.008.001.08 für eine Lastschriftdatei (je Einzugsdatum und Gläubiger-ID ein Zahlungsblock, Einzelbuchung gewünscht).
 - `filename(store, batch_id)`
-- `mandate_pdf(store, member_id=…, member_ids=…)` – SEPA-Lastschriftmandat zum Unterschreiben (vorausgefüllt mit Mitglied, Bankdaten des Mitglieds und ggf. Mandat);
+- `mandate_pdf(store, member_id=…, member_ids=…, mit_mandat=…)` – SEPA-Lastschriftmandat zum Unterschreiben (vorausgefüllt mit Mitglied, Bankdaten des Mitglieds und ggf. Mandat);
 
 ## Buchhaltung
 

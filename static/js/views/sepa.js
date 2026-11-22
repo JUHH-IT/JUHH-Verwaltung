@@ -18,7 +18,7 @@ export function mandateSection(member) {
       Kontowechsel? Dann das alte Mandat widerrufen und das neue (unterschriebene) erfassen.</p>` : ''}
     ${m ? html`<p>Mandat <strong style="font-weight:600">${m.reference}</strong> · ${m.holder} · ${m.iban} · unterschrieben am ${date(m.signed_on)}${m.last_used ? ` · zuletzt eingezogen ${date(m.last_used)}` : ''}</p>
         <p class="small muted">Beitragsrechnungen enthalten die Vorabankündigung; der Beitrag wird per Lastschrift eingezogen.
-          ${m.expires < todayIso() ? html`<strong>Mandat verfallen</strong> (36 Monate ungenutzt) – neues Mandat einholen.` : `Gültig für Einzüge bis ${date(m.expires)}, wenn es bis dahin nicht genutzt wird.`}</p>`
+          ${m.expires < todayIso() ? html`<strong>Mandat verfallen</strong> (36 Monate ungenutzt) – neues Mandat einholen; zum Erfassen das alte zuerst widerrufen.` : `Gültig für Einzüge bis ${date(m.expires)}, wenn es bis dahin nicht genutzt wird.`}</p>`
       : html`<p class="small muted">${enabled ? 'Kein Mandat – der Beitrag wird überwiesen.' : 'Für Lastschriften zuerst die Gläubiger-ID in den Stammdaten eintragen.'}${
         member.iban ? ' Die Mitgliederverwaltung hat Bankdaten eingetragen – liegt das unterschriebene Formular vor, damit erfassen.' : ''}</p>`}
     ${old.length ? html`<p class="small muted">Frühere Mandate: ${old.map((x, i) => html`${i ? ', ' : ''}${x.reference} (widerrufen ${date(x.revoked_on)})`)}</p>` : ''}

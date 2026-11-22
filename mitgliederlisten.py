@@ -243,7 +243,7 @@ def datei(store, data, actor):
         import lastschrift
         if not lastschrift.enabled(store.config()):
             raise ValueError('Für Mandatsformulare zuerst die Gläubiger-ID in den Stammdaten (Verein & Bank) eintragen.')
-        body = lastschrift.mandate_pdf(store, member_ids=[m['id'] for m in members])
+        body = lastschrift.mandate_pdf(store, member_ids=[m['id'] for m in members], mit_mandat=False)   # immer ein neues Mandat
     else:
         body = anschreiben(store.config(), members, data.get('betreff'), data.get('text'))
     post = len(members) if art in ('csv', 'excel', 'mandate') else sum(1 for m in members if postfaehig(m))

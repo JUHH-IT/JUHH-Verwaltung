@@ -249,9 +249,11 @@ export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
   bindDues(form);
   bindAddressCheck(form, !m);
   bindWerber(form, m);
-  if (!m && !form.number.value) {   // Vorschlag der Mitgliedsnummer (0.53) – nur, solange das Feld leer ist
+  if (!m && !form.number.value) {   // Vorschlag der Mitgliedsnummer (0.53) – nur, solange niemand das Feld angefasst hat
+    let beruehrt = false;            // sonst hinge die getippte Nummer an den Vorschlag an („T-2T-2“, Prüfbefund 0.53)
+    for (const ev of ['focus', 'input']) form.number.addEventListener(ev, () => { beruehrt = true; }, { once: true });
     api('/api/mitgliedsnummer').then((r) => {
-      if (!r.nummer || form.number.value || !form.isConnected) return;
+      if (!r.nummer || beruehrt || document.activeElement === form.number || form.number.value || !form.isConnected) return;
       form.number.value = r.nummer;
       form.querySelector('[data-nummer-vorschlag]').hidden = false;
     }).catch(() => {});
