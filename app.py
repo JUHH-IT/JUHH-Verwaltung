@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.52'
+VERSION='0.53'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -646,6 +646,7 @@ class Handler(BaseHTTPRequestHandler):
                     import ovabgleich
                     teile,geb=ovabgleich.stadtteile(DATA),ovabgleich.gebiete(store.db)
                     return self.send(200,{'stadtteile':teile,'gebiete':geb,'vorschlag':ovabgleich.namensvorschlag(gliederung.ovs(store),teile,geb)})
+                if path=='/api/mitgliedsnummer': return self.send(200,{'nummer':__import__('mitglieder').naechste_nummer(store.db)})   # Vorschlag beim Anlegen (0.53)
                 if path=='/api/adressen-status': return self.send(200,__import__('adressen').status(DATA))
                 if path=='/api/klaerfaelle':   # Klärfälle der Mitgliederverwaltung (klaerfaelle.py)
                     import klaerfaelle

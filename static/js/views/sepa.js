@@ -14,15 +14,18 @@ export function mandateSection(member) {
   const old = store.data.mandates.filter((x) => x.member_id === member.id && x.status === 'revoked');
   const enabled = Boolean(store.data.settings.creditor_id);
   return html`<section class="approval-card ${m ? 'done' : ''}"><h3>${icon('bank', 16)} SEPA-Lastschrift</h3>
+    ${m && member.iban_abweichend ? html`<p class="notice warn" data-iban-abweichend>Die Mitgliederverwaltung hat eine andere IBAN eingetragen als im Mandat –
+      Kontowechsel? Dann das alte Mandat widerrufen und das neue (unterschriebene) erfassen.</p>` : ''}
     ${m ? html`<p>Mandat <strong style="font-weight:600">${m.reference}</strong> · ${m.holder} · ${m.iban} · unterschrieben am ${date(m.signed_on)}${m.last_used ? ` · zuletzt eingezogen ${date(m.last_used)}` : ''}</p>
         <p class="small muted">Beitragsrechnungen enthalten die Vorabankündigung; der Beitrag wird per Lastschrift eingezogen.
-          ${m.expires < todayIso() ? html`<strong>Mandat verfallen</strong> (36 Monate ungenutzt) – neues Mandat einholen.` : `Gültig für Einzüge bis ${date(m.expires)}, wenn es bis dahin nicht genutzt wird.`}</p>`
-      : html`<p class="small muted">${enabled ? 'Kein Mandat – der Beitrag wird überwiesen.' : 'Für Lastschriften zuerst die Gläubiger-ID in den Stammdaten eintragen.'}</p>`}
+          ${m.expires < todayIso() ? html`<strong>Mandat verfallen</strong> (36 Monate ungenutzt) – neues Mandat einholen; zum Erfassen das alte zuerst widerrufen.` : `Gültig für Einzüge bis ${date(m.expires)}, wenn es bis dahin nicht genutzt wird.`}</p>`
+      : html`<p class="small muted">${enabled ? 'Kein Mandat – der Beitrag wird überwiesen.' : 'Für Lastschriften zuerst die Gläubiger-ID in den Stammdaten eintragen.'}${
+        member.iban ? ' Die Mitgliederverwaltung hat Bankdaten eingetragen – liegt das unterschriebene Formular vor, damit erfassen.' : ''}</p>`}
     ${old.length ? html`<p class="small muted">Frühere Mandate: ${old.map((x, i) => html`${i ? ', ' : ''}${x.reference} (widerrufen ${date(x.revoked_on)})`)}</p>` : ''}
     <div class="form-actions" style="justify-content:flex-start">
       <a class="btn small" href="/api/mandate.pdf?member=${member.id}" target="_blank" rel="noopener">${icon('print', 14)} Mandatsformular</a>
       ${m ? html`<button type="button" class="btn small ghost" data-revoke-mandate="${m.id}">Mandat widerrufen</button>`
-        : enabled ? html`<button type="button" class="btn small primary" data-new-mandate="${member.id}">Unterschriebenes Mandat erfassen</button>` : ''}</div></section>`;
+        : enabled ? html`<button type="button" class="btn small primary" data-new-mandate="${member.id}">${member.iban ? 'Mandat aus den Bankdaten erfassen' : 'Unterschriebenes Mandat erfassen'}</button>` : ''}</div></section>`;
 }
 
 export function bindMandateSection(el, member, reopen) {
@@ -51,8 +54,8 @@ function mandateForm(member, reopen) {
   const o = overlay('Unterschriebenes Mandat erfassen', html`<form id="mandate-form" style="display:flex;flex-direction:column;gap:14px">
     <p class="small muted">Nur erfassen, wenn das unterschriebene Mandat vorliegt (Formular über „Mandatsformular“). Bei Kontowechsel das alte Mandat widerrufen und ein neues erfassen.</p>
     <div class="formgrid">
-      <label class="field">Kontoinhaber<input name="holder" value="${member.name}" required></label>
-      <label class="field">IBAN<input name="iban" required autocomplete="off"></label>
+      <label class="field">Kontoinhaber<input name="holder" value="${member.kontoinhaber || member.name}" required></label>
+      <label class="field">IBAN<input name="iban" required autocomplete="off" value="${member.iban || ''}"></label>
       <label class="field">BIC<input name="bic" autocomplete="off" placeholder="optional"></label>
       <label class="field">Unterschrieben am<input type="date" name="signed_on" value="${todayIso()}" required></label>
       <label class="field">Mandatsreferenz<input name="reference" autocomplete="off" placeholder="leer = automatisch (${store.data.settings.sepa_prefix}-${member.number}-1)">

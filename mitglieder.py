@@ -22,15 +22,16 @@ import re
 import unicodedata
 from datetime import date, datetime, timedelta
 
-from formate import email_address, euro, german_date, iso, money
+from formate import email_address, euro, german_date, iban_compact, iban_pretty, iban_valid, iso, money
 
 # Angaben der Mitgliederverwaltung (Export der CDU-Mitgliederverwaltung, Wunsch Lennert Gust 08.11.2026: „bitte alles ergänzen, weil eine
 # Mitgliederverwaltung folgen wird“). Alter und Jubiläumsjahre der Datei werden nicht gespeichert – sie ergeben sich aus Geburt und Eintritt.
 # Ortsverband ab 0.27 über ov_id (Stammdaten gliederung.py); die Textspalten ov_number/ov_name aus 0.24 bleiben nur in der Datenbank.
 TEXTS = ('salutation', 'letter_salutation', 'letter_salutation2', 'title', 'name_prefix', 'name_suffix', 'gender', 'nationality', 'clubs',
          'club', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method', 'address_extra2', 'left_reason',   # left_reason ab 0.37
-         'geworben_text')   # ab 0.52: „geworben von“ als Freitext, wenn die Person kein Mitglied ist
-EXTRA = TEXTS + ('kv_joined', 'external_balance', 'dues_free', 'guest', 'no_mail', 'email_work', 'ov_id', 'ov_fest', 'geworben_von')
+         'geworben_text',   # ab 0.52: „geworben von“ als Freitext, wenn die Person kein Mitglied ist
+         'kontoinhaber')    # ab 0.53: Bankverbindung für ein späteres SEPA-Mandat (mit `iban`)
+EXTRA = TEXTS + ('kv_joined', 'external_balance', 'dues_free', 'guest', 'no_mail', 'email_work', 'ov_id', 'ov_fest', 'geworben_von', 'iban')
 FIELDS = ('number', 'first_name', 'last_name', 'address_extra', 'street', 'zip', 'city', 'country', 'email', 'birth', 'joined', 'left_on', 'kv',
           'dues') + EXTRA
 LEGACY = ('ov_number', 'ov_name')
@@ -44,12 +45,12 @@ LABELS = {'number': 'Mitgliedsnummer', 'first_name': 'Vorname', 'last_name': 'Na
           'mobile_work': 'Handy dienstlich', 'email_work': 'E-Mail dienstlich', 'payment_method': 'Zahlungsart',
           'address_extra2': 'Adresszusatz 2 (Name 3)', 'kv_joined': 'Eintritt Kreisverband', 'external_balance': 'Kontostand Mitgliederverwaltung',
           'dues_free': 'Beitragsfrei', 'guest': 'Gastmitglied', 'no_mail': 'Postausschluss', 'ov_id': 'Ortsverband',
-          'ov_fest': 'Ortsverband fest (nicht nach Adresse)', 'geworben_von': 'Geworben von', 'geworben_text': 'Geworben von (kein Mitglied)',
+          'ov_fest': 'Ortsverband fest (nicht nach Adresse)', 'geworben_von': 'Geworben von', 'geworben_text': 'Geworben von (kein Mitglied)', 'iban': 'IBAN', 'kontoinhaber': 'Kontoinhaber',
           # nur Importspalten
           'kv_number': 'Kreisverband (Nr.)', 'ov_number': 'Ortsverband (Nr.)', 'ov_name': 'Ortsbezeichnung'}
 MAX_TEXT = 200
 PRIVATE = ('gender', 'nationality', 'phone', 'phone_work', 'mobile', 'mobile_work', 'email_work', 'letter_salutation', 'letter_salutation2',
-           'payment_method', 'external_balance', 'left_reason', 'note', 'geworben_text') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
+           'payment_method', 'external_balance', 'left_reason', 'note', 'geworben_text', 'iban', 'kontoinhaber') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
 PARTICLES = {'von', 'van', 'de', 'der', 'den', 'zu', 'vom', 'zum', 'zur', 'ten', 'ter', 'du', 'da', 'di', 'del', 'la', 'le', 'dos'}
 MAX_ROWS = 5000
 
@@ -75,7 +76,7 @@ def init(db):
     extra = {**{col: 'TEXT' for col in TEXTS + LEGACY + ('kv_joined', 'email_work', 'note')}, 'external_balance': 'INTEGER',
              'dues_free': 'INTEGER NOT NULL DEFAULT 0 CHECK(dues_free IN (0,1))', 'guest': 'INTEGER NOT NULL DEFAULT 0 CHECK(guest IN (0,1))',
              'no_mail': 'INTEGER NOT NULL DEFAULT 0 CHECK(no_mail IN (0,1))', 'ov_id': 'INTEGER REFERENCES ortsverbaende(id)',
-             'ov_fest': 'INTEGER NOT NULL DEFAULT 0 CHECK(ov_fest IN (0,1))', 'geworben_von': 'INTEGER REFERENCES members(id)'}   # ab 0.52
+             'ov_fest': 'INTEGER NOT NULL DEFAULT 0 CHECK(ov_fest IN (0,1))', 'geworben_von': 'INTEGER REFERENCES members(id)', 'iban': 'TEXT'}   # ab 0.52, iban ab 0.53
     more = [col for col in extra if col not in cols]
     for col in more:                              # ab 0.24 bzw. 0.27 (Mitgliederverwaltung), 0.52 (Ortsverband fest, geworben von) – additiv
         db.execute(f'ALTER TABLE members ADD COLUMN {col} {extra[col]}')
@@ -291,6 +292,8 @@ def angaben(store, m):
             if not w:
                 continue
             value = f"{w['name']} ({w['number']})"
+        elif key == 'iban':
+            value = iban_pretty(value)
         elif key in ('dues', 'external_balance'):
             value = euro(value)
         elif key == 'kv':
@@ -327,6 +330,35 @@ def flag(value, label):
     if text in ('j', 'ja', '1', 'y', 'yes', 'true', 'x', 'on'):
         return 1
     raise ValueError(f'{label}: „{text[:10]}“ nicht erkannt (J oder N).')
+
+
+def _iban(value):
+    """IBAN in Kurzform: ohne Leerzeichen und Bindestriche, groß; leer = None."""
+    return iban_compact(re.sub(r'[\s\-]', '', str(value or ''))) or None
+
+
+def _sepa_laender():
+    import lastschrift
+    return lastschrift.EEA
+
+
+def naechste_nummer(db):
+    """Vorschlag für die Mitgliedsnummer eines neuen Mitglieds (ab 0.53): die höchste Nummer im häufigsten Format + 1, Breite und
+    Buchstaben wie dort (A0000000123 → A0000000124). Ohne passende Nummern leer. Vergibt die CDU-Mitgliederverwaltung eine andere
+    Nummer, wird sie im Mitglied geändert – der Import erkennt Mitglieder an der Nummer (REGELN Nr. 34)."""
+    vergeben, formate = set(), {}
+    for (nummer,) in db.execute('SELECT number FROM members'):
+        m = re.fullmatch(r'(\D*)(\d+)', str(nummer or '').strip())
+        if m:
+            vergeben.add((m[1].upper(), int(m[2])))           # beim Vorschlag gilt „A124“ wie „A0124“ als vergeben (nur hier)
+            formate.setdefault((m[1], len(m[2])), []).append(int(m[2]))
+    if not formate:
+        return ''
+    (vorne, breite), zahlen = max(formate.items(), key=lambda f: (len(f[1]), max(f[1])))
+    n = max(zahlen) + 1
+    while (vorne.upper(), n) in vergeben:   # dieselbe Zahl in anderer Breite (z. B. ohne führende Nullen) überspringen
+        n += 1
+    return f'{vorne}{n:0{breite}d}'
 
 
 def values(data, kvs, ovs=None, inactive=None):
@@ -413,6 +445,13 @@ def values(data, kvs, ovs=None, inactive=None):
         v['geworben_von'] = int(str(werber).strip())
     if v['geworben_von'] is not None:
         v['geworben_text'] = None                 # entweder ein Mitglied oder ein Freitext
+    v['iban'] = _iban(data.get('iban'))                 # ab 0.53, für ein späteres SEPA-Mandat (das legt die Buchhaltung an)
+    if v['iban'] and not iban_valid(v['iban']):
+        raise ValueError('IBAN ungültig – bitte prüfen (Länge oder Prüfziffer stimmt nicht).')
+    if v['iban'] and v['iban'][:2] not in _sepa_laender():
+        raise ValueError('IBAN aus einem Land außerhalb des EWR – Lastschriften unterstützt das Programm nur für Konten im EWR.')
+    if not v['iban']:
+        v['kontoinhaber'] = None                  # Kontoinhaber nur zusammen mit einer IBAN
     v['country'] = country(v['country']) or ''   # Inland bzw. Bundesland: kein Land in der Anschrift
     for k in ('address_extra', 'zip', 'city', 'country'):
         v[k] = v[k] or None
@@ -475,6 +514,8 @@ HEADERS = {
     'dues_free': ('beitragsfrei',),
     'guest': ('gastmitglied', 'gast'),
     'no_mail': ('postausschluss', 'keinepost'),
+    'iban': ('iban', 'kontoiban', 'bankiban'),
+    'kontoinhaber': ('kontoinhaber', 'kontoinhaberin', 'kontoinhabername', 'inhaber'),
 }
 # „Jahre“ und „Jubiläumjahre“ der Mitgliederverwaltung werden nicht übernommen: sie ergeben sich aus Geburtsdatum und Eintritt.
 
@@ -753,6 +794,22 @@ def preview(store, raw, filename, password=None):
             if old and old['ov_id'] and (merged.get('ov_id') != old['ov_id'] or item.get('new_ov')):   # ab 0.52: die Datei gilt (Entscheidung
                 item['ov_hinweis'] = ('Ortsverband laut Datei ersetzt den im Programm' + (' (dort „Ortsverband fest“)' if old['ov_fest'] else '')
                                       + '.')   # 22.11.2026) – nur ein Hinweis: die Zeile bleibt vorausgewählt, damit die übrigen Änderungen nicht liegen bleiben
+            inhaber_neu = False   # ab 0.53: Bankverbindung nur als Paar; leere Zellen lassen die vorhandene stehen (Entscheidung 22.11.2026)
+            if 'iban' in data:
+                neu_iban = _iban(data.get('iban'))
+                if not neu_iban or not iban_valid(neu_iban) or neu_iban[:2] not in _sepa_laender():
+                    if neu_iban:
+                        warnings.append('IBAN ungültig oder außerhalb des EWR – wird nicht übernommen.')
+                    merged['iban'], merged['kontoinhaber'] = (old['iban'], old['kontoinhaber']) if old else (None, None)
+                elif old and old['iban'] and neu_iban == _iban(old['iban']):
+                    if not _clean(data.get('kontoinhaber')):
+                        merged['kontoinhaber'] = old['kontoinhaber']        # gleiches Konto, leere Zelle: Inhaber bleibt
+                elif old and old['iban'] and 'kontoinhaber' not in data:
+                    merged['kontoinhaber'], inhaber_neu = None, bool(old['kontoinhaber'])   # neues Konto: der alte Inhaber gehört zum alten
+            elif 'kontoinhaber' in data:
+                merged['kontoinhaber'] = old['kontoinhaber'] if old else None   # Inhaber ohne IBAN-Spalte: gehört zu keinem Konto der Datei
+            if inhaber_neu:
+                warnings.append('Neues Konto ohne Spalte Kontoinhaber – Kontoinhaber ist jetzt das Mitglied.')
             if merged.get('email_work'):
                 try:
                     email_address(merged['email_work'])
@@ -773,7 +830,8 @@ def preview(store, raw, filename, password=None):
                     item['changes'].append(LABELS['ov_id'])
                 item['action'] = 'update' if item['changes'] else 'same'
                 item['member_id'] = old['id']
-                cleared = [LABELS[k] for k in FIELDS if old[k] not in (None, '') and v[k] in (None, '') and not (k == 'ov_id' and item['new_ov'])]
+                cleared = [LABELS[k] for k in FIELDS if old[k] not in (None, '') and v[k] in (None, '') and not (k == 'ov_id' and item['new_ov'])
+                           and not (k == 'kontoinhaber' and inhaber_neu)]
                 if cleared:
                     warnings.append('Leere Zelle löscht: ' + ', '.join(cleared) + ' – bitte prüfen.')
             else:

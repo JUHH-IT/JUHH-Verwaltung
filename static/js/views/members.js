@@ -39,6 +39,7 @@ const text = (name, label, v, attrs = {}) => html`<label class="field">${label}<
   ${attrs.type ? html`type="${attrs.type}"` : ''} ${attrs.required ? 'required' : ''} placeholder="${attrs.hint || ''}" value="${v[name] || ''}">${
   attrs.note ? html`<span class="small muted">${attrs.note}</span>` : ''}</label>`;
 const NOAUTO = 'autocapitalize="off" autocorrect="off" spellcheck="false"';
+const ibanText = (iban) => (iban ? iban.replace(/(.{4})(?=.)/g, '$1 ') : '');   // in Vierergruppen; geprüft wird auf dem Server
 
 /** Saldo des Beitragskontos: − Rückstand (rot), + Guthaben. */
 export const balanceCell = (cents) => (cents < 0 ? html`<span class="over">${signed(cents)}</span>` : cents > 0 ? signed(cents) : html`<span class="muted">${eur(0)}</span>`);
@@ -181,7 +182,8 @@ export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
     </div>
     <h3>Mitgliedschaft</h3>
     <div class="formgrid">
-      <label class="field">Mitgliedsnummer<input name="number" required autocomplete="off" ${raw(NOAUTO)} placeholder="z. B. A0000000001" value="${v.number || ''}"></label>
+      <label class="field">Mitgliedsnummer<input name="number" required autocomplete="off" ${raw(NOAUTO)} placeholder="z. B. A0000000001" value="${v.number || ''}">
+        <span class="small muted" data-nummer-vorschlag hidden>Vorschlag: nächste freie Nummer – vergibt die CDU-Mitgliederverwaltung eine andere, hier eintragen.</span></label>
       ${kvOvFields(v.kv || '', v.ov_id)}
       <div class="span address-check small" data-ov-vorschlag aria-live="polite"></div>
       <label class="check span"><input type="checkbox" name="ov_fest" value="1" ${v.ov_fest ? 'checked' : ''}> Ortsverband fest – nicht nach der Adresse
@@ -219,6 +221,13 @@ export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
       ${text('mobile', 'Handy privat', v, { type: 'tel' })}
       ${text('mobile_work', 'Handy dienstlich', v, { type: 'tel' })}
     </div>
+    <h3>Bankverbindung</h3>
+    <div class="formgrid">
+      <label class="field">IBAN<input name="iban" autocomplete="off" ${raw(NOAUTO)} maxlength="42" value="${ibanText(v.iban)}" placeholder="für eine spätere SEPA-Lastschrift"></label>
+      ${text('kontoinhaber', 'Kontoinhaber', v, { hint: 'leer = das Mitglied selbst', max: 70 })}
+      <p class="span small muted">Das SEPA-Mandat legt die Buchhaltung an, sobald das unterschriebene Formular vorliegt. Formulare: Liste „IBAN ohne Mandat“ →
+        Mitglieder auswählen → „SEPA-Mandate“.</p>
+    </div>
     <h3>Beitrag</h3>
     <div class="formgrid">
       <fieldset class="span member-dues"><legend>Jahresbeitrag</legend>
@@ -240,6 +249,15 @@ export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
   bindDues(form);
   bindAddressCheck(form, !m);
   bindWerber(form, m);
+  if (!m && !form.number.value) {   // Vorschlag der Mitgliedsnummer (0.53) – nur, solange niemand das Feld angefasst hat
+    let beruehrt = false;            // sonst hinge die getippte Nummer an den Vorschlag an („T-2T-2“, Prüfbefund 0.53)
+    for (const ev of ['focus', 'input']) form.number.addEventListener(ev, () => { beruehrt = true; }, { once: true });
+    api('/api/mitgliedsnummer').then((r) => {
+      if (!r.nummer || beruehrt || document.activeElement === form.number || form.number.value || !form.isConnected) return;
+      form.number.value = r.nummer;
+      form.querySelector('[data-nummer-vorschlag]').hidden = false;
+    }).catch(() => {});
+  }
   el.querySelector('form [data-close]').onclick = () => el.close();
   form.onsubmit = (e) => {
     e.preventDefault();
@@ -395,7 +413,7 @@ export function account(id, { back = null, tab = null } = {}) {
         <section class="akte-card akte-wide"><h4>Letzte Änderungen</h4>${history(a.verlauf.slice(0, 4))}
           ${a.verlauf.length > 4 ? html`<button type="button" class="link small" data-tab="verlauf">Ganzer Verlauf</button>` : ''}</section></div>`,
       angaben: () => html`<dl class="akte-all">${a.angaben.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>`,
-      konto: () => html`<div data-account></div>${mandateSection(m)}
+      konto: () => html`<div data-account></div>${mandateSection({ ...m, ...f })}
         <h3>Rechnungen</h3>${(() => { const inv = store.data.invoices.filter((i) => i.member_id === id);
           return inv.length ? table(['Jahr', 'Rechnung', { label: 'Forderung', className: 'num' }, { label: 'Bezahlt', className: 'num' }, 'Status'],
             inv.map((i) => html`<tr><td>${i.year || date(i.issued)}</td><td>${i.number}</td><td class="num">${eur(i.total)}</td><td class="num">${eur(i.paid)}</td><td>${invoiceBadge(i)}</td></tr>`))
@@ -415,7 +433,7 @@ export function account(id, { back = null, tab = null } = {}) {
         reopen();
       });
     });
-    if (tab === 'konto') accountBox(m, a, box, () => reopen('konto'));
+    if (tab === 'konto') accountBox({ ...m, ...f }, a, box, () => reopen('konto'));   // mit Bankdaten aus der Akte (Mandat vorausgefüllt)
   }
 }
 
@@ -721,6 +739,7 @@ export function members(main) {
       <strong>${picked.length} ausgewählt</strong>${picked.length > post ? html`<span class="small">${picked.length - post} ohne Post (Anschrift unvollständig oder Postausschluss)</span>` : ''}
       <span class="ml-actions"><button type="button" class="btn small" data-letter ${post ? '' : 'disabled'}>${icon('file', 14)} Anschreiben</button>
         <button type="button" class="btn small" data-labels ${post ? '' : 'disabled'}>Adressetiketten</button>
+        <button type="button" class="btn small" data-mandates title="Mandatsformulare zum Unterschreiben, vorausgefüllt mit den Bankdaten">SEPA-Mandate</button>
         <button type="button" class="btn small" data-excel>${icon('download', 14)} Excel je Kreisverband</button>
         <button type="button" class="btn small" data-csv>CSV</button>
         <button type="button" class="btn small ghost" data-unpick>Auswahl aufheben</button></span></div>` : ''}
@@ -770,6 +789,7 @@ export function members(main) {
   const zipped = new Set(picked.map((m) => m.kv)).size > 1;   // je Kreisverband eine Datei, mehrere als ZIP (mitgliederlisten.excel)
   main.querySelector('[data-excel]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Mitgliederliste-${todayIso()}.${zipped ? 'zip' : 'xlsx'}`, { art: 'excel', ids: pickedIds })));
   main.querySelector('[data-labels]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `Adressetiketten-${todayIso()}.pdf`, { art: 'etiketten', ids: pickedIds })));
+  main.querySelector('[data-mandates]')?.addEventListener('click', () => safe(() => download('/api/mitglieder-liste', `SEPA-Mandate-${todayIso()}.pdf`, { art: 'mandate', ids: pickedIds })));
   main.querySelector('[data-letter]')?.addEventListener('click', () => letterDialog(pickedIds, post));
   main.querySelector('[data-unpick]')?.addEventListener('click', () => { selected = new Set(); redraw(); });
   main.querySelectorAll('[data-member]').forEach((row) => {

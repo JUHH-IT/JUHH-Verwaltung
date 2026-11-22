@@ -170,6 +170,8 @@ def vorschau(store, keep, drop, buchhaltung=False):
         raise ValueError('Mitglied nicht gefunden.')
     a, b = dict(a), dict(b)
     neu = {k: b[k] for k in ERGAENZEN if not a.get(k) and b.get(k)}
+    if not a.get('iban') and b.get('iban'):   # Bankverbindung (ab 0.53) nur als Paar: IBAN mit ihrem Kontoinhaber
+        neu.update(iban=b['iban'], kontoinhaber=b.get('kontoinhaber'))
     hinweise = []
     # Wiedereintritt: eine Mitgliedschaft endete, bevor die andere begann – dann keine Daten der alten übernehmen
     b_vorher, a_vorher = _endete_vor(b['left_on'], a['joined']), _endete_vor(a['left_on'], b['joined'])

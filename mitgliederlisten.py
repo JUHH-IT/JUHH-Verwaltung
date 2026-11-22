@@ -16,8 +16,8 @@ from pdfschrift import exclusive
 
 MAX = 5000
 ARTEN = {'csv': ('text/csv; charset=utf-8', 'csv'), 'excel': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'),
-         'etiketten': ('application/pdf', 'pdf'), 'anschreiben': ('application/pdf', 'pdf')}
-NAMEN = {'csv': 'Mitgliederliste', 'excel': 'Mitgliederliste', 'etiketten': 'Adressetiketten', 'anschreiben': 'Anschreiben'}
+         'etiketten': ('application/pdf', 'pdf'), 'anschreiben': ('application/pdf', 'pdf'), 'mandate': ('application/pdf', 'pdf')}
+NAMEN = {'csv': 'Mitgliederliste', 'excel': 'Mitgliederliste', 'etiketten': 'Adressetiketten', 'anschreiben': 'Anschreiben', 'mandate': 'SEPA-Mandate'}
 MAX_BETREFF, MAX_TEXT = 200, 5000
 
 
@@ -239,9 +239,14 @@ def datei(store, data, actor):
         zipped = ext == 'zip'
     elif art == 'etiketten':
         body = etiketten(members)
+    elif art == 'mandate':   # ab 0.53: Mandatsformulare zum Unterschreiben, vorausgefüllt mit den Bankdaten des Mitglieds
+        import lastschrift
+        if not lastschrift.enabled(store.config()):
+            raise ValueError('Für Mandatsformulare zuerst die Gläubiger-ID in den Stammdaten (Verein & Bank) eintragen.')
+        body = lastschrift.mandate_pdf(store, member_ids=[m['id'] for m in members], mit_mandat=False)   # immer ein neues Mandat
     else:
         body = anschreiben(store.config(), members, data.get('betreff'), data.get('text'))
-    post = len(members) if art in ('csv', 'excel') else sum(1 for m in members if postfaehig(m))
+    post = len(members) if art in ('csv', 'excel', 'mandate') else sum(1 for m in members if postfaehig(m))
     with store.db:
         store.audit(actor, 'Mitgliederliste ausgegeben', {'art': art, 'anzahl': post})
     kind, ext = ('application/zip', 'zip') if zipped else ARTEN[art]
