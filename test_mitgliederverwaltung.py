@@ -195,6 +195,30 @@ class AkteTests(Basis):
         rows = self.s.db.execute("SELECT actor,detail FROM audit WHERE action='Notizen ausgetretener Mitglieder gelöscht'").fetchall()
         self.assertEqual([(r[0], json.loads(r[1])) for r in rows], [('Programm', {'anzahl': 1})] * 3)
         self.assertEqual(mitglieder.notizen_bereinigen(self.s), 0)                            # nichts mehr zu tun: kein Eintrag
+        d = self.s.member({**BASE, 'number': 'T-9', 'first_name': 'Ida', 'last_name': 'Import'}, 'Test')
+        mitglieder.notiz(self.s, d, 'Rückruf', 'Test')
+        raw = ('Mitgliedsnummer;Vorname;Nachname;Straße;PLZ;Ort;Geburtsdatum;Eintritt;Austritt;Kreisverband\n'
+               'T-9;Ida;Import;Musterweg 1;20095;Hamburg;01.03.1995;01.01.2020;31.12.2025;Altona\n').encode()
+        prev = mitglieder.preview(self.s, raw, 'test.csv')
+        mitglieder.apply(self.s, prev, [r['row_no'] for r in prev['rows'] if r['action'] == 'update'], 'Test')   # Austritt per Import
+        self.assertIsNone(note(d))
+        mitglieder.notiz(self.s, self.a, '', 'Test')
+        with self.s.db:
+            self.s.db.execute("UPDATE members SET left_on='' WHERE id=?", (self.a,))          # Altbestand: '' = kein Austritt
+        mitglieder.notiz(self.s, self.a, 'bleibt', 'Test')
+        self.assertEqual((mitglieder.notizen_bereinigen(self.s), note(self.a)), (0, 'bleibt'))
+
+    def test_stuendlicher_lauf_loescht_notizen(self):
+        import app
+        mitglieder.notiz(self.s, self.a, 'Rückruf', 'Test')
+        with self.s.db:
+            self.s.db.execute("UPDATE members SET left_on='2025-12-31' WHERE id=?", (self.a,))   # Austritt an allen Wegen vorbei
+        saved, app.DB = app.DB, Path(self.tmp.name) / 't.db'
+        try:
+            app.notizen_stuendlich()
+        finally:
+            app.DB = saved
+        self.assertIsNone(self.s.db.execute('SELECT note FROM members WHERE id=?', (self.a,)).fetchone()[0])
 
     def test_alle_angaben(self):
         m = dict(self.s.db.execute('SELECT * FROM members WHERE id=?', (self.b,)).fetchone())

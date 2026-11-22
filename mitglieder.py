@@ -231,16 +231,24 @@ def notizen_bereinigen(store, today=None):
     – am Tag des Austritts; läuft stündlich und nach „Austritt eintragen“. → Anzahl gelöschter Notizen."""
     day = (today or date.today()).isoformat()
     with store.db:
-        n = store.db.execute('UPDATE members SET note=NULL WHERE note IS NOT NULL AND left_on IS NOT NULL AND left_on<=?', (day,)).rowcount
+        n = store.db.execute("UPDATE members SET note=NULL WHERE note IS NOT NULL AND left_on IS NOT NULL AND left_on<>'' AND left_on<=?",
+                             (day,)).rowcount   # '' = kein Austritt (Altbestand)
         if n:
             store.audit('Programm', 'Notizen ausgetretener Mitglieder gelöscht', {'anzahl': n})
     return n
 
 
 def verlauf(store, member_id, limit=50):
-    """Änderungen an einem Mitglied aus dem Protokoll (neueste zuerst): Zeit, wer, was – nur Feldnamen und Daten, keine Werte."""
+    """Änderungen an einem Mitglied aus dem Protokoll (neueste zuerst): Zeit, wer, was – nur Feldnamen und Daten, keine Werte.
+    Enthält die Einträge der Mitglieder, die in ihm aufgegangen sind (doppelte.zusammenfuehren), mit deren Nummer."""
+    ids, neu = {member_id}, [member_id]
+    while neu:
+        neu = [r[0] for r in store.db.execute("SELECT json_extract(detail,'$.entfaellt.id') FROM audit WHERE action='Mitglieder zusammengeführt' "
+                                              f"AND json_extract(detail,'$.id') IN ({','.join('?' * len(neu))})", neu) if r[0] not in ids]
+        ids.update(neu)
     rows = store.db.execute(f"SELECT time,actor,action,detail FROM audit WHERE action IN ({','.join('?' * len(VERLAUF))}) "
-                            "AND json_extract(detail,'$.id')=? ORDER BY id DESC LIMIT ?", (*VERLAUF, member_id, limit)).fetchall()
+                            f"AND json_extract(detail,'$.id') IN ({','.join('?' * len(ids))}) ORDER BY id DESC LIMIT ?",
+                            (*VERLAUF, *ids, limit)).fetchall()
     out = []
     for time, actor, action, raw in rows:
         detail = json.loads(raw or '{}')
@@ -255,6 +263,8 @@ def verlauf(store, member_id, limit=50):
             text = f"Zusammengeführt mit Nr. {(detail.get('entfaellt') or {}).get('number', '?')}"
             if detail.get('ergaenzt'):
                 text += ' – ergänzt: ' + ', '.join(LABELS.get(f, 'Notiz' if f == 'note' else f) for f in detail['ergaenzt'])
+        if detail.get('id') != member_id:
+            text += f" (Nr. {detail.get('number', '?')})"
         out.append({'time': time, 'actor': actor, 'text': text})
     return out
 

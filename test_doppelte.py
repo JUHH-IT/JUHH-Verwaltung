@@ -144,11 +144,11 @@ class ZusammenfuehrenTests(unittest.TestCase):
         mitgliederkonto.set_target(self.s, b, 2027, 0, 'Test-Befreiung', 'Test')
         self.mandat(b, 'TEST-1')
         doppelte.kein_duplikat(self.s, [b, c], 'Test')
-        self.assertEqual(doppelte.vorschau(self.s, a, b)['konflikte'], ['Das entfallende Mitglied hat Rechnungen, Beitragszahlungen, Mandate oder '
-                                                                         'Erstattungen – umhängen darf nur, wer „Buchhaltung ändern“ hat.'])
+        self.assertEqual(doppelte.vorschau(self.s, a, b)['konflikte'], ['Das entfallende Mitglied hat Rechnungen, Zahlungen, Mandate, Erstattungen '
+                                                                         'oder Festlegungen – umhängen darf nur, wer „Buchhaltung ändern“ hat.'])
         v = doppelte.vorschau(self.s, a, b, True)
         self.assertEqual((v['bleibt']['number'], v['entfaellt']['number'], v['konflikte']), ('T-1', 'T-2', []))
-        self.assertEqual(v['ergaenzt'], ['E-Mail privat', 'Handy privat', 'Eintritt', 'Postausschluss', 'Notiz'])   # Anschrift: a hat eine
+        self.assertEqual(v['ergaenzt'], ['E-Mail privat', 'Handy privat', 'Eintritt (01.05.2019)', 'Postausschluss', 'Notiz'])   # Anschrift: a hat eine
         self.assertEqual(v['umhaengen'], [['Rechnungen', 1], ['SEPA-Mandate', 1], ['festgelegte Beiträge', 1]])
         self.assertEqual(v['unterschiede'], [['Straße', 'Musterweg 1', 'Anderer Weg 5']])   # es gilt die des bleibenden
         doppelte.zusammenfuehren(self.s, a, b, 'Test', True)
@@ -168,8 +168,11 @@ class ZusammenfuehrenTests(unittest.TestCase):
                                            'umgehaengt': {'Rechnungen': 1, 'SEPA-Mandate': 1, 'festgelegte Beiträge': 1}})
         for secret in ('Notiz B', 'erika@', '0151'):
             self.assertNotIn(secret, raw)
-        self.assertEqual(mitglieder.verlauf(self.s, a)[0]['text'],
-                         'Zusammengeführt mit Nr. T-2 – ergänzt: E-Mail privat, Eintritt, Handy privat, Postausschluss, Notiz')
+        verlauf = [x['text'] for x in mitglieder.verlauf(self.s, a)]
+        self.assertEqual(verlauf[0], 'Zusammengeführt mit Nr. T-2 – ergänzt: E-Mail privat, Eintritt, Handy privat, Postausschluss, Notiz')
+        self.assertIn('Notiz geändert (Nr. T-2)', verlauf)                                  # Verlauf des aufgegangenen Mitglieds bleibt sichtbar
+        self.assertIn('Mitglied angelegt (Nr. T-2)', verlauf)
+        self.assertNotIn('Mitglied angelegt (Nr. T-3)', verlauf)
 
     def test_anschrift_bleibt_und_ortsverband_nur_im_selben_kv(self):
         import gliederung
@@ -212,7 +215,55 @@ class ZusammenfuehrenTests(unittest.TestCase):
         b = self.member('Erika', 'Muster', street='Anderer Weg 5')
         mitglieder.notiz(self.s, b, 'Notiz B', 'Test')
         mitglieder.austritt(self.s, a, '2025-12-31', '', 'Test')
-        self.assertNotIn('note', doppelte.vorschau(self.s, a, b)['neu'])
+        v = doppelte.vorschau(self.s, a, b)
+        self.assertNotIn('note', v['neu'])
+        self.assertIn('Notiz des entfallenden Mitglieds wird nicht übernommen', v['hinweise'][0])
+
+    def test_stornierte_rechnung_bleibt_hindernis(self):
+        a = self.member('Erika', 'Muster')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5')
+        self.s.issue_dues(2026, [a, b], 'Test')
+        bill = self.s.db.execute("SELECT id FROM invoices WHERE member_id=?", (b,)).fetchone()[0]
+        self.s.reverse_invoice(bill, 'Test')
+        konflikte = doppelte.vorschau(self.s, a, b, True)['konflikte']
+        self.assertEqual(len(konflikte), 1)
+        self.assertIn('auch stornierte zählen', konflikte[0])
+        self.assertNotIn('stornieren', konflikte[0])                                      # kein Rat, der nicht hilft
+
+    def test_rechnung_beim_einen_festlegung_beim_anderen(self):
+        a = self.member('Erika', 'Muster')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5')
+        self.s.issue_dues(2026, [a], 'Test')
+        mitgliederkonto.set_target(self.s, b, 2026, 0, 'Test-Befreiung', 'Test')
+        for keep, drop in ((a, b), (b, a)):
+            konflikte = doppelte.vorschau(self.s, keep, drop, True)['konflikte']
+            self.assertEqual(len(konflikte), 1, (keep, drop))
+            self.assertIn('Für 2026 hat eines eine offene Beitragsrechnung', konflikte[0])
+        with self.assertRaisesRegex(ValueError, 'offene Beitragsrechnung'):
+            doppelte.zusammenfuehren(self.s, a, b, 'Test', True)
+        self.assertEqual(self.s.db.execute('SELECT member_id FROM dues_targets').fetchone()[0], b)
+
+    def test_festlegung_umhaengen_nur_mit_buchhaltung(self):
+        a = self.member('Erika', 'Muster')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5')
+        mitgliederkonto.set_target(self.s, b, 2026, 0, 'Test-Befreiung', 'Test')
+        self.assertIn('„Buchhaltung ändern“', doppelte.vorschau(self.s, a, b)['konflikte'][0])
+        self.assertEqual(doppelte.vorschau(self.s, a, b, True)['konflikte'], [])
+
+    def test_wiedereintritt_kreisverband_und_beitragsfrei(self):
+        a = self.member('Erika', 'Muster', joined='2026-01-01', kv_joined='2026-01-01')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2015-01-01', left_on='2018-12-31', dues_free='1', guest='1')
+        v = doppelte.vorschau(self.s, a, b)
+        self.assertNotIn('joined', v['neu'])                                               # Wiedereintritt: eigene Mitgliedschaft
+        self.assertIn('endete vorher', v['hinweise'][0])
+        labels = [u[0] for u in v['unterschiede']]
+        self.assertIn('Beitragsfrei', labels)
+        self.assertIn('Gastmitglied', labels)
+        c = self.member('Ole', 'Probe', kv='5200')
+        d = self.member('Ole', 'Probe', street='Anderer Weg 5', kv_joined='2021-01-01')    # anderer Kreisverband: kein Eintritt KV
+        self.assertNotIn('kv_joined', doppelte.vorschau(self.s, c, d)['neu'])
+        e = self.member('Ole', 'Probe', street='Dritter Weg 7')
+        self.assertEqual(doppelte.vorschau(self.s, e, d)['neu'], {'kv_joined': '2021-01-01'})
 
 
 class DoppelteHttpTests(unittest.TestCase):
@@ -256,6 +307,27 @@ class DoppelteHttpTests(unittest.TestCase):
         self.assertTrue(r['backup'].startswith('vor-zusammenfuehren'))
         members = {m['id']: m for m in self.get(officer, '/api/data?year=2026')[1]['members']}
         self.assertEqual((ids[1] in members, members[ids[0]]['email']), (False, 'lea@example.org'))
+
+    def test_hindernis_ohne_sicherung_und_buchhaltung_nur_mit_recht(self):
+        import app
+        officer = self.person('Mitglieder-Person', 'Landesmitgliederbeauftragter')
+        ids = [self.post(officer, '/api/member', {**BASE, 'number': n, 'first_name': 'Ida', 'last_name': 'Dreifach'})[1]['id']
+               for n in ('M-20', 'M-21')]
+        store = Store(app.DB)
+        try:
+            with store.db:   # Testdaten direkt: Festlegung für das entfallende Mitglied
+                store.db.execute("INSERT INTO dues_targets(member_id,year,amount,reason,created) VALUES(?,2026,0,'Test','2026-01-01')", (ids[1],))
+        finally:
+            store.db.close()
+        folder = app.backups_dir() / 'Vor Änderungen'
+        count = lambda: len(list(folder.glob('vor-zusammenfuehren-*'))) if folder.is_dir() else 0
+        before, pair = count(), {'keep': ids[0], 'drop': ids[1]}
+        status, r = self.post(officer, '/api/zusammenfuehren', pair)
+        self.assertEqual((status, count()), (400, before))                                  # Hindernis: keine Sicherung
+        self.assertIn('Buchhaltung ändern', r['error'])
+        both = self.person('Beides-Person', 'Landesmitgliederbeauftragter', 'Schatzmeister')
+        self.assertEqual(self.post(both, '/api/zusammenfuehren', pair)[0], 200)
+        self.assertEqual(count(), before + 1)
 
 
 if __name__ == '__main__':

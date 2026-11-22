@@ -117,10 +117,15 @@ def kein_duplikat(store, ids, actor):
 
 # Angaben, die beim bleibenden Mitglied ergänzt werden, wenn sie dort fehlen (Anschrift ist Pflicht und bleibt immer die des bleibenden)
 ERGAENZEN = ('salutation', 'title', 'name_prefix', 'name_suffix', 'letter_salutation', 'letter_salutation2', 'gender', 'nationality',
-             'clubs', 'club', 'email', 'email_work', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method', 'kv_joined')
-VERGLEICH = ('number', 'first_name', 'last_name', 'birth', 'street', 'zip', 'city', 'kv', 'left_on', 'dues')   # bleiben beim bleibenden Mitglied – Unterschiede zeigen
-UMHAENGEN = (('invoices', 'Rechnungen', True), ('dues_assignments', 'Beitragszahlungen', True), ('mandates', 'SEPA-Mandate', True),
-             ('refunds', 'Auslagenerstattungen', True), ('dues_targets', 'festgelegte Beiträge', False), ('sepa_mandates', 'gemerkte Mandatsreferenzen', False))
+             'clubs', 'club', 'email', 'email_work', 'phone', 'phone_work', 'mobile', 'mobile_work', 'payment_method')
+# bleiben beim bleibenden Mitglied – Unterschiede zeigen
+VERGLEICH = ('number', 'first_name', 'last_name', 'birth', 'street', 'zip', 'city', 'kv', 'left_on', 'dues', 'dues_free', 'guest')
+# alle Tabellen mit member_id außer dues_rates (Beitragsverlauf: der des bleibenden gilt); alle gehören zur Buchhaltung („Buchhaltung ändern“)
+UMHAENGEN = (('invoices', 'Rechnungen'), ('dues_assignments', 'Beitragszahlungen'), ('mandates', 'SEPA-Mandate'), ('refunds', 'Auslagenerstattungen'),
+             ('dues_targets', 'festgelegte Beiträge'), ('sepa_mandates', 'gemerkte Mandatsreferenzen'))
+# offene Beitragsrechnung (ohne Pilot) bestimmt das Soll – daneben keine Festlegung desselben Jahres (wie mitgliederkonto.set_target)
+OFFENE_BEITRAGSRECHNUNG = ("SELECT year FROM invoices WHERE kind='dues' AND member_id=? AND status='issued' "
+                           "AND NOT COALESCE(json_extract(snapshot,'$.pilot'),0) INTERSECT SELECT year FROM dues_targets WHERE member_id=?")
 
 
 def _id(value):
@@ -132,10 +137,12 @@ def _id(value):
 def _zeigen(key, value):
     from core import KVS
     from formate import euro, german_date
-    if value in (None, ''):
+    if value in (None, '') and key not in ('dues_free', 'guest'):
         return '—'
     if key in ('birth', 'joined', 'left_on', 'kv_joined'):
         return german_date(value)
+    if key in ('dues_free', 'guest'):
+        return 'ja' if value else 'nein'
     if key == 'kv':
         return dict(KVS).get(value, value)
     return euro(value) if key == 'dues' else str(value)
@@ -153,32 +160,52 @@ def vorschau(store, keep, drop, buchhaltung=False):
         raise ValueError('Mitglied nicht gefunden.')
     a, b = dict(a), dict(b)
     neu = {k: b[k] for k in ERGAENZEN if not a.get(k) and b.get(k)}
-    if not a.get('ov_id') and b.get('ov_id') and a['kv'] == b['kv']:
-        neu['ov_id'] = b['ov_id']
-    if b['joined'] < a['joined']:
+    hinweise = []
+    if a['kv'] == b['kv']:                               # Ortsverband und Eintritt in den Kreisverband nur im selben Kreisverband
+        neu.update({k: b[k] for k in ('ov_id', 'kv_joined') if not a.get(k) and b.get(k)})
+    if b['joined'] < a['joined'] and not (b['left_on'] and b['left_on'] < a['joined']):
         neu['joined'] = b['joined']                      # dieselbe Mitgliedschaft: der frühere Eintritt zählt
+    elif b['joined'] < a['joined']:                      # Wiedereintritt: die frühere Mitgliedschaft war vorher beendet
+        hinweise.append(f"Eintritt bleibt {_zeigen('joined', a['joined'])}: die frühere Mitgliedschaft "
+                        f"({_zeigen('joined', b['joined'])} bis {_zeigen('left_on', b['left_on'])}) endete vorher.")
     if b['no_mail'] and not a['no_mail']:
         neu['no_mail'] = 1                               # Postausschluss bleibt bestehen
-    if b.get('note') and not (a['left_on'] and a['left_on'] <= date.today().isoformat()):   # ausgetreten: keine Notiz (DSGVO)
+    if b.get('note') and a['left_on'] and a['left_on'] <= date.today().isoformat():
+        hinweise.append('Die Notiz des entfallenden Mitglieds wird nicht übernommen – das bleibende ist ausgetreten (Datenschutz).')
+    elif b.get('note'):
         neu['note'] = f"{a['note']}\n—\n{b['note']}" if a.get('note') else b['note']
-    zahl = {table: store.db.execute(f'SELECT COUNT(*) FROM {table} WHERE member_id=?', (drop,)).fetchone()[0] for table, _, _ in UMHAENGEN}
-    konflikte = [f'Beide haben eine {"Beitragsrechnung" if kind == "dues" else "Rechnung"} {year} – erst eine stornieren bzw. klären.'
+    zahl = {table: store.db.execute(f'SELECT COUNT(*) FROM {table} WHERE member_id=?', (drop,)).fetchone()[0] for table, _ in UMHAENGEN}
+    # UNIQUE(member_id, year, kind) – auch stornierte Rechnungen bleiben als Beleg bei ihrem Mitglied
+    konflikte = [f'Beide haben eine {"Beitragsrechnung" if kind == "dues" else "Rechnung"} {year} (auch stornierte zählen: eine Rechnung bleibt '
+                 'als Beleg bei ihrem Mitglied) – so lassen sie sich nicht zusammenführen.'
                  for year, kind in store.db.execute('SELECT year,kind FROM invoices WHERE member_id=? AND year IS NOT NULL INTERSECT '
                                                     'SELECT year,kind FROM invoices WHERE member_id=? AND year IS NOT NULL', (keep, drop))]
     konflikte += [f'Für beide ist der Beitrag {year} festgelegt – eine Festlegung entfernen.' for (year,) in store.db.execute(
         'SELECT year FROM dues_targets WHERE member_id=? INTERSECT SELECT year FROM dues_targets WHERE member_id=?', (keep, drop))]
+    konflikte += [f'Für {year} hat eines eine offene Beitragsrechnung, das andere einen festgelegten Beitrag – erst die Rechnung stornieren '
+                  'oder die Festlegung entfernen.' for (year,) in store.db.execute(
+                      f'SELECT year FROM ({OFFENE_BEITRAGSRECHNUNG}) UNION SELECT year FROM ({OFFENE_BEITRAGSRECHNUNG})', (keep, drop, drop, keep))]
     if all(store.db.execute("SELECT 1 FROM mandates WHERE member_id=? AND status='active'", (i,)).fetchone() for i in (keep, drop)):
         konflikte.append('Beide haben ein aktives SEPA-Mandat – eins widerrufen.')
     if len(neu.get('note') or '') > mitglieder.MAX_NOTE:
         konflikte.append(f'Zusammen wären die Notizen länger als {mitglieder.MAX_NOTE} Zeichen – erst eine kürzen.')
-    if not buchhaltung and any(zahl[t] for t, _, konto in UMHAENGEN if konto):
-        konflikte.append('Das entfallende Mitglied hat Rechnungen, Beitragszahlungen, Mandate oder Erstattungen – umhängen darf nur, '
+    if not buchhaltung and any(zahl.values()):
+        konflikte.append('Das entfallende Mitglied hat Rechnungen, Zahlungen, Mandate, Erstattungen oder Festlegungen – umhängen darf nur, '
                          'wer „Buchhaltung ändern“ hat.')
     person = lambda m: {'id': m['id'], 'number': m['number'], 'name': m['name']}
-    return {'bleibt': person(a), 'entfaellt': person(b), 'neu': neu,
-            'ergaenzt': [mitglieder.LABELS.get(k, 'Notiz' if k == 'note' else k) for k in neu],
-            'unterschiede': [[mitglieder.LABELS[k], _zeigen(k, a[k]), _zeigen(k, b[k])] for k in VERGLEICH if a[k] != b[k] and k != 'number'],
-            'umhaengen': [[label, zahl[t]] for t, label, _ in UMHAENGEN if zahl[t]], 'konflikte': konflikte}
+    bezeichnung = lambda k: f"Eintritt ({_zeigen(k, neu[k])})" if k == 'joined' else mitglieder.LABELS.get(k, 'Notiz' if k == 'note' else k)
+    return {'bleibt': person(a), 'entfaellt': person(b), 'neu': neu, 'ergaenzt': [bezeichnung(k) for k in neu],
+            'unterschiede': [[mitglieder.LABELS[k], _zeigen(k, a[k]), _zeigen(k, b[k])] for k in VERGLEICH
+                             if k != 'number' and _zeigen(k, a[k]) != _zeigen(k, b[k])],
+            'umhaengen': [[label, zahl[t]] for t, label in UMHAENGEN if zahl[t]], 'konflikte': konflikte, 'hinweise': hinweise}
+
+
+def pruefen(store, keep, drop, buchhaltung=False):
+    """Vorschau oder ValueError mit allen Hindernissen – vor der Sicherung und erneut in der Transaktion."""
+    v = vorschau(store, keep, drop, buchhaltung)
+    if v['konflikte']:
+        raise ValueError(' '.join(v['konflikte']))
+    return v
 
 
 def zusammenfuehren(store, keep, drop, actor, buchhaltung=False):
@@ -188,15 +215,13 @@ def zusammenfuehren(store, keep, drop, actor, buchhaltung=False):
     import mitglieder
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
-        v = vorschau(store, keep, drop, buchhaltung)
-        if v['konflikte']:
-            raise ValueError(' '.join(v['konflikte']))
+        v = pruefen(store, keep, drop, buchhaltung)
         neu = v['neu']
         if neu:
             a = {**dict(store.db.execute('SELECT * FROM members WHERE id=?', (keep,)).fetchone()), **neu}
             neu['name'], neu['address'] = mitglieder.compose(a)
             store.db.execute(f"UPDATE members SET {','.join(f'{k}=?' for k in neu)} WHERE id=?", (*neu.values(), keep))
-        for table, _, _ in UMHAENGEN:
+        for table, _ in UMHAENGEN:
             store.db.execute(f'UPDATE {table} SET member_id=? WHERE member_id=?', (keep, drop))
         store.db.execute('DELETE FROM dues_rates WHERE member_id=?', (drop,))   # Beitragsverlauf: der des bleibenden Mitglieds gilt
         store.db.execute('DELETE FROM mitglieder_keine_doppelten WHERE a=? OR b=?', (drop, drop))
