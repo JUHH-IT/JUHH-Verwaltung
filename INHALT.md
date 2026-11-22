@@ -66,7 +66,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
-- `static/js/views/auswertung.js`: auswertung → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf
+- `static/js/views/auswertung.js`: aussageBestand, aussageBindung, aussageDichte, aussageGliederung, aussageStruktur, auswertung, flaecheKm2, klassen, skala, stufe, vorn → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf, /api/karte, /api/karte-gebiete
 - `static/js/views/bank.js`: bank, bankKeys, renderLedger, useLedger → /api/kasse-datei, /api/park, /api/reverse-bank
 - `static/js/views/benutzer.js`: benutzer → /api/benutzer, /api/benutzer-abgleichen, /api/benutzer-app-zuruecksetzen, /api/benutzer-startpasswort, /api/rolle, /api/rolle-loeschen
 - `static/js/views/bills.js`: approvalBadge, billBadge, bills, paymentDialog, reviewDialog → /api/bill, /api/bill-approval-revoke, /api/bill-approve, /api/bill-cancel, /api/bill-file, /api/bill-qr.svg, /api/bill-release, /api/bill-transferred, /api/bill-transfers, /api/bill-writeoff, /api/einvoice, /api/quarter-review, /api/quarter-review.pdf, /api/refund-form.pdf
