@@ -48,6 +48,7 @@ DEFAULTS = {
     'kv_share_auto': 'no', 'kv_share_auto_from': '',
     # Karte (ab 0.32): Kartenhintergrund von OpenStreetMap laden (es gehen nur Kartenausschnitte ins Netz, keine Mitgliederdaten)
     'map_tiles': 'yes',
+    'kenntnis': 'yes', 'kenntnis_eigene': 'no',   # ab 0.54: Änderungen an Stammdaten zur Kenntnis nehmen; eigene Änderungen der Mitgliederverwaltung gelten als gesehen
     # Wahlberechtigung (ab 0.37, Satzung § 37, wahlrecht.py): auswerten ab diesem Jahr (2026 wird nicht ausgewertet, Entscheidung
     # Lennert Gust 19.11.2026); Stichtage der nächsten turnusmäßigen Wahlen (JJJJ-MM-TT, leer = Vorschlag des Programms)
     'wahlrecht_ab': '2027', 'wahl_beitrittsstichtag': '', 'wahl_beitragsstichtag': '',
@@ -224,7 +225,7 @@ def clean(data, current):
             if v not in ('', 'jan1', 'dec31'):
                 raise ValueError('Ungültiger Altersstichtag.')
             out[key] = v
-        elif key in ('invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles'):
+        elif key in ('invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene'):
             out[key] = 'yes' if v in ('yes', 'true', 'on', '1') else 'no'
         elif key == 'kv_share_auto_from':
             if v and not re.fullmatch(r'20\d\d', v):
