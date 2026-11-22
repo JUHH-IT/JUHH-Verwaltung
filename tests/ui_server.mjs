@@ -65,7 +65,7 @@ async function seed() {
   await post('/api/logout', {});
 }
 
-const PAGES = ['overview', 'mv-overview', 'members', 'cases', 'map', 'wahl', 'regelwerk', 'bank', 'dues', 'invoices', 'bills', 'openitems', 'budgets', 'auswertung', 'journal', 'konten', 'settings'];
+const PAGES = ['overview', 'mv-overview', 'kenntnis', 'members', 'cases', 'map', 'wahl', 'regelwerk', 'bank', 'dues', 'invoices', 'bills', 'openitems', 'budgets', 'auswertung', 'journal', 'konten', 'settings'];
 // Der Durchlauf geht nie ins Netz: Kartenkacheln bekommen ein leeres Bild, jede andere Anfrage nach außen ist ein Fehler
 const outside = [];
 const guard = (context) => context.route((url) => !['127.0.0.1', 'localhost'].includes(url.hostname) && !['data:', 'blob:', 'about:'].includes(url.protocol), (route) => {
@@ -392,7 +392,7 @@ try {
   await mb.click('#login-form button[type=submit]');
   await mb.waitForSelector('.sidebar');
   const nav = await mb.locator('.nav [data-page]').evaluateAll((els) => els.map((e) => e.dataset.page));
-  check(JSON.stringify(nav) === JSON.stringify(['overview', 'mv-overview', 'members', 'cases', 'map', 'wahl', 'auswertung', 'regelwerk', 'settings']), `Mitgliederbeauftragte: nur ihre Seiten (${nav.join(', ')})`);
+  check(JSON.stringify(nav) === JSON.stringify(['overview', 'mv-overview', 'kenntnis', 'members', 'auswertung', 'cases', 'map', 'wahl', 'regelwerk', 'settings']), `Mitgliederbeauftragte: nur ihre Seiten (${nav.join(', ')})`);
   check(await mb.locator('.cards').count() === 0 && await mb.locator('[data-monthly]').count() === 0, 'Mitgliederbeauftragte: Start ohne Finanzkennzahlen');
   check(await mb.locator('.task-card').count() === 1, 'Mitgliederbeauftragte: Start zeigt nur die Mitgliederverwaltung');
   await mb.screenshot({ path: join(shots, 's43-start-mitgliederbeauftragte.png') });
@@ -407,8 +407,11 @@ try {
   await mb.screenshot({ path: join(shots, 's44-akte-mitgliederbeauftragte.png') });
   await mb.locator('#modal .dialog-head [data-close]').click();
   await mb.click('[data-page=mv-overview]');
-  await mb.waitForSelector('.mu-page .mu-dates');
-  check(!(await mb.locator('.mu-page').textContent()).includes('€'), 'Mitgliederbeauftragte: Überblick ohne Beträge');
+  await mb.waitForSelector('.mu-page .ck-wochen');
+  check(!(await mb.locator('.mu-page').textContent()).includes('€'), 'Mitgliederbeauftragte: Cockpit ohne Beträge');
+  await mb.click('[data-page=kenntnis]');
+  await mb.waitForSelector('.kn-page .kn-zeile');
+  check(await mb.locator('.kn-page [data-ab]').count() >= 1 && !(await mb.locator('.kn-page').textContent()).includes('€'), 'Mitgliederbeauftragte: Zur Kenntnis mit Abhaken, ohne Beträge');
   await mb.click('[data-page=settings]');
   await mb.waitForTimeout(300);
   const tabNames = await mb.locator('#main [data-tab]').evaluateAll((els) => els.map((e) => e.dataset.tab));

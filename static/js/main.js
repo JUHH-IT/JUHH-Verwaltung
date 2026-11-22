@@ -11,6 +11,7 @@ import { budgets } from './views/budgets.js';
 import { rpj } from './views/rpj.js';
 import { members } from './views/members.js';
 import { mitgliederUeberblick } from './views/mitglieder-ueberblick.js';
+import { kenntnis } from './views/kenntnis.js';
 import { cases } from './views/klaerfaelle.js';
 import { karte, leaveMap } from './views/karte.js';
 import { wahlrecht } from './views/wahlrecht.js';
@@ -34,8 +35,10 @@ const root = document.getElementById('root');
 const PAGES = [
   // area: Bereich, für den die Person mindestens „lesen“ braucht (rollen.py); ohne Angabe für alle Angemeldeten
   { id: 'overview', label: 'Start', icon: 'home', view: overview, group: '' },
-  { id: 'mv-overview', label: 'Überblick', icon: 'layers', view: mitgliederUeberblick, group: 'Mitgliederverwaltung', area: 'mitglieder' },
+  { id: 'mv-overview', label: 'Cockpit', icon: 'layers', view: mitgliederUeberblick, group: 'Mitgliederverwaltung', area: 'mitglieder' },
+  { id: 'kenntnis', label: 'Zur Kenntnis', icon: 'inbox', view: kenntnis, group: 'Mitgliederverwaltung', area: 'mitglieder' },   // ab 0.54
   { id: 'members', label: 'Mitglieder', icon: 'users', view: members, group: 'Mitgliederverwaltung', area: 'mitglieder' },
+  { id: 'auswertung', label: 'Auswertung', icon: 'trend', view: auswertung, group: 'Mitgliederverwaltung', area: 'auswertung' },   // Auswertung der Mitgliederdaten: ab 0.54 bei der Mitgliederverwaltung
   { id: 'cases', label: 'Klärfälle', icon: 'alert', view: cases, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'map', label: 'Karte', icon: 'map', view: karte, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'wahl', label: 'Wahlberechtigung', icon: 'check', view: wahlrecht, group: 'Mitgliederverwaltung', area: 'mitglieder' },
@@ -49,7 +52,6 @@ const PAGES = [
   { id: 'konten', label: 'Konten', icon: 'list', view: konten, group: 'Buchhaltung', area: 'buchhaltung' },
   { id: 'budgets', label: 'Haushalt & Budgets', icon: 'chart', view: budgets, group: 'Verband', area: 'verband' },
   { id: 'rpj', label: 'RPJ-Mittel', icon: 'layers', view: rpj, group: 'Verband', area: 'verband' },
-  { id: 'auswertung', label: 'Auswertung', icon: 'trend', view: auswertung, group: 'Verband', area: 'auswertung' },
   { id: 'regelwerk', label: 'Regelwerk', icon: 'book', view: regelwerk, group: 'Verband' },   // für alle Angemeldeten (0.43)
   { id: 'users', label: 'Benutzer & Rollen', icon: 'users', view: benutzer, group: 'Verwaltung', area: 'verwaltung' },
   { id: 'security', label: 'Sicherheit', icon: 'shield', view: sicherheit, group: 'Verwaltung', area: 'sicherheit' },
@@ -58,7 +60,7 @@ const PAGES = [
 ];
 const GROUPS = [...new Set(PAGES.map((p) => p.group))];
 /** Seiten, die die angemeldete Person sieht (der Server prüft jede Anfrage unabhängig davon). */
-const visiblePages = () => PAGES.filter((p) => !p.area || can(p.area) || p.always);
+const visiblePages = () => PAGES.filter((p) => (!p.area || can(p.area) || p.always) && !(p.id === 'kenntnis' && store.data?.kenntnis?.an === false));   // „Zur Kenntnis“ nur, wenn eingeschaltet
 
 function years() {
   const now = new Date().getFullYear();
@@ -92,7 +94,7 @@ function renderShell() {
   const openCount = yearBank().filter((b) => b.state === 'open').length;
   const cashOpen = store.data?.cash?.open || 0;
   const rpjOpen = store.data?.rpj?.open || 0;
-  const counts = { bank: [openCount, 'offen'], cash: [cashOpen, 'offen'], rpj: [rpjOpen, 'ohne Zuordnung'], cases: [store.data?.cases?.active || 0, 'zu klären'],
+  const counts = { bank: [openCount, 'offen'], cash: [cashOpen, 'offen'], rpj: [rpjOpen, 'ohne Zuordnung'], cases: [store.data?.cases?.active || 0, 'zu klären'], kenntnis: [store.data?.kenntnis?.offen?.length || 0, 'zur Kenntnis'],
     dues: [store.data?.dues_open_all || 0, 'ohne Mitglied'] };
   mount(root, html`<div class="shell">
     <header class="topbar">

@@ -80,12 +80,13 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/invoices.js`: invoiceBadge, invoices → /api/cancel-invoice, /api/dues, /api/dues-preview, /api/invoice.pdf, /api/preview.pdf
 - `static/js/views/journal.js`: journal → /api/journal.csv
 - `static/js/views/karte.js`: karte, leaveMap → /api/karte, /api/karte-gebiete, /api/strassen-suche
+- `static/js/views/kenntnis.js`: kenntnis, wann, wasGeaendert → /api/kenntnis, /api/kenntnis-abhaken, /api/member-account
 - `static/js/views/klaerfaelle.js`: cases → /api/klaerfaelle, /api/klaerfall-klaeren, /api/klaerfall-notiz
 - `static/js/views/konten.js`: konten, saldo → /api/konten, /api/konto, /api/konto.csv
 - `static/js/views/kv.js`: bindKv, bindKvPage, bindTransfers, kvPage, kvTable, masterDialog, needsAttention, openKv, planRest, transferDialog, transferList, valuesDialog → /api/import-kv-master, /api/kv-detail, /api/kv-label, /api/kv-plan, /api/kv-transfer, /api/kv-transfer-reverse, /api/kv-values, /api/kv.pdf, /api/op-liste.pdf, /api/preview-kv-master
 - `static/js/views/mailing.js`: afterIssue, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
 - `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/mitgliedsnummer, /api/sepa-mandat-vergessen
-- `static/js/views/mitglieder-ueberblick.js`: mitgliederUeberblick → /api/doppelte, /api/regelwerk
+- `static/js/views/mitglieder-ueberblick.js`: anlaesse, mitgliederUeberblick → /api/auswertung, /api/doppelte, /api/kenntnis, /api/kenntnis-abhaken, /api/ov-abgleich, /api/regelwerk
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
 - `static/js/views/ov-abgleich.js`: ovAbgleichDialog → /api/ov-abgleich
 - `static/js/views/overview.js`: overview → /api/monatsbericht.pdf, /api/pruefpaket.zip

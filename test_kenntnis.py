@@ -124,6 +124,17 @@ class FesthaltenTests(Basis):
         self.s.db.commit()
         self.assertEqual(self.offen()[0]['actor'], 'Programm')
 
+    def test_gespeicherte_zeile_ohne_person_wird_nie_der_naechsten_person_zugeordnet(self):
+        a, b = self.member(), self.member()
+        self.gesehen()
+        self.s.db.execute("UPDATE members SET city='Kiel' WHERE id=?", (a,))   # Änderung ohne Protokoll, gespeichert
+        self.s.db.commit()
+        zweite = Store(Path(self.tmp.name) / 't.db')   # nächste Anfrage: eigene Verbindung
+        self.addCleanup(zweite.db.close)
+        alt = dict(zweite.db.execute('SELECT * FROM members WHERE id=?', (b,)).fetchone())
+        zweite.update_member(b, {**{k: alt[k] for k in mitglieder.FIELDS}, 'city': 'Bremen'}, 'Bernd')
+        self.assertEqual({p['id']: p['actor'] for p in self.offen()}, {a: 'Programm', b: 'Bernd'})
+
     def test_geloeschtes_mitglied_nimmt_seine_zeilen_mit(self):
         mid = self.member()
         mitglieder.delete(self.s, mid, 'Bernd', arrears_ok=True)

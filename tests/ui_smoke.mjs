@@ -876,10 +876,60 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
 
   // 0.43: Überblick der Mitgliederverwaltung, Listen mit Auswahl, Mitgliederakte, Regelwerk
   await page.click('[data-page=mv-overview]');
-  await page.waitForSelector('.mu-page .mu-dates');
-  check((await page.locator('.mu-page .cards').textContent()).includes('Aktive Mitglieder') && await page.locator('.mu-page .mu-dates li').count() === 4
-    && (await page.locator('.mu-page').textContent()).includes('Beitragsstichtag'), 'Überblick: Kennzahlen und Termine aus dem Regelwerk');
+  await page.waitForSelector('.mu-page .ck-wochen');
+  check((await page.locator('.mu-page .kz-band').textContent()).includes('Aktive Mitglieder') && await page.locator('.mu-page .ck-wochen li').count() >= 4
+    && (await page.locator('.mu-page').textContent()).includes('Beitragsstichtag'), 'Cockpit: Kennzahlen und Termine aus dem Regelwerk');
+  check(/geändert|offen|erledigt/.test(await page.locator('.mu-page .blatt-aussage').textContent()) && await page.locator('.mu-page .ck-monate > div').count() === 12
+    && await page.locator('.mu-page [data-kv]').count() >= 1, 'Cockpit: Lage in einem Satz, Bewegung je Monat, Kreisverbände');
   await shot('49-mitglieder-ueberblick');
+  // 0.54: Zur Kenntnis – offene Änderungen mit Vorher und Jetzt, abhaken im Cockpit und auf der Seite
+  const kOffen = async () => (await page.evaluate(() => fetch('/api/kenntnis').then((r) => r.json()))).offen.length;
+  const kVorher = await kOffen();
+  check(kVorher >= 1 && (await page.locator('.nav [data-page=kenntnis] .count').textContent()).trim() === String(kVorher), `Zur Kenntnis: Zahl im Menü (${kVorher})`);
+  const mitglied = page.locator('main [data-ab]').first();
+  if (await mitglied.count()) {
+    await mitglied.click();
+    check(await page.waitForFunction((n) => fetch('/api/kenntnis').then((r) => r.json()).then((d) => d.offen.length === n - 1), kVorher, { timeout: 5000 }).then(() => true, () => false),
+      'Cockpit: Änderung abgehakt');
+  }
+  await page.click('[data-page=kenntnis]');
+  await page.waitForSelector('.kn-page .kn-zeile');
+  check(await page.locator('.kn-page .kn-zeile.is-sel').count() === 1 && (await page.locator('.kn-page .kn-kopf h2').textContent()).trim().length > 0
+    && await page.waitForSelector('.kn-page .kn-stamm dt', { timeout: 5000 }).then(() => true, () => false), 'Zur Kenntnis: Liste, gewähltes Mitglied und alle Angaben');
+  await shot('49b-zur-kenntnis');
+  // eine echte Änderung: Ort eines Mitglieds über das Formular des Servers ändern – Vorher und Jetzt erscheinen
+  const geaendert = await page.evaluate(async () => {
+    const data = await fetch('/api/data?year=' + new Date().getFullYear()).then((r) => r.json());
+    const m = data.members.find((x) => !x.left_on);
+    return { id: m.id, name: m.name };
+  });
+  await page.click('[data-page=members]');
+  await page.waitForSelector(`main [data-member="${geaendert.id}"]`);
+  await page.click(`main [data-member="${geaendert.id}"]`);
+  await page.waitForSelector('#modal .akte-head');
+  await page.click('#modal [data-edit]');
+  await page.waitForSelector('#modal [name=city]');
+  await page.fill('#modal [name=city]', 'Teststadt');
+  await page.click('#modal form button[type=submit]');
+  await page.waitForFunction(() => !document.querySelector('#modal [name=city]'), null, { timeout: 8000 }).catch(() => {});
+  await page.keyboard.press('Escape');
+  await page.click('[data-page=kenntnis]');
+  await page.waitForSelector('.kn-page .kn-zeile');
+  const zeile = page.locator('.kn-page .kn-zeile', { hasText: geaendert.name }).first();
+  await zeile.locator('.kn-wahl').click();
+  check(await page.locator('.kn-page .kn-felder', { hasText: 'Teststadt' }).count() === 1 && await page.locator('.kn-page .kn-felder s').count() >= 1,
+    'Zur Kenntnis: Vorher durchgestrichen, Jetzt daneben');
+  await shot('49c-zur-kenntnis-vorher-jetzt');
+  const kJetzt = await kOffen();
+  await page.locator('.kn-page .kn-detail [data-ab]').click();
+  check(await page.waitForFunction((n) => fetch('/api/kenntnis').then((r) => r.json()).then((d) => d.offen.length === n - 1), kJetzt, { timeout: 5000 }).then(() => true, () => false),
+    'Zur Kenntnis: abgehakt');
+  await page.waitForSelector('.kn-page [data-ansicht=abgehakt]');
+  await page.click('.kn-page [data-ansicht=abgehakt]');
+  check(await page.locator('.kn-page .kn-zeile').count() >= 1 && (await page.locator('.kn-page .kn-status').textContent()).includes('Abgehakt von'), 'Zur Kenntnis: Ansicht „Abgehakt“');
+  await page.click('.kn-page [data-ansicht=offen]');
+  await page.click('[data-page=mv-overview]');
+  await page.waitForSelector('.mu-page .ck-wochen');
   const todo = page.locator('.mu-page [data-list]');
   check(await todo.count() >= 1, 'Überblick: Zu tun');
   const listId = await todo.first().getAttribute('data-list');

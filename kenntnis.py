@@ -48,6 +48,10 @@ def init(db):
     db.execute(f'CREATE TRIGGER IF NOT EXISTS {AUSLOESER}_u AFTER UPDATE ON members WHEN {an} BEGIN {zeilen} END')
     db.execute(f"CREATE TRIGGER IF NOT EXISTS {AUSLOESER}_i AFTER INSERT ON members WHEN {an} BEGIN "
                f"INSERT INTO mitglied_aenderungen(member_id,zeit,feld) VALUES(NEW.id,{zeit},'{ANGELEGT}'); END")
+    # Zeilen ohne Person, die schon gespeichert sind, stammen von einer Änderung ohne Protokolleintrag (einmalige Übernahmen, Wartung):
+    # sie gehören dem Programm. Sonst ordnete `zuordnen` sie später der nächsten Person zu, die irgendein Mitglied ändert.
+    if db.execute('SELECT 1 FROM mitglied_aenderungen WHERE actor IS NULL LIMIT 1').fetchone():
+        db.execute("UPDATE mitglied_aenderungen SET actor='Programm',anlass='programm' WHERE actor IS NULL")
     db.commit()
 
 

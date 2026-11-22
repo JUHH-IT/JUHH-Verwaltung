@@ -265,4 +265,8 @@ html.compact[data-design="glas"] .main { padding: 20px 20px 56px; }
 [data-design="glas"] .blatt { background: var(--g-flaeche); box-shadow: var(--g-rand), var(--shadow); }
 [data-design="glas"] .blatt-aussage, [data-design="glas"] .kz .wert { font-family: var(--g-titel); }
 
+[data-design="glas"][data-farbe="dunkel"] { --ck-aus: #5d6b80; }
+[data-design="glas"] .kn-haken { background: var(--g-knopf); border-color: var(--g-knopf-rand); }
+[data-design="glas"] .kn-zeile.is-sel { background: var(--g-linse); box-shadow: var(--g-linse-schatten); }
+
 }

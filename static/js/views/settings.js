@@ -64,6 +64,21 @@ function schalter(s) {
         </div></div>
     </div>
     <div class="switch-row">
+      <div class="switch-text"><h2>Änderungen an Mitgliedern zur Kenntnis nehmen</h2>
+        <p class="muted"><strong>An:</strong> Jede Änderung an den Stammdaten gilt sofort und erscheint zusätzlich unter Mitgliederverwaltung → Zur Kenntnis, bis sie
+          abgehakt ist. Dafür merkt sich das Programm den Wert vorher – bis zum Abhaken und danach 30 Tage. Beträge und die Notiz werden nie festgehalten.
+          <strong>Aus:</strong> Das Programm hält nichts fest, die Seite „Zur Kenntnis“ verschwindet. Was schon festgehalten ist, bleibt bis zum Einschalten unsichtbar.</p></div>
+      <label class="switch"><input type="checkbox" name="kenntnis" role="switch" aria-label="Änderungen an Mitgliedern zur Kenntnis nehmen" ${s.kenntnis === 'yes' ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-label" data-switch-label>${s.kenntnis === 'yes' ? 'An' : 'Aus'}</span></label>
+    </div>
+    <div class="switch-row">
+      <div class="switch-text"><h2>Eigene Änderungen der Mitgliederverwaltung gelten als gesehen</h2>
+        <p class="muted"><strong>An:</strong> Ändert jemand mit dem Recht „Mitglieder ändern“ selbst ein Mitglied, ist das sofort abgehakt. Offen bleiben nur Änderungen
+          anderer Personen. <strong>Aus:</strong> Jede Änderung wird abgehakt, auch die eigene.</p></div>
+      <label class="switch"><input type="checkbox" name="kenntnis_eigene" role="switch" aria-label="Eigene Änderungen der Mitgliederverwaltung gelten als gesehen" ${s.kenntnis_eigene === 'yes' ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-label" data-switch-label>${s.kenntnis_eigene === 'yes' ? 'An' : 'Aus'}</span></label>
+    </div>
+    <div class="switch-row">
       <div class="switch-text"><h2>Karte: Hintergrund von OpenStreetMap laden</h2>
         <p class="muted"><strong>An:</strong> Die Karte (Mitgliederverwaltung → Karte) zeigt Straßen und Gebäude von OpenStreetMap. Dafür lädt das Programm nur die
           Kartenbilder des gezeigten Ausschnitts aus dem Internet – keine Namen, keine Anschriften. <strong>Aus:</strong> nur Bezirke, Stadtteile und Punkte, ganz ohne Internet.</p></div>
@@ -376,7 +391,7 @@ function zugang() {
 
 function collect(form) {
   const data = Object.fromEntries(new FormData(form));
-  for (const name of ['invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles']) if (form.elements[name]) data[name] = form.elements[name].checked ? 'yes' : 'no';
+  for (const name of ['invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene']) if (form.elements[name]) data[name] = form.elements[name].checked ? 'yes' : 'no';
   if (data.kv_share_auto === 'no') delete data.kv_share_auto_from;   // Schalter aus: kein Jahr speichern, das noch niemand entschieden hat
   return data;
 }
