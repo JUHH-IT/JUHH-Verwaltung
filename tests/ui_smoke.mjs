@@ -930,6 +930,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('.kn-page [data-ansicht=offen]');
   await page.click('[data-page=mv-overview]');
   await page.waitForSelector('.mu-page .ck-wochen');
+  await clearToast();   // „Zur Kenntnis genommen.“ steht sonst noch da, wenn ein späterer Schritt die nächste Meldung liest
   const todo = page.locator('.mu-page [data-list]');
   check(await todo.count() >= 1, 'Überblick: Zu tun');
   const listId = await todo.first().getAttribute('data-list');
