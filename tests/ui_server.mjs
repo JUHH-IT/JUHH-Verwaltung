@@ -558,11 +558,11 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   check((await fp.locator('#sec-server').textContent()).includes('<b id="xss-serverschutz">'), 'Server & Daten: Serverschutz-Bericht als Text (maskiert)');
   check(await fp.locator('#xss-serverschutz').count() === 0, 'Server & Daten: kein Markup aus dem Serverschutz-Bericht');
   await fp.locator('#sec-server').screenshot({ path: join(shots, 's58-server-und-daten-1280.png') });
-  if (await fp.locator('.sec-todo [data-check]').count()) {   // Prüfbefund 0.50: zwei Knöpfe – beide müssen wirken
-    await fp.click('#sec-server [data-check]');
-    check(await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Dateiprüfung'), null, { timeout: 8000 }).then(() => true, () => false),
-      'Server & Daten: „Dateiprüfung jetzt“ wirkt auch, wenn „Zu tun“ die Dateiprüfung nennt');
-  }
+  // Prüfbefund 0.50: zwei Knöpfe – beide müssen wirken (ohne Prüfliste steht die Dateiprüfung in der Testumgebung immer unter „Zu tun“)
+  check(await fp.locator('.sec-todo [data-check]').count() === 1, 'Zu tun: Dateiprüfung mit „Jetzt prüfen“');
+  await fp.click('#sec-server [data-check]');
+  check(await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Dateiprüfung'), null, { timeout: 8000 }).then(() => true, () => false),
+    'Server & Daten: „Dateiprüfung jetzt“ wirkt auch, wenn „Zu tun“ die Dateiprüfung nennt');
   // Wartung aus dem Kopf: ein- und ausschalten (eigene Sitzung fp – die Passwortbestätigung gilt dort schon)
   await fp.click('[data-wartung]');
   await fp.waitForSelector('#modal[open] #sec-maintenance');
@@ -673,8 +673,13 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   await lp.click('#sec-emergency button[type=submit]');
   check(await lp.waitForFunction(() => document.getElementById('toast').textContent.includes('Notfallmodus ausgelöst') && !document.getElementById('toast').classList.contains('error'),
     null, { timeout: 8000 }).then(() => true, () => false), 'Leitung: Notfall ausgelöst mit Erfolgsmeldung');
-  check(await lp.waitForSelector('.sec-lage.sec-alert', { timeout: 8000 }).then(() => true, () => false) && await lp.locator('#lock-retry').count() === 0,
-    'Leitung: danach die Lage mit dem Notfall, kein Sperrbildschirm');
+  // Prüfbefund 0.51: erst warten, bis die Lage den Notfall zeigt (sec-alert gibt es in der Testumgebung schon vorher), dann einen Moment,
+  // in dem der alte Fehler (weitere Anfrage → 503 → Sperrbildschirm mit Fehlermeldung) zuschlagen würde
+  const lageNotfall = await lp.waitForFunction(() => (document.querySelector('.sec-lage h2')?.textContent || '').includes('Notfallmodus aktiv'), null, { timeout: 8000 })
+    .then(() => true, () => false);
+  await lp.waitForTimeout(1500);
+  check(lageNotfall && await lp.locator('#lock-retry').count() === 0 && !(await lp.getAttribute('#toast', 'class') || '').includes('error')
+    && await lp.locator('.sec-page [data-tab]').count() === 1, 'Leitung: danach die Lage mit dem Notfall – kein Sperrbildschirm, keine Fehlermeldung, nur die Übersicht');
   await lp.screenshot({ path: join(shots, 's61-notfall-leitung.png') });
   await leserContext.close();
   await sp.reload();

@@ -89,14 +89,16 @@ Einrichtung und Verwaltung stehen in `SERVER.md`.
   - **Notfall** (Knopf oben rechts): Wer „Sicherheit lesen“ hat, kann ihn auslösen (mit Grund; der Dialog zeigt vorher
     die vier Wirkungen). Dann werden alle ohne „Sicherheit ändern“
     abgemeldet und gesperrt (sie sehen nur einen Hinweis), auf Wunsch auch alle anderen; der E-Mail-Versand hält an.
-    Daten bleiben unverändert. Wer nur „Sicherheit lesen“ hat, sieht nach dem Auslösen noch die Lage, sonst den Hinweis.
+    Daten bleiben unverändert. Wer nur „Sicherheit lesen“ hat, sieht nach dem Auslösen noch die Übersicht (ohne „Zuletzt passiert“
+    und ohne die anderen Reiter), sonst den Hinweis.
     Beenden nur mit „Sicherheit ändern“ und Passwort – oder auf dem Server mit
     `sudo ju-finanzen notfall-aus`. Ab 0.39 stellt der Notfall auch die Firewall scharf (abweisen, Sperre ab dem ersten
     Treffer für 7 Tage, Fehlerbremse 10, Bedrohungsliste an); beim Beenden gelten wieder die vorherigen Einstellungen –
     außer denen, die während des Notfalls von Hand geändert wurden. „Nie sperren“ bleibt immer unverändert.
   - **Wartung** (Knopf oben rechts, nur „Sicherheit ändern“): sperrt wie der Notfall, ohne Abmelden und ohne den Versand
-    anzuhalten, mit optionalem Hinweistext. Während der Wartung ändert „Hinweis speichern“ (oder Enter im Feld) nur den Text;
-    beendet wird sie mit „Wartung beenden“.
+    anzuhalten, mit optionalem Hinweistext. Während der Wartung ändert „Hinweis speichern“ (oder Enter im Feld) nur den Text –
+    das Protokoll nennt, wer ihn geändert hat (ohne den Text); ist die Wartung inzwischen beendet, kommt eine Meldung statt eines
+    neuen Starts. Beendet wird sie mit „Wartung beenden“.
   - **Abwehr (ab 0.39, bis 0.49 „Firewall & Sperren“):** Das Programm prüft jede Anfrage, bevor es sie bearbeitet.
     - **Was als Treffer zählt:** Aufrufe typischer Scanner-Adressen, die es hier nie gibt (z. B. `/wp-login.php`,
       `/.env`, `/phpmyadmin`) – sie bekommen dieselbe Antwort wie jede unbekannte Adresse; bekannte Angriffswerkzeuge;

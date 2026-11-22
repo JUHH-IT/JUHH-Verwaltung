@@ -119,8 +119,7 @@ function zuTun(pruefung) {
   const offen = pruefung.filter((p) => p.stand !== 'ok').sort((a, b) => ORDER.indexOf(a.stand) - ORDER.indexOf(b.stand));
   const write = can('sicherheit', 'schreiben');
   const knopf = (p) => {
-    const ausgeschaltet = p.id === 'bedrohungsliste' && p.detail.includes('ausgeschaltet');
-    if (write && AKTION[p.id] && !ausgeschaltet) return html`<button type="button" class="btn small" ${AKTION[p.id][1]}>${AKTION[p.id][0]}</button>`;
+    if (write && AKTION[p.id] && p.aktion !== false) return html`<button type="button" class="btn small" ${AKTION[p.id][1]}>${AKTION[p.id][0]}</button>`;
     return erreichbar(p.ziel) ? html`<button type="button" class="btn small" data-ziel="${p.ziel}" aria-label="${p.titel}: ${ZIEL[p.ziel] || 'Öffnen'}">${ZIEL[p.ziel] || 'Öffnen'}</button>` : '';
   };
   return html`<section class="panel sec-todo" aria-labelledby="sec-todo">
@@ -228,7 +227,7 @@ function inOrdnung(pruefung) {
 function uebersicht(r) {
   return html`<div class="sec-grid">
     <div class="sec-spalte">${lage(r.lage, r.pruefung)}${kennzahlen(r.lage, r.abwehr, r.verwaltung)}${verlauf(r.abwehr)}${r.zuletzt ? zuletzt(r.zuletzt.ereignisse, r.zuletzt.arten)
-      : html`<p class="small muted sec-gesperrt">Während der Sperre zeigt das Cockpit nur die Lage.</p>`}</div>
+      : html`<p class="small muted sec-gesperrt">Während der Sperre fehlen „Zuletzt passiert“ und die übrigen Reiter.</p>`}</div>
     <div class="sec-spalte">${zuTun(r.pruefung)}${serverUndDaten(r.lage, r.pruefung, r.serverschutz, r.verwaltung)}${inOrdnung(r.pruefung)}</div>
   </div>`;
 }
@@ -277,15 +276,15 @@ function wartungDialog(sperre, reload) {
       ${an ? html`<button type="button" class="btn primary" data-end-wartung>Wartung beenden</button><button type="submit" class="btn">Hinweis speichern</button>`
         : html`<button type="submit" class="btn primary">Wartung einschalten</button>`}</div></form>`);
   const form = el.querySelector('#sec-maintenance');
-  const senden = (einschalten, meldung) => safe(async () => {
-    await api('/api/wartung', { an: einschalten, text: form.elements.text.value.trim() });
+  const senden = (einschalten, meldung, nurText = false) => safe(async () => {
+    await api('/api/wartung', { an: einschalten, text: form.elements.text.value.trim(), nur_text: nurText });
     el.close();
     toast(meldung);
     await reload();
   });
   el.querySelector('[data-cancel]').onclick = () => el.close();
   el.querySelector('[data-end-wartung]')?.addEventListener('click', () => senden(false, 'Wartung ausgeschaltet.'));
-  form.onsubmit = (e) => { e.preventDefault(); senden(true, an ? 'Hinweis gespeichert.' : 'Wartung eingeschaltet.'); };   // Enter beendet nie die Wartung
+  form.onsubmit = (e) => { e.preventDefault(); senden(true, an ? 'Hinweis gespeichert.' : 'Wartung eingeschaltet.', an); };   // Enter beendet nie die Wartung
 }
 
 // ---- Protokoll ----
@@ -297,7 +296,7 @@ function details(detail) {
   return Object.entries(detail || {}).map(([key, value]) => {
     const label = LABELS[key] || key.replace(/_/g, ' ');
     if (typeof value === 'boolean') return `${label}: ${value ? 'ja' : 'nein'}`;
-    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return `${label}: ${dateTime(value)}`;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(value)) return `${label}: ${dateTime(value)}`;   // nur reine Zeitpunkte
     if (typeof value === 'number' || typeof value === 'string') return value === '' ? '' : `${label}: ${value}`;
     if (Array.isArray(value)) return value.every((v) => typeof v === 'string') && value.length <= 5 ? `${label}: ${value.join(', ') || '–'}` : `${label}: ${value.length}`;
     return '';
@@ -486,10 +485,11 @@ async function load() {
     protokoll: () => api('/api/sicherheit-ereignisse?' + query()),
   }[tab];
   // Erst die Lage: Während Notfall oder Wartung beantwortet der Server ohne „Sicherheit ändern“ nur GET /api/sicherheit (sonst 503 → Sperrbildschirm)
-  const lage = await api('/api/sicherheit');
-  const gesperrt = Boolean(lage.lagebild.sperre) && !can('sicherheit', 'schreiben');
-  const daten = gesperrt ? null : await extra();
-  const r = { lage: lage.lagebild, abwehr: lage.abwehr, pruefung: lage.pruefung, serverschutz: lage.serverschutz };
+  const write = can('sicherheit', 'schreiben');   // „ändern“ ist nie gesperrt: beides parallel laden
+  const [lage, vorab] = write ? await Promise.all([api('/api/sicherheit'), extra()]) : [await api('/api/sicherheit'), null];
+  const gesperrt = Boolean(lage.lagebild.sperre) && !write;
+  const daten = write ? vorab : gesperrt ? null : await extra();
+  const r = { lage: lage.lagebild, abwehr: lage.abwehr, pruefung: lage.pruefung, serverschutz: lage.serverschutz, gesperrt };
   if (gesperrt) { tab = 'uebersicht'; return r; }
   if (tab === 'uebersicht') [r.verwaltung, r.zuletzt] = daten;
   if (tab === 'abwehr') r.schutz = daten;
@@ -510,9 +510,9 @@ function bind(main, reload, r) {
     const ziel = b.dataset.ziel;
     if (ziel.startsWith('seite:')) return go(ziel.slice(6));
     if (ziel === 'server') {
-      const ziel = main.querySelector('#sec-server');
-      ziel?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
-      return ziel?.focus({ preventScroll: true });
+      const karte = main.querySelector('#sec-server');
+      karte?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+      return karte?.focus({ preventScroll: true });
     }
     return zeigen(ziel);
   }));
@@ -563,8 +563,10 @@ function bind(main, reload, r) {
 
 export function sicherheit(main) {
   if (!tabs().some(([id]) => id === tab)) tab = 'uebersicht';
-  const reiter = html`<div class="tabs" role="tablist" aria-label="Bereich">${tabs().map(([id, label]) => html`
+  // Reiter erst nach dem Laden endgültig: während einer Sperre sehen Lesende nur die Übersicht
+  const reiterLeiste = (nurUebersicht = false) => html`<div class="tabs" role="tablist" aria-label="Bereich">${tabs().filter(([id]) => !nurUebersicht || id === 'uebersicht').map(([id, label]) => html`
       <button type="button" role="tab" data-tab="${id}" aria-selected="${tab === id}">${label}</button>`)}</div>`;
+  const reiter = reiterLeiste();
   const reload = () => sicherheit(main);
   const id = ++loads;
   if (!main.querySelector('.sec-page')) mount(main, html`<div class="page sec-page">${pageHead('Verwaltung', 'Sicherheit')}${reiter}<p class="muted">Lädt …</p></div>`);
@@ -572,7 +574,7 @@ export function sicherheit(main) {
     const r = await load();
     if (id !== loads || store.page !== 'security' || !main.isConnected) return;   // inzwischen anderer Reiter oder andere Seite
     const views = { uebersicht: () => uebersicht(r), abwehr: () => firewall(r.schutz), zugaenge: () => sitzungen(r.verwaltung), protokoll: () => ereignisse(r.ereignisse) };
-    mount(main, html`<div class="page sec-page">${pageHead('Verwaltung', 'Sicherheit', kopf(r.lage.sperre))}${reiter}${views[tab]()}</div>`);
+    mount(main, html`<div class="page sec-page">${pageHead('Verwaltung', 'Sicherheit', kopf(r.lage.sperre))}${reiterLeiste(r.gesperrt)}${views[tab]()}</div>`);
     bind(main, reload, r);
   });
 }

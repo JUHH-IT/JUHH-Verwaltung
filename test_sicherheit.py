@@ -37,6 +37,8 @@ class SicherheitTests(unittest.TestCase):
         self.assertEqual((sicherheit.sperre(self.db)['text'], sicherheit.sperre(self.db)['seit'], sicherheit.sperre(self.db)['von']),
                          ('Update bis 18 Uhr', vorher['seit'], vorher['von']))
         self.assertEqual(sum(1 for r in sicherheit.ereignisse(self.db) if r['art'] == 'wartung_an'), 1)
+        self.assertEqual([r['person'] for r in sicherheit.ereignisse(self.db, art='wartung_text')], ['Zweite'])   # wer, ohne den Text
+        self.assertNotIn('18 Uhr', json.dumps(sicherheit.ereignisse(self.db, art='wartung_text'), ensure_ascii=False))
         sicherheit.notfall_an(self.db, 'Erste', 'Verdacht auf fremden Zugang')
         self.assertEqual(sicherheit.sperre(self.db)['art'], 'notfall')                     # Notfall vor Wartung
         with self.assertRaises(ValueError):
@@ -44,6 +46,9 @@ class SicherheitTests(unittest.TestCase):
         sicherheit.notfall_aus(self.db, 'Erste')
         self.assertEqual(sicherheit.sperre(self.db)['art'], 'wartung')
         sicherheit.wartung(self.db, 'Erste', False)
+        self.assertIsNone(sicherheit.sperre(self.db))
+        with self.assertRaisesRegex(ValueError, 'läuft nicht mehr'):                       # veralteter Dialog startet keine neue Wartung
+            sicherheit.wartung(self.db, 'Zweite', True, 'alt', nur_text=True)
         self.assertIsNone(sicherheit.sperre(self.db))
         with self.assertRaises(ValueError):
             sicherheit.notfall_aus(self.db, 'Erste')

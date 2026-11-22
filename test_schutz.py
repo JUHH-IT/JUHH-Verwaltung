@@ -815,7 +815,7 @@ class PruefungTests(Basis):
         self.assertEqual(list(p), ['keycloak', 'authenticator', 'notzugang', 'firewall', 'aufrufer', 'bedrohungsliste', 'dateipruefung', 'sicherung', 'https',
                                    'ungenutzt', 'verwaltung', 'serverschutz'])
         for eintrag in p.values():
-            self.assertEqual(set(eintrag), {'id', 'titel', 'stand', 'detail', 'ziel'})
+            self.assertEqual(set(eintrag), {'id', 'titel', 'stand', 'detail', 'ziel', 'aktion'})
             self.assertIn(eintrag['stand'], schutz.STAENDE)
             self.assertTrue(eintrag['titel'] and eintrag['detail'])
         staende = {k: v['stand'] for k, v in p.items()}
@@ -855,6 +855,7 @@ class PruefungTests(Basis):
         self.setze(modus='protokollieren', liste=False)
         p = self.pruefung(bericht, keycloak=True, https=True)
         self.assertEqual((p['firewall']['stand'], p['bedrohungsliste']['stand']), ('hinweis', 'hinweis'))
+        self.assertFalse(p['bedrohungsliste']['aktion'])                                    # ausgeschaltet: „Jetzt laden“ behebt es nicht
 
 
 class SchutzHttpTests(unittest.TestCase):

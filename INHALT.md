@@ -1035,7 +1035,7 @@ Tests: test_keycloak_app.py, test_schutz.py, test_sicherheit.py
 - `darf_trotz_sperre(rights)`
 - `notfall_an(db, actor, grund, geraet=…)`
 - `notfall_aus(db, actor, geraet=…)`
-- `wartung(db, actor, an, text=…, geraet=…)`
+- `wartung(db, actor, an, text=…, geraet=…, nur_text=…)` – Wartung ein- oder ausschalten. Läuft sie schon, ändert `an` nur den Hinweis (Beginn und Auslöser bleiben); `nur_text` ändert nie
 - `notzugang_offen(db)` – Freischaltung des Notzugangs ({'bis', 'von'}) oder None. Im Keycloak-Betrieb gilt die Passwort-Anmeldung nur solange.
 - `notzugang_setzen(db, minuten, actor, geraet=…)` – Notzugang für `minuten` freischalten (1 … NOTZUGANG_HOECHSTENS) bzw. mit 0 schließen. Liefert das Ende oder None.
 - `ereignisse(db, art=…, tage=…, suche=…, limit=…)` – Sicherheitsereignisse und Änderungen an Personen/Rollen, neueste zuerst.

@@ -726,7 +726,7 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
     tage = lambda iso: (datetime.now() - datetime.fromisoformat(iso[:19])).days if iso else 9999
     befunde = len(d.get('geaendert', [])) + len(d.get('fehlend', [])) + len(d.get('zusaetzlich', []))
     schlimmster = max((STAENDE.index(p['stand']) for p in bericht['pruefungen']), default=0)
-    p = lambda id, titel, stand, detail, ziel='': {'id': id, 'titel': titel, 'stand': stand, 'detail': detail, 'ziel': ziel}
+    p = lambda id, titel, stand, detail, ziel='', aktion=True: {'id': id, 'titel': titel, 'stand': stand, 'detail': detail, 'ziel': ziel, 'aktion': aktion}
     return [
         p('keycloak', 'Anmeldung über Keycloak', 'ok' if keycloak else 'hinweis',
           'Anmeldung mit zweitem Faktor über Keycloak.' if keycloak else 'Anmeldung nur mit Passwort – ohne zweiten Faktor.'),
@@ -744,7 +744,7 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
           else 'Der Proxy reicht für jede Anfrage eine lesbare Adresse weiter.', 'abwehr'),
         p('bedrohungsliste', 'Bedrohungsliste aktuell', 'ok' if e['liste'] and not liste['veraltet'] else 'hinweis',
           'Die Bedrohungsliste ist ausgeschaltet.' if not e['liste'] else 'Noch nicht geladen – „Jetzt laden“.' if not liste['stand'] else
-          f'Älter als {LISTE_ALT_TAGE} Tage – der tägliche Abruf scheitert.' if liste['veraltet'] else f'{liste["anzahl"]} Netze (Spamhaus DROP).', 'abwehr'),
+          f'Älter als {LISTE_ALT_TAGE} Tage – der tägliche Abruf scheitert.' if liste['veraltet'] else f'{liste["anzahl"]} Netze (Spamhaus DROP).', 'abwehr', aktion=bool(e['liste'])),
         p('dateipruefung', 'Dateiprüfung ohne Befund', 'hinweis' if not d.get('verfuegbar') or tage(d.get('zeit', '')) > 2 else 'ok' if d.get('ok') else 'kritisch',
           'Keine Prüfliste vorhanden (nur nach Installation auf dem Server).' if not d.get('verfuegbar') else
           'Die letzte Prüfung ist älter als 2 Tage.' if tage(d.get('zeit', '')) > 2 else
