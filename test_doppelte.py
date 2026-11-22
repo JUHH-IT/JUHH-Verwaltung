@@ -269,6 +269,21 @@ class ZusammenfuehrenTests(unittest.TestCase):
         e = self.member('Ole', 'Probe', street='Dritter Weg 7')
         self.assertEqual(doppelte.vorschau(self.s, e, d)['neu'], {'kv_joined': '2021-01-01'})
 
+    def test_wiedereintritt_ohne_ortsverband_und_lueckenloser_wechsel(self):
+        import gliederung
+        with self.s.db:
+            ov, _ = gliederung.ensure(self.s.db, '5100', '1', 'Test-OV')
+        a = self.member('Erika', 'Muster', joined='2021-01-02')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2015-01-01', left_on='2020-12-31', ov_id=ov, kv_joined='2016-03-01')
+        v = doppelte.vorschau(self.s, a, b)                                                # ein Tag Lücke: Wiedereintritt
+        self.assertEqual(v['neu'], {})
+        self.assertIn('Ortsverband und Eintritt Kreisverband bleiben', v['hinweise'][0])
+        with self.s.db:
+            self.s.db.execute("UPDATE members SET joined='2021-01-01' WHERE id=?", (a,))   # Austritt am Vortag: lückenlos
+        v = doppelte.vorschau(self.s, a, b)
+        self.assertEqual(v['neu'], {'ov_id': ov, 'kv_joined': '2016-03-01', 'joined': '2015-01-01'})
+        self.assertEqual(v['hinweise'], [])
+
 
 class DoppelteHttpTests(unittest.TestCase):
     """Am laufenden Server: Doppelte sehen mit „Mitglieder lesen“, „kein Duplikat“ nur mit „Mitglieder ändern“."""
