@@ -1,5 +1,5 @@
-// Gebiete der Ortsverbände (0.52, REGELN Nr. 33): Stadtteile je Ortsverband ankreuzen. Eine Stelle für Einstellungen → Gliederung
-// (Recht „Einstellungen“) und den Abgleich der Mitgliederverwaltung (Recht „Mitglieder ändern“ – so pflegt auch der
+// Gebiete der Ortsverbände (0.52, REGELN Nr. 33): Stadtteile je Ortsverband ankreuzen. Eine Stelle für Einstellungen → Gliederung und
+// den Abgleich der Mitgliederverwaltung. Lesen braucht „Mitglieder lesen“, Speichern „Mitglieder ändern“ (so pflegt auch der
 // Landesmitgliederbeauftragte die Gebiete). Server: ovabgleich.py (/api/ov-gebiete, /api/ov-gebiet).
 import { api } from './api.js';
 import { html, mount } from './html.js';
@@ -99,7 +99,7 @@ export function gebieteDialog(back) {
         Ortsverbände pflegt die Verwaltung unter Einstellungen → Gliederung.</p>
         ${geb.stadtteile.length && Object.keys(geb.vorschlag || {}).length ? html`<button type="button" class="btn small" data-gebiete-vorschlaege>
           Aus den Namen vorschlagen (${Object.keys(geb.vorschlag).length})</button>` : ''}</div>
-      ${table(['Kreisverband', 'Ortsverband', 'Gebiet', ''], ovs.map((o) => html`<tr><td>${kvName(o.kv)}</td><td>${ovLabel(o)}</td>
+      ${table(['Ortsverband', 'Gebiet', ''], ovs.map((o) => html`<tr><td>${ovLabel(o)}<span class="sub">${kvName(o.kv)}</span></td>
         <td data-gebiet-zelle="${o.id}">${gebietText(geb, o)}</td>
         <td>${geb.stadtteile.length ? html`<button type="button" class="btn small" data-gebiet-edit="${o.id}">Bearbeiten</button>` : ''}</td></tr>`))}
       <div class="form-actions">${back ? html`<button type="button" class="btn" data-gebiete-zurueck>Zurück zum Abgleich</button>` : ''}

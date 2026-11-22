@@ -165,7 +165,7 @@ def _kennung(x, name, leer=False):
         return None
     if isinstance(x, int) and not isinstance(x, bool) and 0 < x < 2 ** 62:
         return x
-    if isinstance(x, str) and x.strip().isdigit() and 0 < len(x.strip()) < 19:
+    if isinstance(x, str) and re.fullmatch(r'[0-9]{1,18}', x.strip()) and int(x) > 0:   # nur ASCII-Ziffern („²“, „٣“ nicht)
         return int(x)
     raise ValueError(f'{name}: ungültige Auswahl.')
 
