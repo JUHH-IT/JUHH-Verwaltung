@@ -553,6 +553,9 @@ export function importMembersDialog() {
     mount(el.querySelector('#members-preview'), html`<h3>Vorschau „${p.filename}“ · ${p.rows.length} Zeilen</h3>
       <p class="muted">${p.counts.new} neu · ${p.counts.update} geändert · ${p.counts.same} unverändert · ${p.counts.error} mit Fehler.
         ${p.guests ? `Davon ${p.guests} Gastmitglieder (beitragsfrei). ` : ''}Erkannte Spalten: ${p.columns.join(', ')}. Zeilen mit Hinweis sind nicht vorausgewählt – erst prüfen.</p>
+      ${p.ov_ersetzt ? html`<p class="notice warn" data-ov-ersetzt>${p.ov_ersetzt} ${p.ov_ersetzt === 1 ? 'Zeile ersetzt' : 'Zeilen ersetzen'} den Ortsverband im Programm
+        durch den aus der Datei (die CDU-Datei gilt) – auch nach dem Abgleich nach Adresse. Änderungen aus dem Abgleich deshalb auch in der
+        CDU-Mitgliederverwaltung eintragen.</p>` : ''}
       ${p.new_ovs.length ? html`<p class="notice">${p.new_ovs.length} ${p.new_ovs.length === 1 ? 'Ortsverband ist' : 'Ortsverbände sind'} noch nicht in den Stammdaten und
         ${p.new_ovs.length === 1 ? 'wird' : 'werden'} mit der Übernahme angelegt: ${p.new_ovs.map((o, i) => html`${i ? ' · ' : ''}${kvName(o.kv)}: ${ovLabel(o)}`)}</p>` : ''}
       ${p.missing.length ? html`<details class="notice warn"><summary>${p.missing.length} ${p.missing.length === 1 ? 'Mitglied steht' : 'Mitglieder stehen'} im Programm, aber nicht in
@@ -563,7 +566,7 @@ export function importMembersDialog() {
         <td>${r.row_no}</td><td><strong style="font-weight:500">${r.name || '—'}</strong>${r.guest ? html` ${badge('Gast', 'navy')}` : ''}${r.dues_free ? html` ${badge('beitragsfrei', '')}` : ''}<span class="sub">${r.number}</span></td>
         <td>${r.kv ? kvName(r.kv) : '—'}${r.ov ? html`<span class="sub">${r.ov}</span>` : ''}</td><td>${r.city || ''}</td>
         <td>${badge(ACTION[r.action][0], ACTION[r.action][1])}${r.error ? html`<span class="sub over">${r.error}</span>` : ''}
-          ${r.changes.length && r.action === 'update' ? html`<span class="sub">${r.changes.join(', ')}</span>` : ''}${r.warning ? html`<span class="sub over">${r.warning}</span>` : ''}</td></tr>`))}
+          ${r.changes.length && r.action === 'update' ? html`<span class="sub">${r.changes.join(', ')}</span>` : ''}${r.warning ? html`<span class="sub over">${r.warning}</span>` : ''}${r.ov_hinweis ? html`<span class="sub" data-ov-hinweis>${r.ov_hinweis}</span>` : ''}</td></tr>`))}
       <div class="form-actions"><button type="button" class="btn primary" id="members-confirm" ${p.counts.new + p.counts.update ? '' : 'disabled'}>Auswahl übernehmen</button></div>`);
     const confirm = el.querySelector('#members-confirm');
     confirm.onclick = () => safe(async () => {

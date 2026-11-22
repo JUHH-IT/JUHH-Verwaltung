@@ -34,7 +34,7 @@ function draw(el, a) {
       einer Adresse nicht bestimmen. Laden unter Einstellungen → Schalter.</p>`);
   }
   const vorschlaege = [...a.aendern, ...a.mehrdeutig].filter((e) => wer(e.id));
-  const wechsel = vorschlaege.filter((e) => !e.ovs && e.kv_anders).length;
+  const wechsel = vorschlaege.filter((e) => e.kv_anders).length;
   const eintrag = new Map(vorschlaege.map((e) => [e.id, e]));
   const fehler = a.fehler.filter((e) => wer(e.id));
   const ohne = new Map();
@@ -46,15 +46,16 @@ function draw(el, a) {
   }
   const wahl = (e) => {
     const ovs = e.ovs || [e.ov];
-    const eindeutig = !e.ovs && !e.kv_anders;                    // ein Ortsverband im selben Kreisverband: „Alle übernehmen“ darf ihn wählen
-    const vor = eindeutig && !e.hinweis ? e.ov : null;              // vorausgewählt nur bei sicherer Lage (Hausnummer im amtlichen Bestand)
+    const eindeutig = !e.ovs && !e.kv_anders && !e.hinweis;     // ein Ortsverband im selben Kreisverband, Lage sicher (Hausnummer im Bestand)
+    const vor = eindeutig ? e.ov : null;                            // nur diese sind vorausgewählt und von „Alle übernehmen“ erfasst
     return html`<select name="ova-${e.id}" data-ova-wahl="${e.id}" ${eindeutig ? 'data-ova-eindeutig' : ''} aria-label="Aktion für ${sortName(wer(e.id))}">
       ${ovs.map((id) => html`<option value="ov:${id}" ${id === vor ? 'selected' : ''}>${e.ovs ? `→ ${ovLabel(ovById(id))}` : 'übernehmen'}</option>`)}
       <option value="" ${vor ? '' : 'selected'}>nicht ändern</option>
       <option value="fest">Ortsverband fest</option></select>`;
   };
   const ziel = (e) => (e.ovs
-    ? html`<span class="muted">mehrere: ${e.ovs.map((id, i) => html`${i ? ' · ' : ''}${ovLabel(ovById(id))}`)}</span>`
+    ? html`<span class="muted">mehrere: ${e.ovs.map((id, i) => html`${i ? ' · ' : ''}${ovLabel(ovById(id))}`)}</span>${
+      e.kv_anders ? html`<span class="sub">${badge(`anderer Kreisverband: ${kvName(e.kv)}`, 'warn')}</span>` : ''}`
     : html`${ovLabel(ovById(e.ov))}${e.kv_anders ? html`<span class="sub">${badge(`anderer Kreisverband: ${kvName(e.kv)}`, 'warn')}</span>` : ''}`);
   mount(box, html`
     ${a.gebiete ? '' : html`<p class="notice warn">Noch keinem Ortsverband sind Stadtteile zugeordnet. Erst die Gebiete festlegen, dann abgleichen. ${write ? toGliederung : ''}</p>`}
@@ -64,7 +65,7 @@ function draw(el, a) {
       a.sonder ? ` · ${a.sonder} im Landesverband oder in der Schüler Union (ohne Abgleich)` : ''}</p>
     <form data-ova-form style="display:flex;flex-direction:column;gap:16px">
       ${vorschlaege.length ? html`<section class="ova-part" data-ova-vorschlaege><div class="ova-head"><h3>Vorschläge</h3>
-        ${write ? html`<span class="ova-actions"><button type="button" class="btn small ghost" data-ova-alle title="Alle eindeutigen Vorschläge im selben Kreisverband">Alle übernehmen</button>
+        ${write ? html`<span class="ova-actions"><button type="button" class="btn small ghost" data-ova-alle title="Alle eindeutigen Vorschläge im selben Kreisverband mit sicher gefundener Adresse">Alle übernehmen</button>
           <button type="button" class="btn small ghost" data-ova-keine>Keine</button></span>` : ''}</div>
         <p class="small muted">Vorausgewählt sind eindeutige Vorschläge im selben Kreisverband, deren Adresse sicher gefunden wurde. Ein Wechsel des
           Kreisverbands nur einzeln und bewusst wählen – die Satzung erlaubt die Mitgliedschaft in einem anderen Kreisverband („Ortsverband fest“);

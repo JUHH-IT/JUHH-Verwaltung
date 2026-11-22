@@ -718,7 +718,7 @@ def preview(store, raw, filename, password=None):
             data['kv'], kv_note, kv_error = None, '', str(e)
         if kv_note:
             warnings.append(kv_note)
-        item = {'row_no': row_no, 'action': 'error', 'error': None, 'warning': '', 'changes': [], 'new_ov': None}
+        item = {'row_no': row_no, 'action': 'error', 'error': None, 'warning': '', 'changes': [], 'new_ov': None, 'ov_hinweis': ''}
         club = data.get('club')
         if club and _fold(club) not in ('ju', 'jungeunion', 'jungeunionhamburg'):
             warnings.append(f'Verein laut Datei „{club[:20]}“ – nicht Junge Union, bitte prüfen.')
@@ -750,9 +750,9 @@ def preview(store, raw, filename, password=None):
             elif merged.get('ov_id') and (ov_by_id.get(merged['ov_id']) or {}).get('kv') != merged['kv']:
                 merged['ov_id'] = None
                 warnings.append('Ortsverband entfällt: Kreisverband laut Datei ist ein anderer.')
-            if old and old['ov_id'] and (merged.get('ov_id') != old['ov_id'] or item.get('new_ov')):   # ab 0.52: die Datei gilt
-                warnings.append('Ortsverband laut Datei ersetzt den im Programm' + (' (dort „Ortsverband fest“)' if old['ov_fest'] else '')
-                                + ' – nach einem Abgleich nach Adresse auch in der CDU-Mitgliederverwaltung ändern.')
+            if old and old['ov_id'] and (merged.get('ov_id') != old['ov_id'] or item.get('new_ov')):   # ab 0.52: die Datei gilt (Entscheidung
+                item['ov_hinweis'] = ('Ortsverband laut Datei ersetzt den im Programm' + (' (dort „Ortsverband fest“)' if old['ov_fest'] else '')
+                                      + '.')   # 22.11.2026) – nur ein Hinweis: die Zeile bleibt vorausgewählt, damit die übrigen Änderungen nicht liegen bleiben
             if merged.get('email_work'):
                 try:
                     email_address(merged['email_work'])
@@ -802,6 +802,7 @@ def preview(store, raw, filename, password=None):
     extra = [label for f, label in (('birth_day', 'Geburtsdatum'), ('zip_city', 'PLZ/Ort')) if f in mapping]
     return {'filename': filename, 'columns': [LABELS.get(f, f) for f in mapping if f in LABELS] + (['Name'] if 'full_name' in mapping else []) + extra,
             'rows': out, 'counts': counts, 'guests': sum(1 for r in out if (r.get('values') or {}).get('guest')),
+            'ov_ersetzt': sum(1 for r in out if r['ov_hinweis'] and r['action'] == 'update'),
             'missing': sorted(missing, key=lambda m: (m['kv'], m['name'])),
             'new_ovs': sorted(new_ovs.values(), key=lambda o: (o['kv'], o['number'] == 0, o['number'], gliederung.fold(o['name'])))}
 

@@ -149,7 +149,7 @@ class AbgleichTests(Basis):
         mid = self.member('Westweg 3', '20001', ov_id=self.ost)
         ok = {'id': mid, 'ov': self.west, 'ov_alt': self.ost, 'kv_alt': '5100'}
         for aendern, fest in (([], []), ('x', []), ([{**ok, 'ov': 'x'}], []), ([{**ok, 'id': True}], []), ([], [None]), ([{**ok, 'ov': 3.7}], []),
-                              ([], [2.0]), ([ok, {**ok, 'ov': self.ost}], []), ([[mid, self.west]], []), ([{'id': mid, 'ov': self.west}], [])):
+                              ([], [2.0]), ([{**ok, 'ov': '²'}], []), ([], ['0']), ([ok, {**ok, 'ov': self.ost}], []), ([[mid, self.west]], []), ([{'id': mid, 'ov': self.west}], [])):
             with self.assertRaises(ValueError, msg=repr((aendern, fest))):
                 ovabgleich.auswahl(aendern, fest)
             with self.assertRaises(ValueError, msg=repr((aendern, fest))):
@@ -171,9 +171,11 @@ class AbgleichTests(Basis):
         mid = self.member('Westweg 3', '20001', ov_id=self.west, ov_fest='1')
         raw = ('Mitgliedsnummer;Vorname;Nachname;Straße;PLZ;Ort;Geburtsdatum;Eintritt;LVKV_Nummer;Ortsverband;Ortsbezeichnung\n'
                f"{self.m(mid)['number']};Test;Person1;Westweg 3;20001;Hamburg;01.02.2000;01.01.2024;701;0;Ost A\n").encode()
-        row = mitglieder.preview(self.s, raw, 'liste.csv')['rows'][0]
+        p = mitglieder.preview(self.s, raw, 'liste.csv')
+        row = p['rows'][0]
         self.assertEqual(row['values']['ov_id'], self.ost)                                  # Entscheidung 22.11.2026: die CDU-Datei gilt
-        self.assertIn('ersetzt den im Programm (dort „Ortsverband fest“)', row['warning'])
+        self.assertIn('ersetzt den im Programm (dort „Ortsverband fest“)', row['ov_hinweis'])
+        self.assertEqual((row['warning'], row['action'], p['ov_ersetzt']), ('', 'update', 1))   # nur Hinweis: Zeile bleibt vorausgewählt
         self.assertEqual(row['values']['ov_fest'], 1)                                       # das Kennzeichen selbst bleibt
 
     def test_kreisverbandswechsel_des_ortsverbands_leert_das_gebiet(self):
@@ -222,6 +224,10 @@ class WerberTests(Basis):
         bleibt, geht = self.member('Westweg 5', '20001'), self.member('Westweg 5', '20001', geworben_text='Infostand Uni', ov_fest='1')
         doppelte.zusammenfuehren(self.s, bleibt, geht, 'Test')                            # Angaben des aufgehenden bleiben erhalten
         self.assertEqual((self.m(bleibt)['geworben_text'], self.m(bleibt)['ov_fest']), ('Infostand Uni', 1))
+        neu = self.member('Westweg 6', '20001', joined='2024-01-01')                        # Wiedereintritt: alte Mitgliedschaft endete 2020
+        alt2 = self.member('Westweg 6', '20001', joined='2015-01-01', left_on='2020-12-31', geworben_text='Alt', ov_fest='1')
+        doppelte.zusammenfuehren(self.s, neu, alt2, 'Test')
+        self.assertEqual((self.m(neu)['geworben_text'], self.m(neu)['ov_fest']), (None, 0))   # nichts aus der früheren Mitgliedschaft
 
 
 if __name__ == '__main__':
