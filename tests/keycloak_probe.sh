@@ -105,10 +105,10 @@ pruefen() {
   find "$KC_HOME/themes/$KC_THEME" \( ! -user root -o -perm /022 \) -print > "$WORK/theme-rechte"
   # seit dem Start nichts außerhalb von data/ geschrieben
   find -L "$KC_HOME" -path "$KC_HOME/data" -prune -o -newer "$P/.start" -print > "$WORK/geschrieben"
-  python3 -I - "$ADRESSE" "$P/client-secret" "$WORK" "$LOG" <<'PY'
+  python3 -I - "$ADRESSE" "$P/client-secret" "$WORK" "$LOG" "$REPO/static/js/darstellung-start.js" <<'PY'
 import base64, json, pathlib, re, secrets, sys, urllib.error, urllib.parse, urllib.request
 
-adresse, secret_file, work, log = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
+adresse, secret_file, work, log, start_js = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4]), sys.argv[5]
 intern = 'http://127.0.0.1:8180/auth'
 realm = f'{intern}/realms/ju-hamburg'
 issuer = f'{adresse}/auth/realms/ju-hamburg'
@@ -243,6 +243,14 @@ if css:
         s, h2, body = call('GET', f'{basis}/{datei}')
         check(f'Theme: {datei.split("?")[0]} unter /auth/resources abrufbar', s == 200 and h2.get('Content-Type', '').startswith('image/svg')
               and body.lstrip().startswith(b'<svg'), f'Status {s}')
+    # Darstellung (ab 0.49): Skript der Anwendung im <head> vor dem ersten Bild, gleiche Prüfsumme wie das CSS
+    js = re.search(r'<script src="' + re.escape(css.group(1)) + r'/(js/darstellung\.js\?v=([0-9a-f]{8}))" type="text/javascript">', html)
+    check('Theme: Skript der Darstellung im Kopf eingebunden (mit Prüfsumme)', bool(js) and js.group(2) == css.group(2)[-8:]
+          and html.index(js.group(0)) < html.index('</head>'))
+    if js:
+        s, h2, body = call('GET', f'{basis}/{js.group(1)}')
+        check('Theme: Skript der Darstellung abrufbar (gleich static/js/darstellung-start.js)', s == 200
+              and 'javascript' in h2.get('Content-Type', '') and body == pathlib.Path(start_js).read_bytes(), f'Status {s}')
 
 s, _, body = call('GET', f'{intern}/admin/master/console/')
 konsole = body.decode('utf-8', 'replace')

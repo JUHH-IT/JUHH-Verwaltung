@@ -250,8 +250,8 @@ html.compact[data-design="glas"] .main { padding: 20px 20px 56px; }
 }
 /* Fokus mit der Tastatur immer sichtbar – die Glas-Schatten der Knöpfe, Reiter und Linsen dürfen ihn nicht verdecken */
 [data-design="glas"] :focus-visible, [data-design="glas"] .ds-seg input:focus-visible + span { box-shadow: var(--focus) !important; }
-@media (prefers-reduced-transparency: reduce) {
-  [data-design="glas"] { --g-flaeche: var(--surface); --g-dicht: var(--surface); --g-duenn: var(--surface-2); --g-kopf: var(--surface); }
+@media (prefers-reduced-transparency: reduce) {   /* beide Selektoren: der Dunkel-Block oben ist spezifischer */
+  [data-design="glas"], [data-design="glas"][data-farbe="dunkel"] { --g-flaeche: var(--surface); --g-dicht: var(--surface); --g-duenn: var(--surface-2); --g-kopf: var(--surface); }
 }
 
 }

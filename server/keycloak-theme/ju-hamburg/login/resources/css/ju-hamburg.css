@@ -1,6 +1,7 @@
 /* JU Hamburg Verwaltung – Anmeldeseiten von Keycloak im Aussehen der Anwendung.
    Werte (Farben, Schrift, Rundungen, Knöpfe) aus static/css/app.css, Abschnitte Tokens und Anmeldung – dort ändern heißt hier ändern.
-   Liegt über dem Standard-Theme keycloak.v2 (PatternFly 5): nur CSS, keine eigenen Vorlagen, nichts von außen geladen. */
+   Liegt über dem Standard-Theme keycloak.v2 (PatternFly 5): CSS und das Skript der Darstellung, keine eigenen Vorlagen, nichts von außen
+   geladen. Darstellung „Glas“ (ab 0.49, unten): Werte aus static/css/glas.css, gilt nur mit html[data-design="glas"]. */
 
 :root {
   --ju-navy: #043770;
@@ -15,9 +16,16 @@
   --ju-line-2: #edf1f6;
   --ju-field: #d5dde8;
   --ju-bg: #f4f6f9;
+  --ju-surface: #fff;
   --ju-orange-50: #fdf3e7;
   --ju-danger: #b4233a;
   --ju-danger-50: #fdebef;
+  --ju-hinweis-ink: #244d73;
+  --ju-danger-ink: #7d1526;
+  --ju-warn-ink: #5c3a10;
+  --ju-ok-50: #e6f4f5;
+  --ju-ok-ink: #0b5560;
+  --ju-tipp: var(--ju-ink);
   --ju-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --ju-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --ju-focus: 0 0 0 3px rgba(8, 127, 140, 0.35);
@@ -47,7 +55,7 @@
 .pf-v5-c-login__container { display: flex; flex-direction: column; align-items: center; gap: 24px; width: min(400px, 100%); max-width: none; padding: 0; }
 .pf-v5-c-login__header, .pf-v5-c-login__header .pf-v5-c-brand { margin: 0; padding: 0; }
 .pf-v5-c-login__main {
-  width: 100%; margin: 0; padding: 28px; background: #fff; border: 1px solid var(--ju-line); border-radius: 16px;
+  width: 100%; margin: 0; padding: 28px; background: var(--ju-surface); border: 1px solid var(--ju-line); border-radius: 16px;
   box-shadow: 0 12px 32px rgba(20, 36, 58, 0.12);
 }
 .pf-v5-c-login__main-header { display: block; padding: 0 0 16px; border-top: 0; }
@@ -66,7 +74,7 @@ div.pf-v5-c-form { margin-bottom: 16px; }   /* Zeile „angemeldet als“ über 
 .pf-v5-c-form__label-required { color: var(--ju-danger); }
 
 /* Feld: ein Rahmen um Eingabe (PatternFly zeichnet ihn sonst mit ::before/::after). 16 px: iOS zoomt sonst beim Antippen */
-.pf-v5-c-form-control { min-height: 44px; border: 1px solid var(--ju-field); border-radius: 8px; background: #fff; font-size: 16px; }
+.pf-v5-c-form-control { min-height: 44px; border: 1px solid var(--ju-field); border-radius: 8px; background: var(--ju-surface); font-size: 16px; }
 .pf-v5-c-form-control::before, .pf-v5-c-form-control::after { content: none; }
 .pf-v5-c-form-control > :is(input, select) { min-width: 0; height: 42px; padding: 0 12px; border-radius: 7px; font-size: 16px; color: var(--ju-ink); }
 .pf-v5-c-form-control > :is(input, select):focus { outline: none; }
@@ -81,7 +89,7 @@ div.pf-v5-c-form { margin-bottom: 16px; }   /* Zeile „angemeldet als“ über 
 .pf-v5-c-input-group__item.pf-m-fill:not(:last-child) > .pf-v5-c-form-control { border-radius: 8px 0 0 8px; }
 .pf-v5-c-input-group__item:not(:first-child) > .pf-v5-c-form-control { border-radius: 0; }
 .pf-v5-c-button.pf-m-control {
-  min-width: 44px; min-height: 44px; margin-left: -1px; border: 1px solid var(--ju-field); border-radius: 0 8px 8px 0; background: #fff; color: var(--ju-ink-2);
+  min-width: 44px; min-height: 44px; margin-left: -1px; border: 1px solid var(--ju-field); border-radius: 0 8px 8px 0; background: var(--ju-surface); color: var(--ju-ink-2);
 }
 .pf-v5-c-input-group__item:first-child > .pf-v5-c-button.pf-m-control { margin: 0 -1px 0 0; border-radius: 8px 0 0 8px; }
 .pf-v5-c-button.pf-m-control::after { content: none; }
@@ -89,7 +97,7 @@ div.pf-v5-c-form { margin-bottom: 16px; }   /* Zeile „angemeldet als“ über 
 /* Hinweis am Knopf „anderer Benutzername“: unter dem Knopf – daneben ragte er aus der Seite (seitliches Scrollen am Handy) */
 .kc-login-tooltip .kc-tooltip-text {
   top: calc(100% + 6px); left: auto; right: 0; width: max-content; max-width: 220px; min-width: 0; padding: 6px 10px;
-  border-radius: 8px; background: var(--ju-ink); box-shadow: none; font-size: 13px; font-weight: 400;
+  border-radius: 8px; background: var(--ju-tipp); box-shadow: none; font-size: 13px; font-weight: 400; white-space: normal;
 }
 .kc-login-tooltip:is(:hover, :focus-visible) .kc-tooltip-text { visibility: visible; opacity: 1; }
 .kc-login-tooltip .kc-tooltip-text::after { content: none; }
@@ -110,7 +118,7 @@ div.pf-v5-c-form { margin-bottom: 16px; }   /* Zeile „angemeldet als“ über 
 a.pf-v5-c-button.pf-m-primary, a.pf-v5-c-button.pf-m-secondary { display: flex; align-items: center; justify-content: center; }
 .pf-v5-c-button.pf-m-primary { background: var(--ju-teal); border: 1px solid var(--ju-teal); color: #fff; }
 .pf-v5-c-button.pf-m-primary:hover { background: var(--ju-teal-700); border-color: var(--ju-teal-700); text-decoration: none; }
-.pf-v5-c-button.pf-m-secondary { background: #fff; border: 1px solid var(--ju-field); color: var(--ju-navy); }
+.pf-v5-c-button.pf-m-secondary { background: var(--ju-surface); border: 1px solid var(--ju-field); color: var(--ju-navy); }
 .pf-v5-c-button.pf-m-secondary:hover { background: var(--ju-bg); color: var(--ju-navy-700); text-decoration: none; }
 .pf-v5-c-button.pf-m-primary::after, .pf-v5-c-button.pf-m-secondary::after { content: none; }
 .pf-v5-c-button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -119,17 +127,17 @@ a.pf-v5-c-button.pf-m-primary, a.pf-v5-c-button.pf-m-secondary { display: flex; 
 
 /* Fokus mit der Tastatur: überall derselbe Ring wie in der Anwendung */
 .pf-v5-c-login :is(a, button, input[type="submit"], input[type="checkbox"], summary):focus-visible { outline: none; box-shadow: var(--ju-focus); border-radius: 4px; }
-.pf-v5-c-login .pf-v5-c-button:is(.pf-m-primary, .pf-m-secondary):focus-visible { border-radius: 10px; box-shadow: 0 0 0 2px #fff, 0 0 0 5px rgba(8, 127, 140, 0.55); }
+.pf-v5-c-login .pf-v5-c-button:is(.pf-m-primary, .pf-m-secondary):focus-visible { border-radius: 10px; box-shadow: 0 0 0 2px var(--ju-surface), 0 0 0 5px rgba(8, 127, 140, 0.55); }
 .pf-v5-c-login .pf-v5-c-button.pf-m-control:focus-visible { border-color: var(--ju-teal); border-radius: 0 8px 8px 0; position: relative; z-index: 1; }
 
 /* ---------- Hinweise und Fehlermeldungen (wie .notice der Anwendung) ---------- */
 .pf-v5-c-alert.pf-m-inline {
   display: block; margin: 0 0 16px; padding: 12px 16px; border: 0; border-radius: 10px; box-shadow: none;
-  background: var(--ju-navy-50); color: #244d73; font-size: 14px; line-height: 1.5;
+  background: var(--ju-navy-50); color: var(--ju-hinweis-ink); font-size: 14px; line-height: 1.5;
 }
-.pf-v5-c-alert.pf-m-inline.pf-m-danger { background: var(--ju-danger-50); color: #7d1526; }
-.pf-v5-c-alert.pf-m-inline.pf-m-warning { background: var(--ju-orange-50); color: #5c3a10; }
-.pf-v5-c-alert.pf-m-inline.pf-m-success { background: #e6f4f5; color: #0b5560; }
+.pf-v5-c-alert.pf-m-inline.pf-m-danger { background: var(--ju-danger-50); color: var(--ju-danger-ink); }
+.pf-v5-c-alert.pf-m-inline.pf-m-warning { background: var(--ju-orange-50); color: var(--ju-warn-ink); }
+.pf-v5-c-alert.pf-m-inline.pf-m-success { background: var(--ju-ok-50); color: var(--ju-ok-ink); }
 .pf-v5-c-alert__icon { display: none; }
 .pf-v5-c-alert__title { color: inherit; font-weight: 400; }
 
@@ -149,3 +157,94 @@ a.pf-v5-c-button.pf-m-primary, a.pf-v5-c-button.pf-m-secondary { display: flex; 
 .kc-qr-code { margin: 12px 0 4px; gap: 8px; }
 .kc-qr-code img { width: 200px; height: 200px; border: 1px solid var(--ju-line); border-radius: 12px; box-shadow: none; background: #fff; }
 .pf-v5-c-tile.pf-m-selected { border-color: var(--ju-teal); }
+
+/* ---------- Darstellung „Glas“ (ab 0.49, REGELN Nr. 31) ----------
+   js/darstellung.js setzt html[data-design="glas"][data-farbe="hell|dunkel"] aus der Wahl der Anwendung (localStorage, gleiche
+   Adresse). Werte aus static/css/glas.css (hell, dunkel „Hafen bei Nacht“) – dort ändern heißt hier ändern; nur hier: --ju-danger-ink
+   (Fehlerhinweis) und --ju-tipp (Hinweis am Knopf), beide mit Kontrast ≥ 4,5 : 1. Ohne Wahl bleibt alles
+   oben klassisch. Unschärfe nur auf der Karte. */
+[data-design="glas"] {
+  --ju-navy: #043770; --ju-navy-700: #0a2a52; --ju-navy-50: rgba(4, 55, 112, 0.08);
+  --ju-teal: #087f8c; --ju-teal-700: #066a75;
+  --ju-ink: #0b1a30; --ju-ink-2: #33445a; --ju-muted: #55667c;
+  --ju-line: rgba(11, 26, 48, 0.1); --ju-line-2: rgba(11, 26, 48, 0.065); --ju-field: rgba(11, 26, 48, 0.16);
+  --ju-bg: #edf1f6; --ju-surface: #ffffff;
+  --ju-orange-50: rgba(194, 98, 10, 0.11); --ju-danger: #b4233a; --ju-danger-50: rgba(180, 35, 58, 0.09);
+  --ju-hinweis-ink: #33445a; --ju-danger-ink: #8e1a2d; --ju-warn-ink: #8a4a06; --ju-ok-50: rgba(8, 127, 140, 0.11); --ju-ok-ink: #0b5560;
+  --ju-tipp: rgba(11, 26, 48, 0.92);
+  --ju-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --jg-titel: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --jg-karte: rgba(250, 252, 255, 0.86);
+  --jg-rand: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  --jg-unschaerfe: blur(26px) saturate(170%);
+  --jg-schatten: 0 2px 6px rgba(11, 26, 48, 0.06), 0 30px 60px -20px rgba(11, 26, 48, 0.42);
+  --jg-knopf: rgba(255, 255, 255, 0.72); --jg-knopf-rand: rgba(255, 255, 255, 0.85); --jg-hover: rgba(255, 255, 255, 0.6);
+  --jg-knopf-schatten: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(11, 26, 48, 0.06);
+  --jg-primaer: linear-gradient(180deg, #0b4d94, #043770);
+  --jg-primaer-hover: linear-gradient(180deg, #0e59a9, #064386);
+  --jg-primaer-schatten: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 8px 18px -8px rgba(4, 55, 112, 0.6);
+  --jg-grund:
+    radial-gradient(62vw 62vw at -8% -14%, rgba(126, 163, 222, 0.55), rgba(126, 163, 222, 0) 62%),
+    radial-gradient(54vw 54vw at 108% 34%, rgba(122, 200, 207, 0.45), rgba(122, 200, 207, 0) 62%),
+    radial-gradient(50vw 40vw at 46% 114%, rgba(236, 206, 166, 0.55), rgba(236, 206, 166, 0) 64%),
+    #edf1f6;
+  --pf-v5-global--BackgroundColor--100: var(--ju-surface);
+  --pf-v5-global--BorderColor--100: var(--ju-line);
+  color-scheme: light;
+}
+[data-design="glas"][data-farbe="dunkel"] {
+  --ju-navy: #9cc3f5; --ju-navy-700: #c4dbfa; --ju-navy-50: rgba(156, 195, 245, 0.13);
+  --ju-teal: #1fb0bd; --ju-teal-700: #3cc2cd;
+  --ju-ink: #eef3fa; --ju-ink-2: #c6d1de; --ju-muted: #9eafc4;
+  --ju-line: rgba(255, 255, 255, 0.1); --ju-line-2: rgba(255, 255, 255, 0.065); --ju-field: rgba(255, 255, 255, 0.18);
+  --ju-bg: #060d1b; --ju-surface: #111c30;
+  --ju-orange-50: rgba(227, 146, 58, 0.15); --ju-danger: #ff8fa0; --ju-danger-50: rgba(255, 120, 140, 0.14);
+  --ju-hinweis-ink: #c6d1de; --ju-danger-ink: #ffc2cc; --ju-warn-ink: #f3c37a; --ju-ok-50: rgba(44, 194, 207, 0.14); --ju-ok-ink: #7fdde6;
+  --ju-tipp: rgba(38, 52, 76, 0.96);
+  --ju-focus: 0 0 0 3px rgba(44, 194, 207, 0.5);
+  --jg-karte: rgba(15, 25, 43, 0.88);
+  --jg-rand: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --jg-schatten: 0 30px 70px -20px rgba(0, 0, 0, 0.8);
+  --jg-knopf: rgba(255, 255, 255, 0.08); --jg-knopf-rand: rgba(255, 255, 255, 0.1); --jg-hover: rgba(255, 255, 255, 0.07);
+  --jg-knopf-schatten: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --jg-primaer: linear-gradient(180deg, #11939f, #076f7a);
+  --jg-primaer-hover: linear-gradient(180deg, #15a3b0, #087c88);
+  --jg-primaer-schatten: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 24px -8px rgba(20, 167, 180, 0.5);
+  --jg-grund:
+    radial-gradient(64vw 64vw at -10% -16%, rgba(14, 58, 115, 0.9), rgba(14, 58, 115, 0) 62%),
+    radial-gradient(56vw 56vw at 110% 30%, rgba(11, 107, 116, 0.55), rgba(11, 107, 116, 0) 62%),
+    radial-gradient(52vw 40vw at 44% 114%, rgba(106, 67, 16, 0.42), rgba(106, 67, 16, 0) 64%),
+    #060d1b;
+  color-scheme: dark;
+}
+@media (prefers-reduced-transparency: reduce) {   /* beide Selektoren: der Dunkel-Block oben ist spezifischer */
+  [data-design="glas"], [data-design="glas"][data-farbe="dunkel"] { --jg-karte: var(--ju-surface); }
+}
+
+[data-design="glas"] body { background: var(--jg-grund); background-attachment: fixed; }
+[data-design="glas"] .pf-v5-c-login__main {
+  background: var(--jg-karte); border-color: transparent; border-radius: 28px;
+  -webkit-backdrop-filter: var(--jg-unschaerfe); backdrop-filter: var(--jg-unschaerfe); box-shadow: var(--jg-rand), var(--jg-schatten);
+}
+[data-design="glas"] #kc-page-title { font-family: var(--jg-titel); font-size: 26px; letter-spacing: -0.02em; }
+[data-design="glas"][data-farbe="dunkel"] div.kc-logo-text { filter: brightness(0) invert(1); }
+
+[data-design="glas"] .pf-v5-c-form-control { border-radius: 12px; }
+[data-design="glas"] .pf-v5-c-form-control > :is(input, select) { border-radius: 11px; }
+[data-design="glas"] .pf-v5-c-input-group__item.pf-m-fill:not(:last-child) > .pf-v5-c-form-control { border-radius: 12px 0 0 12px; }
+[data-design="glas"] .pf-v5-c-button.pf-m-control { border-radius: 0 12px 12px 0; }
+[data-design="glas"] .pf-v5-c-input-group__item:first-child > .pf-v5-c-button.pf-m-control { border-radius: 12px 0 0 12px; }
+[data-design="glas"] .pf-v5-c-login .pf-v5-c-button.pf-m-control:focus-visible { border-radius: 0 12px 12px 0; }
+
+[data-design="glas"] .pf-v5-c-button:is(.pf-m-primary, .pf-m-secondary) { border-radius: 999px; }
+[data-design="glas"] .pf-v5-c-button.pf-m-primary { background: var(--jg-primaer); border-color: transparent; color: #fff; box-shadow: var(--jg-primaer-schatten); }
+[data-design="glas"] .pf-v5-c-button.pf-m-primary:hover { background: var(--jg-primaer-hover); border-color: transparent; color: #fff; }
+[data-design="glas"] .pf-v5-c-button.pf-m-secondary {
+  background: var(--jg-knopf); border-color: var(--jg-knopf-rand); color: var(--ju-ink); box-shadow: var(--jg-knopf-schatten);
+}
+[data-design="glas"] .pf-v5-c-button.pf-m-secondary:hover { background: var(--jg-hover); color: var(--ju-ink); }
+/* Fokus mit der Tastatur: die Glas-Schatten der Knöpfe dürfen ihn nicht verdecken */
+[data-design="glas"] .pf-v5-c-login .pf-v5-c-button:is(.pf-m-primary, .pf-m-secondary):focus-visible { border-radius: 999px; box-shadow: var(--ju-focus); }
+
+[data-design="glas"] .pf-v5-c-alert.pf-m-inline { border-radius: 14px; }
+[data-design="glas"] #kc-totp-secret-key { border-radius: 10px; }
