@@ -6,6 +6,7 @@ import { toInput, weekdayDate } from '../format.js';
 import { store, refresh, can } from '../store.js';
 import { pageHead, safe, toast, icon, mailPreview, dialog, table, badge, empty, confirmAction, uploadProtected } from '../ui.js';
 import { ovLabel } from '../gliederung.js';
+import { gebietVon, gebietText, gebietFelder, gebietVorschlaege } from '../ov-gebiete.js';
 import { accountField, bindAccountPickers } from '../account-picker.js';
 import { addressState, addressSummary, addressCredit, loadAddressData, loadedText } from '../adressdaten.js';
 
@@ -150,15 +151,6 @@ function beitraege(s) {
 const kvList = () => store.data.kv.filter((k) => k.code !== 'LV');
 const kvShort = (code) => store.data.kv.find((k) => k.code === code)?.name || code;
 
-/** Gebiet eines Ortsverbands (0.52): zugeordnete Stadtteile, sonst der Vorschlag aus dem Namen. geb = Antwort von /api/ov-gebiete. */
-const gebietVon = (geb, id) => geb?.gebiete?.[id] || [];
-function gebietZelle(geb, o) {
-  const teile = gebietVon(geb, o.id);
-  if (teile.length) return html`<span class="small">${teile.length > 4 ? `${teile.slice(0, 3).join(', ')} + ${teile.length - 3} weitere` : teile.join(', ')}</span>`;
-  const vor = geb?.vorschlag?.[o.id];
-  return vor ? html`<span class="small muted">Vorschlag: ${vor.join(', ')}</span>` : html`<span class="muted">—</span>`;
-}
-
 function gliederung(geb) {
   const ovs = store.data.ovs || [];
   const members = (code) => store.data.members.filter((m) => m.kv === code).length;
@@ -190,25 +182,12 @@ function gliederung(geb) {
           Gebiete aus den Namen vorschlagen (${Object.keys(geb.vorschlag).length})</button></p>` : ''}` : ''}
       ${shown.length ? table(['Kreisverband', { label: 'Nr.', className: 'num' }, 'Ortsverband', ...(geb ? ['Gebiet'] : []), { label: 'Mitglieder', className: 'num' }, 'Status', ''],
         shown.map((o) => html`<tr class="${o.active ? '' : 'muted'}"><td>${kvShort(o.kv)}</td><td class="num">${o.number || '—'}</td><td>${o.name}</td>
-          ${geb ? html`<td data-ov-gebiet="${o.id}">${gebietZelle(geb, o)}</td>` : ''}<td class="num">${o.members}</td><td>${o.active ? badge('aktiv', 'ok') : badge('deaktiviert', '')}</td>
+          ${geb ? html`<td data-ov-gebiet="${o.id}">${gebietText(geb, o)}</td>` : ''}<td class="num">${o.members}</td><td>${o.active ? badge('aktiv', 'ok') : badge('deaktiviert', '')}</td>
           <td class="nowrap"><button type="button" class="btn small" data-ov-edit="${o.id}">Bearbeiten</button>
             <button type="button" class="btn small" data-ov-toggle="${o.id}">${o.active ? 'Deaktivieren' : 'Aktivieren'}</button>
             ${o.members ? '' : html`<button type="button" class="btn small ghost" data-ov-delete="${o.id}">Löschen</button>`}</td></tr>`))
         : empty('Keine Ortsverbände', 'Einzeln anlegen oder die Gliederung aus dem Export der Mitgliederverwaltung importieren.')}
     </section></div>`;
-}
-
-/** Stadtteile eines Kreisverbands zum Ankreuzen; daneben, welche anderen Ortsverbände den Stadtteil schon haben. */
-function gebietFelder(geb, kv, ovId, gewaehlt) {
-  const teile = (geb?.stadtteile || []).filter((t) => t.kv === kv);
-  if (!kv) return html`<p class="small muted">Erst den Kreisverband wählen.</p>`;
-  if (!teile.length) return html`<p class="small muted">Keine Stadtteile – die amtlichen Adressdaten fehlen (Reiter „Schalter“).</p>`;
-  const andere = (name) => (store.data.ovs || []).filter((x) => x.id !== ovId && gebietVon(geb, x.id).includes(name)).map(ovLabel);
-  return html`<div class="ov-gebiet-liste">${teile.map((t) => {
-    const auch = andere(t.name);
-    return html`<label class="check"><input type="checkbox" name="stadtteil" value="${t.name}" ${gewaehlt.has(t.name) ? 'checked' : ''}> ${t.name}${
-      auch.length ? html` <span class="small muted">(auch ${auch.join(', ')})</span>` : ''}</label>`;
-  })}</div>`;
 }
 
 function ovDialog(o = null, geb = null) {
@@ -248,33 +227,6 @@ function ovDialog(o = null, geb = null) {
       el.close();
       await refresh();
       toast(o ? 'Ortsverband gespeichert.' : 'Ortsverband angelegt.');
-    });
-  };
-}
-
-/** Alle Vorschläge aus den Namen auf einmal prüfen (aktive Ortsverbände ohne Gebiet); übernommen wird nur, was angehakt bleibt. */
-function gebietVorschlaege(geb, done) {
-  const liste = Object.entries(geb.vorschlag).map(([id, teile]) => ({ o: (store.data.ovs || []).find((x) => x.id === Number(id)), teile }))
-    .filter((x) => x.o).sort((a, b) => a.o.kv.localeCompare(b.o.kv) || ovLabel(a.o).localeCompare(ovLabel(b.o), 'de'));
-  const el = dialog('Gebiete aus den Namen', html`<form data-vorschlag-form style="display:flex;flex-direction:column;gap:14px">
-    <p class="small muted">Für Ortsverbände ohne Gebiet: Stadtteile, deren Name im Namen des Ortsverbands vorkommt. Bitte prüfen – nicht jeder Treffer
-      stimmt, und Stadtteile ohne Treffer fehlen. Einzelne Ortsverbände lassen sich danach unter „Bearbeiten“ anpassen.</p>
-    ${table(['', 'Kreisverband', 'Ortsverband', 'Stadtteile'], liste.map(({ o, teile }) => html`<tr>
-      <td><input type="checkbox" name="ov" value="${o.id}" checked aria-label="${ovLabel(o)} übernehmen"></td><td>${kvShort(o.kv)}</td><td>${ovLabel(o)}</td>
-      <td class="small">${teile.join(', ')}</td></tr>`))}
-    <div class="form-actions"><button type="button" class="btn ghost" data-cancel>Abbrechen</button>
-      <button type="submit" class="btn primary">Angehakte übernehmen</button></div></form>`, { wide: true });
-  const form = el.querySelector('[data-vorschlag-form]');
-  el.querySelector('[data-cancel]').onclick = () => el.close();
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    const ids = [...form.querySelectorAll('input[name="ov"]:checked')].map((x) => Number(x.value));
-    if (!ids.length) return toast('Nichts angehakt.', true);
-    safe(async () => {
-      for (const id of ids) await api('/api/ov-gebiet', { id, stadtteile: geb.vorschlag[id] });
-      el.close();
-      toast(`Gebiet für ${ids.length} ${ids.length === 1 ? 'Ortsverband' : 'Ortsverbände'} gespeichert.`);
-      done();
     });
   };
 }

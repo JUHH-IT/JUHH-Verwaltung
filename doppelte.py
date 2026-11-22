@@ -186,6 +186,13 @@ def vorschau(store, keep, drop, buchhaltung=False):
             neu['joined'] = b['joined']                  # dieselbe Mitgliedschaft: der frühere Eintritt zählt
     if b['no_mail'] and not a['no_mail']:
         neu['no_mail'] = 1                               # Postausschluss bleibt bestehen
+    if b.get('ov_fest') and not a.get('ov_fest'):
+        neu['ov_fest'] = 1                               # „Ortsverband fest“ (0.52) bleibt bestehen
+    if not a.get('geworben_von') and not a.get('geworben_text'):   # „geworben von“ (0.52): Mitglied oder Text, nie auf sich selbst
+        if b.get('geworben_von') and b['geworben_von'] != keep:
+            neu['geworben_von'] = b['geworben_von']
+        elif b.get('geworben_text') and not b.get('geworben_von'):
+            neu['geworben_text'] = b['geworben_text']
     if b.get('note') and a['left_on'] and a['left_on'] <= date.today().isoformat():
         hinweise.append('Die Notiz des entfallenden Mitglieds wird nicht übernommen – das bleibende ist ausgetreten (Datenschutz).')
     elif b.get('note'):

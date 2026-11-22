@@ -47,12 +47,19 @@ def _woerter(text):
     return {gliederung.fold(w) for w in re.split(r'[\s\-/,.()&+]+', str(text or '')) if gliederung.fold(w)}
 
 
+def _enthaelt(name, stadtteil):
+    """Stadtteil als ganze Wortfolge im Namen des Ortsverbands („Altona-Nord“ in „Altona-Nord/Sternschanze“, nicht „Hamm“ in „Hammerbrook“)."""
+    w = lambda text: [gliederung.fold(x) for x in re.split(r'[\s\-/,.()&+]+', str(text or '')) if gliederung.fold(x)]   # noqa: E731
+    n, s = w(name), w(stadtteil)
+    return bool(s) and any(n[i:i + len(s)] == s for i in range(len(n) - len(s) + 1))
+
+
 def namensvorschlag(ovs, teile, vorhanden):
     """Gebiet aus dem Namen für aktive Ortsverbände ohne Gebiet – nur ein Vorschlag zum Bestätigen. {ov_id: [Stadtteil]}
     Zuerst ganze Namen („Altona-Nord“ steht im Namen des Ortsverbands); Stadtteile ohne solchen Treffer danach über ihre langen
     Wortteile („Hamburg-Altstadt“ → Ortsverband „Altstadt“, „Hoheluft-West“ → „Eimsbüttel-Nord/Hoheluft“). „Hamburg“ allein zählt nie."""
     aktiv = [o for o in ovs if o['active']]
-    ganz = {o['id']: [t['name'] for t in teile if t['kv'] == o['kv'] and gliederung.fold(t['name']) in gliederung.fold(o['name'])] for o in aktiv}
+    ganz = {o['id']: [t['name'] for t in teile if t['kv'] == o['kv'] and _enthaelt(o['name'], t['name'])] for o in aktiv}
     vergeben = {n for treffer in ganz.values() for n in treffer}
     out = {}
     for o in aktiv:
@@ -70,6 +77,7 @@ def namensvorschlag(ovs, teile, vorhanden):
 def gebiet_speichern(store, data_dir, ov_id, namen, actor):
     """Stadtteile eines Ortsverbands festlegen (ersetzt die bisherigen). Mit Adressdaten muss jeder Stadtteil im Bezirk des
     Kreisverbands liegen."""
+    ov_id = _kennung(ov_id, 'Ortsverband')
     ov = store.db.execute('SELECT id,kv,name FROM ortsverbaende WHERE id=?', (ov_id,)).fetchone()
     if not ov:
         raise ValueError('Ortsverband nicht gefunden.')
@@ -151,36 +159,51 @@ def abgleich(store, data_dir, today=None):
     return out
 
 
-def _ids(werte, name):
-    if not isinstance(werte, list) or len(werte) > MAX_AUSWAHL:
-        raise ValueError(f'{name}: ungültige Auswahl.')
-    try:
-        return [int(x) for x in werte if not isinstance(x, bool)]
-    except (TypeError, ValueError):
-        raise ValueError(f'{name}: ungültige Auswahl.') from None
+def _kennung(x, name, leer=False):
+    """Ganze Zahl aus der Eingabe (int oder Ziffernfolge, nie bool oder Kommazahl); leer=True erlaubt None."""
+    if x is None and leer:
+        return None
+    if isinstance(x, int) and not isinstance(x, bool) and 0 < x < 2 ** 62:
+        return x
+    if isinstance(x, str) and x.strip().isdigit() and 0 < len(x.strip()) < 19:
+        return int(x)
+    raise ValueError(f'{name}: ungültige Auswahl.')
+
+
+def auswahl(aenderungen, fest):
+    """Eingabe der Übernahme prüfen (vor der Sicherung): [{id, ov, ov_alt, kv_alt}] und [id]. ov_alt/kv_alt = Stand, den die Person
+    gesehen hat – weicht das Mitglied inzwischen davon ab (von Hand geändert), wird es nicht überschrieben."""
+    if not isinstance(aenderungen, list) or not isinstance(fest, list) or len(aenderungen) + len(fest) > MAX_AUSWAHL \
+            or not all(isinstance(a, dict) for a in aenderungen):
+        raise ValueError('Änderungen: ungültige Auswahl.')
+    paare = {}
+    for a in aenderungen:
+        mid = _kennung(a.get('id'), 'Änderungen')
+        if mid in paare or not isinstance(a.get('kv_alt'), str):
+            raise ValueError('Änderungen: ungültige Auswahl.')
+        paare[mid] = (_kennung(a.get('ov'), 'Änderungen'), _kennung(a.get('ov_alt'), 'Änderungen', leer=True), a['kv_alt'])
+    fest_ids = {_kennung(x, 'Ortsverband fest') for x in fest} - set(paare)
+    if not paare and not fest_ids:
+        raise ValueError('Nichts ausgewählt.')
+    return paare, fest_ids
 
 
 def uebernehmen(store, data_dir, aenderungen, fest, actor, today=None):
-    """Ausgewählte Vorschläge übernehmen – [{id, ov}], der Kreisverband folgt dem Ortsverband – und Mitglieder als „Ortsverband fest“
-    markieren. Jeder Vorschlag wird vorher neu berechnet: Passt er nicht mehr (Adresse oder Gebiet inzwischen geändert), bleibt das
-    Mitglied unverändert und zählt als übersprungen. Der Aufrufer sichert vorher die Datenbank."""
-    if not isinstance(aenderungen, list) or len(aenderungen) > MAX_AUSWAHL or not all(isinstance(a, dict) for a in aenderungen):
-        raise ValueError('Änderungen: ungültige Auswahl.')
-    paare = dict(zip(_ids([a.get('id') for a in aenderungen], 'Änderungen'), _ids([a.get('ov') for a in aenderungen], 'Änderungen')))
-    if len(paare) != len(aenderungen):
-        raise ValueError('Änderungen: ungültige Auswahl.')
-    fest_ids = set(_ids(fest, 'Ortsverband fest')) - set(paare)
-    if not paare and not fest_ids:
-        raise ValueError('Nichts ausgewählt.')
-    jetzt = abgleich(store, data_dir, today)
-    erlaubt = {e['id']: {e['ov']} for e in jetzt['aendern']} | {e['id']: set(e['ovs']) for e in jetzt['mehrdeutig']}
+    """Ausgewählte Vorschläge übernehmen – der Kreisverband folgt dem Ortsverband – und Mitglieder als „Ortsverband fest“ markieren.
+    In einer Transaktion wird alles neu berechnet: Passt ein Vorschlag nicht mehr (Adresse, Gebiet oder Ortsverband inzwischen
+    geändert) oder steht ein Mitglied gar nicht im Abgleich, bleibt es unverändert und zählt als übersprungen. Der Aufrufer prüft
+    vorher mit `auswahl` und sichert die Datenbank."""
+    paare, fest_ids = auswahl(aenderungen, fest)
     ovs = gliederung.ov_map(store.db)
     geaendert = uebersprungen = markiert = 0
     with store.db:
-        store.db.execute('BEGIN IMMEDIATE')
-        for mid, ov in paare.items():
+        store.db.execute('BEGIN IMMEDIATE')                 # Abgleich und Änderung sehen denselben Stand
+        jetzt = abgleich(store, data_dir, today)
+        erlaubt = {e['id']: {e['ov']} for e in jetzt['aendern']} | {e['id']: set(e['ovs']) for e in jetzt['mehrdeutig']}
+        im_abgleich = set(erlaubt) | {e['id'] for e in jetzt['ohne_gebiet'] + jetzt['fehler']}
+        for mid, (ov, ov_alt, kv_alt) in paare.items():
             old = store.db.execute('SELECT kv,ov_id,number FROM members WHERE id=?', (mid,)).fetchone()
-            if not old or ov not in erlaubt.get(mid, ()) or ov not in ovs:
+            if not old or ov not in erlaubt.get(mid, ()) or ov not in ovs or (old['kv'], old['ov_id']) != (kv_alt, ov_alt):
                 uebersprungen += 1
                 continue
             kv = ovs[ov]['kv']
@@ -190,7 +213,8 @@ def uebernehmen(store, data_dir, aenderungen, fest, actor, today=None):
             geaendert += 1
         for mid in sorted(fest_ids):
             old = store.db.execute('SELECT number,ov_fest FROM members WHERE id=?', (mid,)).fetchone()
-            if not old or old['ov_fest']:
+            if not old or old['ov_fest'] or mid not in im_abgleich:   # nur Mitglieder, die der Abgleich gerade nennt (aktiv, nicht LV/SU)
+                uebersprungen += 1
                 continue
             store.db.execute('UPDATE members SET ov_fest=1 WHERE id=?', (mid,))
             store.audit(actor, 'Mitglied geändert', {'id': mid, 'number': old['number'], 'fields': ['ov_fest']})

@@ -62,6 +62,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/main.js` → /api/bestaetigen, /api/keycloak, /api/login, /api/logout, /api/status
 - `static/js/member-picker.js`: CASE_REASON, EXTERNAL_REASON, addressLine, caseLabel, externalLabel, fold, matchMembers, membersLabel, membersPayload, pickMembers, sortName, suggestMembers
 - `static/js/mitglieder-listen.js`: anschriftVollstaendig, fehlt, gespeichert, isActive, listen, speichern
+- `static/js/ov-gebiete.js`: gebietFelder, gebietText, gebietVon, gebietVorschlaege, gebieteDialog → /api/ov-gebiet, /api/ov-gebiete
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
@@ -386,7 +387,8 @@ Tests: test_ovabgleich.py
 - `gebiet_speichern(store, data_dir, ov_id, namen, actor)` – Stadtteile eines Ortsverbands festlegen (ersetzt die bisherigen). Mit Adressdaten muss jeder Stadtteil im Bezirk des
 - `ovs_fuer(db, kv, stadtteil)` – Aktive Ortsverbände eines Kreisverbands, zu deren Gebiet der Stadtteil gehört (Vorschlag im Mitgliedsdialog und im Abgleich).
 - `abgleich(store, data_dir, today=…)` – Alle aktiven Mitglieder mit dem Ortsverband nach ihrer Adresse vergleichen.
-- `uebernehmen(store, data_dir, aenderungen, fest, actor, today=…)` – Ausgewählte Vorschläge übernehmen – [{id, ov}], der Kreisverband folgt dem Ortsverband – und Mitglieder als „Ortsverband fest“
+- `auswahl(aenderungen, fest)` – Eingabe der Übernahme prüfen (vor der Sicherung): [{id, ov, ov_alt, kv_alt}] und [id]. ov_alt/kv_alt = Stand, den die Person
+- `uebernehmen(store, data_dir, aenderungen, fest, actor, today=…)` – Ausgewählte Vorschläge übernehmen – der Kreisverband folgt dem Ortsverband – und Mitglieder als „Ortsverband fest“ markieren.
 
 ### klaerfaelle.py
 

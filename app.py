@@ -890,8 +890,9 @@ class Handler(BaseHTTPRequestHandler):
                     saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-zusammenfuehren')
                     doppelte.zusammenfuehren(store,data.get('keep'),data.get('drop'),actor,bh);result={'backup':saved.name}
                 else: result={k:v for k,v in doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh).items() if k!='neu'}
-            elif path=='/api/ov-gebiet': result={'stadtteile':__import__('ovabgleich').gebiet_speichern(store,DATA,int(data['id']),data.get('stadtteile'),actor)}
+            elif path=='/api/ov-gebiet': result={'stadtteile':__import__('ovabgleich').gebiet_speichern(store,DATA,data.get('id'),data.get('stadtteile'),actor)}
             elif path=='/api/ov-abgleich':   # ausgewählte Vorschläge übernehmen – vorher sichern (viele Mitglieder auf einmal)
+                __import__('ovabgleich').auswahl(data.get('aendern',[]),data.get('fest',[]))   # ungültige oder leere Auswahl: keine Sicherung
                 saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-ov-abgleich')
                 result={**__import__('ovabgleich').uebernehmen(store,DATA,data.get('aendern',[]),data.get('fest',[]),actor),'backup':saved.name}
             elif path=='/api/mitglieder-liste':   # Auswahl als CSV, Etiketten oder Anschreiben (mitgliederlisten.py, 0.43) – enthält Kontaktdaten
