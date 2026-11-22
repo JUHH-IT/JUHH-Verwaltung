@@ -5,11 +5,12 @@
 // nimmt ein Mitglied dauerhaft aus dem Abgleich.
 import { api } from '../api.js';
 import { html, mount } from '../html.js';
-import { store, kvName, can, go, refresh } from '../store.js';
+import { store, kvName, can, refresh } from '../store.js';
 import { dialog, badge, safe, toast, table } from '../ui.js';
 import { ovById, ovLabel } from '../gliederung.js';
 import { sortName, addressLine } from '../member-picker.js';
 import { memberDialog } from './members.js';
+import { gebieteDialog } from '../ov-gebiete.js';
 
 const ART = { ausserhalb: 'außerhalb Hamburgs', unbekannt: 'nicht gefunden', leer: 'ohne Anschrift' };
 
@@ -33,6 +34,8 @@ function draw(el, a) {
       einer Adresse nicht bestimmen. Laden unter Einstellungen → Schalter.</p>`);
   }
   const vorschlaege = [...a.aendern, ...a.mehrdeutig].filter((e) => wer(e.id));
+  const wechsel = vorschlaege.filter((e) => !e.ovs && e.kv_anders).length;
+  const eintrag = new Map(vorschlaege.map((e) => [e.id, e]));
   const fehler = a.fehler.filter((e) => wer(e.id));
   const ohne = new Map();
   for (const e of a.ohne_gebiet) {
@@ -43,8 +46,9 @@ function draw(el, a) {
   }
   const wahl = (e) => {
     const ovs = e.ovs || [e.ov];
-    const vor = !e.ovs && !e.kv_anders ? e.ov : null;   // nur ein eindeutiger Vorschlag im selben Kreisverband ist vorausgewählt
-    return html`<select name="ova-${e.id}" data-ova-wahl="${e.id}" ${e.ovs ? '' : 'data-ova-eindeutig'} aria-label="Aktion für ${sortName(wer(e.id))}">
+    const eindeutig = !e.ovs && !e.kv_anders;                    // ein Ortsverband im selben Kreisverband: „Alle übernehmen“ darf ihn wählen
+    const vor = eindeutig && !e.hinweis ? e.ov : null;              // vorausgewählt nur bei sicherer Lage (Hausnummer im amtlichen Bestand)
+    return html`<select name="ova-${e.id}" data-ova-wahl="${e.id}" ${eindeutig ? 'data-ova-eindeutig' : ''} aria-label="Aktion für ${sortName(wer(e.id))}">
       ${ovs.map((id) => html`<option value="ov:${id}" ${id === vor ? 'selected' : ''}>${e.ovs ? `→ ${ovLabel(ovById(id))}` : 'übernehmen'}</option>`)}
       <option value="" ${vor ? '' : 'selected'}>nicht ändern</option>
       <option value="fest">Ortsverband fest</option></select>`;
@@ -53,16 +57,18 @@ function draw(el, a) {
     ? html`<span class="muted">mehrere: ${e.ovs.map((id, i) => html`${i ? ' · ' : ''}${ovLabel(ovById(id))}`)}</span>`
     : html`${ovLabel(ovById(e.ov))}${e.kv_anders ? html`<span class="sub">${badge(`anderer Kreisverband: ${kvName(e.kv)}`, 'warn')}</span>` : ''}`);
   mount(box, html`
-    ${a.gebiete ? '' : html`<p class="notice warn">Noch keinem Ortsverband sind Stadtteile zugeordnet. Erst die Gebiete festlegen, dann abgleichen. ${toGliederung}</p>`}
+    ${a.gebiete ? '' : html`<p class="notice warn">Noch keinem Ortsverband sind Stadtteile zugeordnet. Erst die Gebiete festlegen, dann abgleichen. ${write ? toGliederung : ''}</p>`}
+    ${write && a.gebiete ? html`<p class="ova-gebiete-link">${toGliederung}</p>` : ''}
     <p class="muted" data-ova-summe>${a.passt} passen · ${vorschlaege.length} ${vorschlaege.length === 1 ? 'Vorschlag' : 'Vorschläge'} ·
       ${fehler.length} Adresse${fehler.length === 1 ? '' : 'n'} prüfen · ${a.ohne_gebiet.length} ohne Gebiet${a.fest ? ` · ${a.fest} mit festem Ortsverband` : ''}${
       a.sonder ? ` · ${a.sonder} im Landesverband oder in der Schüler Union (ohne Abgleich)` : ''}</p>
     <form data-ova-form style="display:flex;flex-direction:column;gap:16px">
       ${vorschlaege.length ? html`<section class="ova-part" data-ova-vorschlaege><div class="ova-head"><h3>Vorschläge</h3>
-        ${write ? html`<span class="ova-actions"><button type="button" class="btn small ghost" data-ova-alle title="Alle eindeutigen Vorschläge, auch mit Wechsel des Kreisverbands">Alle übernehmen</button>
+        ${write ? html`<span class="ova-actions"><button type="button" class="btn small ghost" data-ova-alle title="Alle eindeutigen Vorschläge im selben Kreisverband">Alle übernehmen</button>
           <button type="button" class="btn small ghost" data-ova-keine>Keine</button></span>` : ''}</div>
-        <p class="small muted">Vorausgewählt sind eindeutige Vorschläge im selben Kreisverband. Ein Wechsel des Kreisverbands nur bewusst wählen –
-          die Satzung erlaubt die Mitgliedschaft in einem anderen Kreisverband („Ortsverband fest“).</p>
+        <p class="small muted">Vorausgewählt sind eindeutige Vorschläge im selben Kreisverband, deren Adresse sicher gefunden wurde. Ein Wechsel des
+          Kreisverbands nur einzeln und bewusst wählen – die Satzung erlaubt die Mitgliedschaft in einem anderen Kreisverband („Ortsverband fest“);
+          „Eintritt Kreisverband“ bleibt dabei stehen.${wechsel ? ` ${wechsel} ${wechsel === 1 ? 'Vorschlag wechselt' : 'Vorschläge wechseln'} den Kreisverband.` : ''}</p>
         ${table(['Mitglied', 'Wohnort', 'Bisher', 'Nach der Adresse', ...(write ? ['Aktion'] : [])], vorschlaege.map((e) => html`<tr data-ova-row="${e.id}">
           <td>${person(wer(e.id))}</td><td>${e.stadtteil}${e.hinweis ? html`<span class="sub">${e.hinweis}</span>` : ''}</td><td>${bisher(e)}</td><td>${ziel(e)}</td>
           ${write ? html`<td>${wahl(e)}</td>` : ''}</tr>`))}</section>` : ''}
@@ -96,7 +102,7 @@ function draw(el, a) {
   };
   selects.forEach((s) => (s.onchange = zaehlen));
   const setzen = (alle) => {
-    // „Alle“ nur für eindeutige Vorschläge (auch in einen anderen Kreisverband); bei mehreren Ortsverbänden bleibt die Wahl von Hand
+    // „Alle“ nur für eindeutige Vorschläge im selben Kreisverband; Wechsel des Kreisverbands und mehrere Ortsverbände bleiben Handwahl
     for (const s of form.querySelectorAll('[data-ova-vorschlaege] [data-ova-wahl]')) s.value = alle && s.hasAttribute('data-ova-eindeutig') ? s.options[0].value : (alle ? s.value : '');
     zaehlen();
   };
@@ -104,7 +110,7 @@ function draw(el, a) {
   if (alle) alle.onclick = () => setzen(true);
   const keine = form.querySelector('[data-ova-keine]');
   if (keine) keine.onclick = () => setzen(false);
-  box.querySelectorAll('[data-ova-gliederung]').forEach((b) => (b.onclick = () => { el.close(); go('settings', { settingsTab: 'gliederung' }); }));
+  box.querySelectorAll('[data-ova-gliederung]').forEach((b) => (b.onclick = () => gebieteDialog(ovAbgleichDialog)));   // Gebiete mit „Mitglieder ändern“
   box.querySelectorAll('[data-ova-edit]').forEach((b) => (b.onclick = () => memberDialog(wer(Number(b.dataset.ovaEdit)), { onSaved: ovAbgleichDialog })));
   const close = form.querySelector('[data-close-ova]');
   if (close) close.onclick = () => el.close();
@@ -114,7 +120,7 @@ function draw(el, a) {
     for (const s of selects) {
       const id = Number(s.dataset.ovaWahl);
       if (s.value === 'fest') fest.push(id);
-      else if (s.value.startsWith('ov:')) aendern.push({ id, ov: Number(s.value.slice(3)) });
+      else if (s.value.startsWith('ov:')) aendern.push({ id, ov: Number(s.value.slice(3)), ov_alt: eintrag.get(id).ov_alt ?? null, kv_alt: eintrag.get(id).kv_alt });   // Stand beim Anzeigen: inzwischen von Hand geändert = übersprungen
     }
     if (!aendern.length && !fest.length) return toast('Nichts ausgewählt.', true);
     safe(async () => {

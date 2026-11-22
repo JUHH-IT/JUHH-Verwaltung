@@ -50,7 +50,7 @@ LABELS = {'number': 'Mitgliedsnummer', 'first_name': 'Vorname', 'last_name': 'Na
           'kv_number': 'Kreisverband (Nr.)', 'ov_number': 'Ortsverband (Nr.)', 'ov_name': 'Ortsbezeichnung'}
 MAX_TEXT = 200
 PRIVATE = ('gender', 'nationality', 'phone', 'phone_work', 'mobile', 'mobile_work', 'email_work', 'letter_salutation', 'letter_salutation2',
-           'payment_method', 'external_balance', 'left_reason', 'note', 'iban', 'kontoinhaber') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
+           'payment_method', 'external_balance', 'left_reason', 'note', 'geworben_text', 'iban', 'kontoinhaber') + LEGACY   # nicht in der Gesamtliste (erst beim Öffnen eines Mitglieds)
 PARTICLES = {'von', 'van', 'de', 'der', 'den', 'zu', 'vom', 'zum', 'zur', 'ten', 'ter', 'du', 'da', 'di', 'del', 'la', 'le', 'dos'}
 MAX_ROWS = 5000
 
@@ -780,6 +780,9 @@ def preview(store, raw, filename, password=None):
             elif merged.get('ov_id') and (ov_by_id.get(merged['ov_id']) or {}).get('kv') != merged['kv']:
                 merged['ov_id'] = None
                 warnings.append('Ortsverband entfällt: Kreisverband laut Datei ist ein anderer.')
+            if old and old['ov_id'] and (merged.get('ov_id') != old['ov_id'] or item.get('new_ov')):   # ab 0.52: die Datei gilt
+                warnings.append('Ortsverband laut Datei ersetzt den im Programm' + (' (dort „Ortsverband fest“)' if old['ov_fest'] else '')
+                                + ' – nach einem Abgleich nach Adresse auch in der CDU-Mitgliederverwaltung ändern.')
             if merged.get('iban') and not iban_valid(iban_compact(merged['iban'])):   # ab 0.53: ungültige IBAN nicht übernehmen, Zeile bleibt
                 warnings.append('IBAN ungültig – wird nicht übernommen.')
                 merged['iban'] = old['iban'] if old else None

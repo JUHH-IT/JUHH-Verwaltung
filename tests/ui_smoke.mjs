@@ -1627,6 +1627,12 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('[data-page=members]');
   await page.click('main [data-ov-abgleich]');
   await page.waitForSelector('#modal [data-ova-form]');
+  // Gebiete auch aus der Mitgliederverwaltung (Prüfbefund 0.52: der Landesmitgliederbeauftragte hat kein Einstellungsrecht)
+  await page.click('#modal [data-ova-gliederung]');
+  check(await page.waitForFunction(() => [...document.querySelectorAll('#modal [data-gebiet-zelle]')].some((td) => td.textContent.includes('Ottensen')), null, { timeout: 5000 })
+    .then(() => true, () => false), 'Abgleich → Gebiete der Ortsverbände (ohne Einstellungen)');
+  await page.click('#modal [data-gebiete-zurueck]');
+  await page.waitForSelector('#modal [data-ova-form]');
   const wahl = (id) => page.inputValue(`#modal [data-ova-wahl="${id}"]`);
   check(await wahl(ova.gleich) === `ov:${ova.testdorf}`, 'Abgleich: Vorschlag im selben Kreisverband vorausgewählt');
   check(await wahl(ova.anders) === '' && (await page.locator(`#modal [data-ova-row="${ova.anders}"]`).textContent()).includes('anderer Kreisverband'),

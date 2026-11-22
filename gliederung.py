@@ -184,6 +184,8 @@ def save_ov(store, data, actor, ov_id=None):
             if kv != current['kv'] and store.db.execute('SELECT 1 FROM members WHERE ov_id=?', (ov_id,)).fetchone():
                 raise ValueError('Dem Ortsverband sind Mitglieder zugeordnet – der Kreisverband kann nicht geändert werden.')
             store.db.execute('UPDATE ortsverbaende SET kv=?,number=?,name=? WHERE id=?', (kv, number, name, ov_id))
+            if kv != current['kv']:   # Gebiet (ovabgleich, 0.52) gehört zum alten Bezirk
+                store.db.execute('DELETE FROM ortsverband_gebiete WHERE ov_id=?', (ov_id,))
             store.audit(actor, 'Ortsverband geändert', {'id': ov_id, 'vorher': label(current), 'nachher': label({'number': number, 'name': name}),
                                                          'kv': kv})
             return ov_id

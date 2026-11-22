@@ -46,6 +46,11 @@ class Basis(unittest.TestCase):
 
 
 class GebieteTests(Basis):
+    def test_namensvorschlag_nur_ganze_woerter(self):
+        teile = [{'name': 'Hamm', 'kv': '5500'}, {'name': 'Hammerbrook', 'kv': '5500'}, {'name': 'Altona-Nord', 'kv': '5100'}]
+        ovs = [{'id': 1, 'kv': '5500', 'name': 'Hammerbrook', 'active': 1}, {'id': 2, 'kv': '5100', 'name': 'Altona-Nord/Sternschanze', 'active': 1}]
+        self.assertEqual(ovabgleich.namensvorschlag(ovs, teile, {}), {1: ['Hammerbrook'], 2: ['Altona-Nord']})
+
     def test_stadtteile_und_namensvorschlag(self):
         teile = ovabgleich.stadtteile(self.dir)
         self.assertEqual([(t['name'], t['kv']) for t in teile],
@@ -124,8 +129,10 @@ class AbgleichTests(Basis):
         self.assertEqual({e['id']: e['art'] for e in a['fehler']}, {weg: 'ausserhalb', unbekannt: 'unbekannt'})
         self.assertEqual((a['passt'], a['fest'], a['sonder']), (2, 1, 1))
         self.assertNotIn('name', a['aendern'][0])                                         # nur Kennungen, keine Namen
-        r = ovabgleich.uebernehmen(self.s, self.dir, [{'id': falsch, 'ov': self.west}, {'id': umzug, 'ov': self.nord}, {'id': zwei, 'ov': self.ost2},
-                                                      {'id': ohne_ov, 'ov': self.ost}],   # ohne_ov: kein Vorschlag für „Ost A“ → übersprungen
+        stand = {e['id']: e for e in a['aendern'] + a['mehrdeutig']}
+        wahl = lambda mid, ov: {'id': mid, 'ov': ov, 'ov_alt': stand[mid]['ov_alt'], 'kv_alt': stand[mid]['kv_alt']}   # noqa: E731
+        r = ovabgleich.uebernehmen(self.s, self.dir, [wahl(falsch, self.west), wahl(umzug, self.nord), wahl(zwei, self.ost2),
+                                                      wahl(ohne_ov, self.ost)],   # ohne_ov: kein Vorschlag für „Ost A“ → übersprungen
                                    [leer, falsch], 'Test', today='2026-11-22')
         self.assertEqual(r, {'geaendert': 3, 'fest': 1, 'uebersprungen': 1})
         self.assertEqual((self.m(falsch)['ov_id'], self.m(umzug)['kv'], self.m(umzug)['ov_id'], self.m(zwei)['ov_id'], self.m(ohne_ov)['ov_id']),
@@ -140,11 +147,38 @@ class AbgleichTests(Basis):
 
     def test_eingaben_werden_geprueft(self):
         mid = self.member('Westweg 3', '20001', ov_id=self.ost)
-        for aendern, fest in (([], []), ('x', []), ([{'id': mid, 'ov': 'x'}], []), ([{'id': True, 'ov': self.west}], []), ([], [None]),
-                              ([{'id': mid, 'ov': self.west}, {'id': mid, 'ov': self.ost}], []), ([[mid, self.west]], [])):
+        ok = {'id': mid, 'ov': self.west, 'ov_alt': self.ost, 'kv_alt': '5100'}
+        for aendern, fest in (([], []), ('x', []), ([{**ok, 'ov': 'x'}], []), ([{**ok, 'id': True}], []), ([], [None]), ([{**ok, 'ov': 3.7}], []),
+                              ([], [2.0]), ([ok, {**ok, 'ov': self.ost}], []), ([[mid, self.west]], []), ([{'id': mid, 'ov': self.west}], [])):
+            with self.assertRaises(ValueError, msg=repr((aendern, fest))):
+                ovabgleich.auswahl(aendern, fest)
             with self.assertRaises(ValueError, msg=repr((aendern, fest))):
                 ovabgleich.uebernehmen(self.s, self.dir, aendern, fest, 'Test')
         self.assertEqual(self.m(mid)['ov_id'], self.ost)
+
+    def test_handaenderung_und_fremde_kennungen_werden_nicht_ueberschrieben(self):
+        mid = self.member('Westweg 3', '20001', ov_id=self.ost)
+        alt = self.member('Westweg 4', '20001', ov_id=self.ost, left_on='2025-12-31')        # ausgetreten: nicht im Abgleich
+        e = next(x for x in ovabgleich.abgleich(self.s, self.dir, today='2026-11-22')['aendern'] if x['id'] == mid)
+        stamm = {k: self.m(mid)[k] for k in ('number', 'first_name', 'last_name', 'street', 'zip', 'city', 'birth', 'joined', 'kv')}
+        self.s.update_member(mid, {**stamm, 'ov_id': self.ost2}, 'Test')                    # inzwischen von Hand: Ost B
+        r = ovabgleich.uebernehmen(self.s, self.dir, [{'id': mid, 'ov': e['ov'], 'ov_alt': e['ov_alt'], 'kv_alt': e['kv_alt']}], [alt], 'Test',
+                                   today='2026-11-22')
+        self.assertEqual(r, {'geaendert': 0, 'fest': 0, 'uebersprungen': 2})
+        self.assertEqual((self.m(mid)['ov_id'], self.m(alt)['ov_fest']), (self.ost2, 0))
+
+    def test_import_der_cdu_datei_gilt_mit_hinweis(self):
+        mid = self.member('Westweg 3', '20001', ov_id=self.west, ov_fest='1')
+        raw = ('Mitgliedsnummer;Vorname;Nachname;Straße;PLZ;Ort;Geburtsdatum;Eintritt;LVKV_Nummer;Ortsverband;Ortsbezeichnung\n'
+               f"{self.m(mid)['number']};Test;Person1;Westweg 3;20001;Hamburg;01.02.2000;01.01.2024;701;0;Ost A\n").encode()
+        row = mitglieder.preview(self.s, raw, 'liste.csv')['rows'][0]
+        self.assertEqual(row['values']['ov_id'], self.ost)                                  # Entscheidung 22.11.2026: die CDU-Datei gilt
+        self.assertIn('ersetzt den im Programm (dort „Ortsverband fest“)', row['warning'])
+        self.assertEqual(row['values']['ov_fest'], 1)                                       # das Kennzeichen selbst bleibt
+
+    def test_kreisverbandswechsel_des_ortsverbands_leert_das_gebiet(self):
+        gliederung.save_ov(self.s, {'kv': '5300', 'number': 0, 'name': 'West'}, 'Test', self.west)
+        self.assertNotIn(self.west, ovabgleich.gebiete(self.s.db))
 
 
 class WerberTests(Basis):
@@ -185,6 +219,9 @@ class WerberTests(Basis):
         self.assertEqual(self.m(geworben)['geworben_von'], alt)
         doppelte.zusammenfuehren(self.s, alt, selbst, 'Test')                             # wer alt geworben hat, geht in alt auf
         self.assertIsNone(self.m(alt)['geworben_von'])                                    # nie sich selbst geworben
+        bleibt, geht = self.member('Westweg 5', '20001'), self.member('Westweg 5', '20001', geworben_text='Infostand Uni', ov_fest='1')
+        doppelte.zusammenfuehren(self.s, bleibt, geht, 'Test')                            # Angaben des aufgehenden bleiben erhalten
+        self.assertEqual((self.m(bleibt)['geworben_text'], self.m(bleibt)['ov_fest']), ('Infostand Uni', 1))
 
 
 if __name__ == '__main__':
