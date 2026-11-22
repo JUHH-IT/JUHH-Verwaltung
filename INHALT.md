@@ -66,7 +66,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
-- `static/js/views/auswertung.js`: auswertung → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf
+- `static/js/views/auswertung.js`: aussageBestand, aussageBindung, aussageDichte, aussageGliederung, aussageStruktur, auswertung, flaecheKm2, klassen, skala, stufe, vorn → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf, /api/karte, /api/karte-gebiete
 - `static/js/views/bank.js`: bank, bankKeys, renderLedger, useLedger → /api/kasse-datei, /api/park, /api/reverse-bank
 - `static/js/views/benutzer.js`: benutzer → /api/benutzer, /api/benutzer-abgleichen, /api/benutzer-app-zuruecksetzen, /api/benutzer-startpasswort, /api/rolle, /api/rolle-loeschen
 - `static/js/views/bills.js`: approvalBadge, billBadge, bills, paymentDialog, reviewDialog → /api/bill, /api/bill-approval-revoke, /api/bill-approve, /api/bill-cancel, /api/bill-file, /api/bill-qr.svg, /api/bill-release, /api/bill-transferred, /api/bill-transfers, /api/bill-writeoff, /api/einvoice, /api/quarter-review, /api/quarter-review.pdf, /api/refund-form.pdf
@@ -497,6 +497,10 @@ Auswertung der Mitgliederdaten (Wunsch Lennert Gust 10.11.2026: „ein Punkt Aus
 
 Tests: test_auswertung.py
 
+- `cohorts(pool, day)` – Bindung je Eintrittsjahr (die letzten COHORT_YEARS Jahre bis zum Tag): Eintritte und in `kept` der Anteil, der 1 bis KEPT_YEARS Jahre
+- `left_by_tenure(left)` – Austritte nach vollendeten Jahren Mitgliedschaft am Austrittstag (LEFT_GROUPS) und wie viele am Tag danach 35 oder älter waren
+- `age_limit_ahead(active, day)` – Wie viele der Mitglieder im Rest des Jahres (nach dem Tag) und in jedem der nächsten AHEAD_YEARS Jahre 35 werden. Reine Zahlen.
+- `recruited(joined)` – Eintritte mit eingetragenem Werber (Mitglied `geworben_von` oder Freitext `geworben_text`): Anzahl und Anteil. Reine Zahlen.
 - `report(store, stichtag=…, kv=…, ov=…, today=…)` – Auswertung zum Stichtag (JJJJ-MM-TT); kv: Kostenstelle, ov: id oder 'none' (ohne Ortsverband).
 - `redact(r, amounts=…, names=…)` – Auswertung für eine Rolle (rollen.py, ab 0.34): ohne Buchhaltung keine Beitragsbeträge, ohne Mitgliederverwaltung
 - `pdf(store, stichtag=…, kv=…, ov=…, amounts=…)` – Mitgliederstatistik als PDF – nur Zahlen, keine Namen (für Vorstand und Gremien); `amounts=False`: ohne Beitragsbeträge.

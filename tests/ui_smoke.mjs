@@ -1052,49 +1052,104 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check(/\.(zip|xlsx)$/.test(excel.suggestedFilename()) && readFileSync(await excel.path()).subarray(0, 2).toString() === 'PK', 'Auswahl als Excel je Kreisverband (mehrere als ZIP)');
   await page.click('main .ml-bar [data-unpick]');
 
-  // 0.29: Auswertung der Mitgliederdaten
+  // 0.29: Auswertung der Mitgliederdaten; 0.54: ein Blatt mit Abschnitten, jeder beginnt mit einer Aussage aus den Zahlen
   await page.click('[data-page=auswertung]');
-  await page.waitForSelector('.aw-page .cards');
-  check((await page.locator('.aw-page .cards').textContent()).includes('Mitglieder am Stichtag'), 'Auswertung mit Kennzahlen');
-  check(await page.locator('.aw-page .aw-bars').count() >= 4, 'Auswertung: Altersgruppen, Eintrittsalter, Mitgliedsdauer, Zahlweg');
-  // 0.38: Diagramme – jeder Wert steht als Text am Balken (ohne Zeigen lesbar), nichts läuft auf dem Handy über
-  check(await page.locator('.aw-page .aw-two tbody tr').count() >= 7 && (await page.locator('.aw-page .aw-two').first().textContent()).includes('35 und älter'),
+  await page.waitForSelector('.aw-page .blatt');
+  const awTeile = ['bestand', 'struktur', 'gliederung', 'dichte', 'bindung', 'listen'];
+  check(await page.evaluate((teile) => teile.every((t) => document.querySelector(`.aw-page .blatt > #aw-${t}`)?.getClientRects().length), awTeile)
+    && await page.locator('.aw-page .blatt').count() === 1, 'Auswertung: ein Blatt mit Bestand, Struktur, Gliederung, Dichte, Bindung und Listen');
+  check(/^\d[\d.]* Mitglied/.test(await page.locator('#aw-t-bestand').textContent())
+    && await page.evaluate(() => [...document.querySelectorAll('.aw-page .blatt-aussage')].every((h) => h.textContent.trim().endsWith('.'))), 'Auswertung: jeder Abschnitt beginnt mit einer Aussage');
+  check(await page.locator('.aw-page .aw-sprung [data-sprung]').count() === awTeile.length, 'Auswertung: Sprungmenü zu allen Abschnitten');
+  // die Aussagen müssen für jede Datenlage stimmen: leer, Gleichstand, Rückgang, kein eindeutiger Erster, zu kleine Gruppen
+  const awSaetze = await page.evaluate(async () => {
+    const m = await import('/js/views/auswertung.js');
+    const r = (active, ends) => ({ stichtag: '2026-06-15', cards: { active }, development: ends.map((end, i) => ({ year: 2026 - ends.length + 1 + i, end })) });
+    const kv = (...n) => ({ cards: { active: n.reduce((a, b) => a + b, 0) }, ov_rows: [], kv_rows: n.map((active, i) => ({ name: `KV${i}`, code: String(i), active })) });
+    return [m.aussageBestand(r(0, [0])), m.aussageBestand(r(5, [5])), m.aussageBestand(r(5, [5, 5])), m.aussageBestand(r(7, [5, 7])), m.aussageBestand(r(1, [3, 1])),
+      m.aussageGliederung(kv(5, 3, 2)), m.aussageGliederung(kv(5, 2, 2)), m.aussageGliederung(kv(3, 3, 2)), m.aussageGliederung(kv(4)), m.aussageGliederung(kv(0, 0, 0)),
+      m.aussageStruktur({ cards: { active: 3 }, ages: [{ label: '16–17', count: 2 }, { label: '18–20', count: 1 }] }), m.aussageStruktur({ cards: { active: 2 }, ages: [{ label: 'a', count: 1 }, { label: 'b', count: 1 }] }),
+      m.aussageStruktur({ cards: { active: 2 }, ages: [{ label: 'a', count: 0 }] }),
+      m.aussageBindung({ cohorts: [{ year: 2024, joined: 10, kept: [0.8] }, { year: 2025, joined: 2, kept: [] }] }), m.aussageBindung({ cohorts: [{ year: 2024, joined: 2, kept: [null] }] }),
+      m.aussageDichte([{ name: 'A', n: 2 }, { name: 'B', n: 1 }, { name: 'C', n: 0 }]), m.aussageDichte([{ name: 'A', n: 1 }, { name: 'B', n: 1 }]), m.aussageDichte([{ name: 'A', n: 0 }])].map((t) => t.replaceAll('⁠', ''));
+  });
+  const awErwartet = ['Keine Mitglieder in dieser Auswahl.', '5 Mitglieder am 15.6.2026.', '5 Mitglieder, so viele wie Ende 2025.', '7 Mitglieder, 2 mehr als Ende 2025.', '1 Mitglied, 2 weniger als Ende 2025.',
+    'KV0 und KV1 stellen 80 % der Mitglieder.', 'KV0 stellt 56 % der Mitglieder.', 'Die Kreisverbände im Vergleich.', 'KV0 hat 4 Mitglieder.', 'Keine Mitglieder in dieser Auswahl.',
+    'Am stärksten ist die Altersgruppe 16–17 mit 2 von 3 Mitgliedern.', 'Mehrere Altersgruppen sind gleich stark besetzt.', 'Für diese Auswahl sind keine Geburtsdaten eingetragen.',
+    'Von 10 Eintritten 2024 waren nach einem Jahr noch 80 % Mitglied.', 'Für eine Aussage zur Bindung gibt es noch zu wenige Eintritte.',
+    'In 2 von 3 Stadtteilen wohnen Mitglieder, die meisten in A.', 'In 2 von 2 Stadtteilen wohnen Mitglieder.', 'Kein Mitglied dieser Auswahl ist einem Stadtteil zugeordnet.'];
+  check(JSON.stringify(awSaetze) === JSON.stringify(awErwartet), `Auswertung: Aussagen stimmen für jede Datenlage ${awSaetze.filter((t, i) => t !== awErwartet[i]).join(' | ')}`);
+  await page.click('.aw-page .aw-sprung [data-sprung=bindung]');
+  check(await page.waitForFunction(() => { const r = document.querySelector('#aw-bindung').getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; }, null, { timeout: 5000 }).then(() => true, () => false),
+    'Auswertung: Sprungmenü führt zum Abschnitt');
+  check(await page.locator('.aw-page .aw-vgl tbody tr').count() === 8 && (await page.locator('.aw-page .aw-vgl').textContent()).includes('Frauenanteil')
+    && (await page.locator('.aw-page .aw-vgl thead').textContent()).includes(String(new Date().getFullYear() - 1)), 'Auswertung: Vergleich mit dem Vorjahr (Wert heute, vor einem Jahr, Änderung)');
+  // Diagramme: jeder Wert steht als Text da (ohne Zeigen lesbar), jedes Diagramm hat eine Beschreibung, nichts läuft auf dem Handy über
+  check(await page.locator('.aw-page .aw-pyr:not(.kopf)').count() === 7 && (await page.locator('.aw-page .aw-pyramide').textContent()).includes('35 und älter'),
     'Auswertung: Alterspyramide nach Geschlecht');
-  check((await page.locator('.aw-page .aw-sex li').first().textContent()).includes('weiblich') && await page.locator('.aw-page .aw-sex li').count() >= 2,
-    'Auswertung: Geschlechteranteile gesamt und bei den Eintritten');
-  check(await page.locator('.aw-page .aw-cols').count() === 3 && await page.locator('.aw-page .aw-cols').last().locator('li').count() === 12
-    && await page.locator('.aw-page .aw-cols.both').count() === 2, 'Auswertung: Bestand, Ein-/Austritte je Jahr und je Monat');
-  check(await page.evaluate(() => [...document.querySelectorAll('.aw-page .aw-bars li, .aw-page .aw-two tbody tr, .aw-page .aw-cols li:not([aria-hidden])')]
-    .every((e) => /\d/.test(e.textContent))), 'Auswertung: jedes Diagramm nennt seine Zahlen als Text');
+  check(await page.locator('.aw-page .aw-verlauf').count() === 2 && await page.locator('.aw-page .aw-plot polyline').count() === 1
+    && await page.locator('.aw-page .aw-verlauf').last().locator('.aw-saeulen li').count() === 12, 'Auswertung: Bestand als Linie, Ein-/Austritte je Jahr und je Monat');
+  check(await page.evaluate(() => [...document.querySelectorAll('.aw-page .aw-saeulen li:not(.leer), .aw-page .aw-punkte li, .aw-page .aw-pyr:not(.kopf), .aw-page .aw-reihen li')]
+    .every((e) => /\d/.test(e.textContent) && e.title)), 'Auswertung: jedes Diagramm nennt seine Zahlen als Text und im Hinweis');
+  check(await page.evaluate(() => { const d = [...document.querySelectorAll('.aw-page [role=img]')]; return d.length >= 4 && d.every((e) => (e.getAttribute('aria-label') || '').length > 20); }),
+    'Auswertung: Diagramme mit Beschreibung für Vorleseprogramme');
+  check(await page.locator('.aw-page .aw-stapel').count() === 1 && (await page.locator('#aw-struktur').textContent()).includes('Mitgliedsdauer'), 'Auswertung: Frauenanteil mit gestapeltem Balken, Mitgliedsdauer');
+  check(await page.locator('.aw-page .aw-kohorten tbody tr').count() === 7 && (await page.locator('#aw-bindung').textContent()).includes('Altersgrenze in den nächsten Jahren')
+    && (await page.locator('#aw-bindung').textContent()).includes('mit eingetragenem Werber'), 'Auswertung: Bindung mit Kohorten, Austritten nach Dauer, Altersgrenze und Werbung');
+  // Gliederung: Sichten umschalten, ohne die Seite neu zu laden
+  check(await page.locator('.aw-page table.aw-kv .aw-skala .aw-pt, .aw-page table.aw-kv .aw-skala .wert').count() >= 2 && (await page.locator('.aw-page table.aw-kv').textContent()).includes('Daten vollständig'),
+    'Auswertung: Kreisverbände im Vergleich (Frauenanteil auf der Skala, Daten vollständig)');
+  await page.click('.aw-page [data-sicht=erreichbar]');
+  check((await page.locator('.aw-page table.aw-kv thead').textContent()).includes('Mit SEPA-Mandat') && await page.locator('.aw-page [data-sicht=erreichbar][aria-pressed=true]').count() === 1
+    && await page.evaluate(() => document.activeElement?.dataset.sicht === 'erreichbar'), 'Auswertung: Sicht „Erreichbarkeit“ (Knopf bleibt im Fokus)');
+  await page.click('.aw-page [data-sicht=beitrag]');
+  check((await page.locator('.aw-page table.aw-kv thead').textContent()).includes('Beitrag Soll') && await page.locator('.aw-page [data-op-kv]').count() >= 1, 'Auswertung: Sicht „Beitrag“ mit OP-Liste je Kreisverband (nur mit Buchhaltung)');
+  await page.click('.aw-page [data-sicht=ov]');
+  check(await page.locator('.aw-page table.aw-ov tbody tr').count() >= 1 && (await page.locator('.aw-page table.aw-ov thead').textContent()).includes('unter 18'), 'Auswertung: Sicht „Ortsverbände“ mit Altersschwerpunkt');
+  // Dichte: ohne amtliche Adressdaten ein ruhiger Hinweis statt der Karte (die Karte selbst prüft der Durchlauf nach dem Laden der Adressdaten)
+  check(await page.waitForFunction(() => document.querySelector('#aw-dichte [data-zur-karte]'), null, { timeout: 8000 }).then(() => true, () => false)
+    && (await page.locator('#aw-t-dichte').textContent()).includes('Adressdaten') && await page.locator('#aw-dichte svg').count() === 0, 'Auswertung: Dichte ohne Adressdaten zeigt einen Hinweis statt der Karte');
   await page.setViewportSize({ width: 390, height: 844 });
   // erst prüfen, wenn main.js auf die kompakte Ansicht umgeschaltet hat (sonst misst man noch die Seitenleiste daneben – in der CI gescheitert)
   await page.waitForFunction(() => document.documentElement.classList.contains('compact'));
-  const awFits = () => page.evaluate(() => {   // nichts ragt über den Bildschirm oder aus seinem Abschnitt (Tabellen und Reiter haben eigene Rahmen)
-    const out = [...document.querySelectorAll('.aw-page .panel *, .aw-page .card *')].filter((e) => !e.closest('.tablewrap, .tabs, .sr-only') && e.getClientRects().length).filter((e) => {
-      const box = e.closest('.panel, .card').getBoundingClientRect(), r = e.getBoundingClientRect();
+  const awFits = () => page.evaluate(() => {   // nichts ragt über den Bildschirm oder aus seinem Abschnitt (Tabellen haben eigene Rahmen)
+    const out = [...document.querySelectorAll('.aw-page .blatt-teil *')].filter((e) => !e.closest('.tablewrap, .sr-only, svg') && e.getClientRects().length).filter((e) => {
+      const box = e.closest('.blatt-teil').getBoundingClientRect(), r = e.getBoundingClientRect();
       return r.right > box.right + 0.5 || r.left < box.left - 0.5 || (!e.children.length && getComputedStyle(e).display !== 'inline' && e.scrollWidth > e.clientWidth + 1);
     }).map((e) => `${e.tagName.toLowerCase()}.${e.className} „${e.textContent.trim().slice(0, 20)}“`);
     return { ok: document.documentElement.scrollWidth <= window.innerWidth && !out.length, out: out.slice(0, 5) };
   });
   let fits = await awFits();
   check(fits.ok, `Auswertung: Handy (390 px) ohne seitliches Scrollen ${fits.out.join(' | ')}`);
-  check(await page.evaluate(() => { const w = document.querySelector('.aw-page table.aw-ov')?.closest('.tablewrap'); return !w || w.scrollWidth <= w.clientWidth; }),
-    'Auswertung: Ortsverbände auf dem Handy ohne Scrollen in der Tabelle');
+  const awKarten = () => page.evaluate(() => [...document.querySelectorAll('.aw-page table.aw-karten, .aw-page table.aw-vgl')].every((t) => { const w = t.closest('.tablewrap'); return w.scrollWidth <= w.clientWidth; }));
+  check(await awKarten(), 'Auswertung: Ortsverbände und Vergleich auf dem Handy ohne Scrollen in der Tabelle');
+  await page.click('.aw-page [data-sicht=struktur]');
+  check(await awKarten() && (await awFits()).ok, 'Auswertung: Kreisverbände auf dem Handy als Blöcke ohne Scrollen');
   const wide = await page.addStyleTag({ content: '* { font-family: "DejaVu Sans", Verdana, sans-serif !important; letter-spacing: .06em; }' });   // Geräte mit breiterer Schrift
   await page.waitForTimeout(300);
   fits = await awFits();
   check(fits.ok, `Auswertung: Handy (390 px) auch mit breiter Schrift ohne Überlauf ${fits.out.join(' | ')}`);
   await wide.evaluate((e) => e.remove());
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.locator('.aw-page h1').scrollIntoViewIfNeeded();
   await shot('38-auswertung-handy');
+  await page.locator('#aw-gliederung').scrollIntoViewIfNeeded();
+  await shot('38-auswertung-handy-gliederung');
   await page.setViewportSize({ width: 1440, height: 900 });
   const awPdf = await page.evaluate(async () => (await fetch(document.querySelector('.aw-page a[href^="/api/auswertung.pdf"]').href)).headers.get('content-type'));
   check(awPdf === 'application/pdf', 'Auswertung als PDF');
+  await page.locator('.aw-page h1').scrollIntoViewIfNeeded();
   await shot('38-auswertung');
+  for (const t of ['struktur', 'gliederung', 'bindung', 'listen']) {
+    await page.evaluate((id) => document.querySelector(`#aw-${id}`).scrollIntoView({ block: 'start' }), t);
+    await shot(`38-auswertung-${t}`);
+  }
   await page.click('[data-list=gaps]');
   check(await page.locator('.aw-page [data-gap]').count() === 5, 'Datenlücken nach Art');
   await page.selectOption('#aw-kv', { index: 1 });
   await page.waitForFunction(() => document.querySelector('.aw-page .eyebrow')?.textContent && !document.querySelector('.aw-page .eyebrow').textContent.includes('alle Kreisverbände'), null, { timeout: 5000 }).catch(() => {});
   check(!(await page.locator('.aw-page .eyebrow').textContent()).includes('alle Kreisverbände'), 'Auswertung je Kreisverband');
+  check(await page.locator('.aw-page .blatt-aussage').count() >= 5 && await page.locator('.aw-page table.aw-kv tfoot tr').count() === 0, 'Auswertung je Kreisverband: Aussagen bleiben, keine Summenzeile für eine einzelne Zeile');
   await page.click('.aw-page [data-op]');
   await page.waitForSelector('main [data-op] .toolbar');
   check(await page.waitForFunction(() => document.querySelectorAll('main .toolbar a[href^="/api/op-liste.pdf?kv=5"]').length === 1, null, { timeout: 5000 }).then(() => true, () => false),
@@ -1755,6 +1810,40 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check(mandate.suggestedFilename().startsWith('SEPA-Mandate-') && readFileSync(await mandate.path()).subarray(0, 4).toString() === '%PDF', 'SEPA-Mandate als PDF zum Unterschreiben');
   await shot('49b-iban-ohne-mandat');
   await page.click('main .ml-bar [data-unpick]');
+
+  // 0.54: Auswertung – Dichte je Stadtteil als Flächen (jetzt mit Adressdaten): eigenes SVG ohne Leaflet, Umschalter, Legende, Rangliste
+  await page.click('[data-page=auswertung]');
+  await page.selectOption('#aw-kv', '');
+  check(await page.waitForSelector('#aw-dichte .aw-karte svg path.aw-st', { timeout: 15000 }).then(() => true, () => false), 'Auswertung: Karte der Stadtteile gezeichnet');
+  const awKarte = await page.evaluate(async () => {
+    const geo = await (await fetch('/api/karte-gebiete')).json(), box = document.querySelector('#aw-dichte .aw-karte'), m = await import('/js/views/auswertung.js');
+    const pfade = [...box.querySelectorAll('path.aw-st')], kante = 0.01, feld = [[[[10, 53.55], [10 + kante, 53.55], [10 + kante, 53.55 + kante], [10, 53.55 + kante]]]];
+    return { alle: pfade.length === geo.stadtteile.length, titel: pfade.every((p) => /: \d/.test(p.querySelector('title')?.textContent || '')),
+      gefaerbt: pfade.some((p) => /\bs[1-5]\b/.test(p.getAttribute('class'))), bezirke: box.querySelectorAll('.aw-bezirk').length, grenzen: box.querySelectorAll('path.aw-bz').length,
+      label: box.querySelector('svg').getAttribute('role') === 'img' && !!box.querySelector('svg').getAttribute('aria-label'), leaflet: !!box.querySelector('.leaflet-container'),
+      flaeche: m.flaecheKm2(feld), loch: m.flaecheKm2([[feld[0][0], feld[0][0]]]), klassen: m.klassen([0, 1, 1, 2, 3, 10]), stufen: [0, 1, 10].map((v) => m.stufe(v, m.klassen([0, 1, 1, 2, 3, 10]))) };
+  });
+  check(awKarte.alle && awKarte.titel && awKarte.gefaerbt && awKarte.bezirke === 7 && awKarte.grenzen === 7 && awKarte.label && !awKarte.leaflet,
+    `Auswertung: alle Stadtteile als Flächen mit Hinweis, Bezirksgrenzen und Bezirksnamen (${JSON.stringify({ ...awKarte, flaeche: undefined })})`);
+  check(Math.abs(awKarte.flaeche - 0.7313) < 0.005 && Math.abs(awKarte.loch) < 1e-9 && JSON.stringify(awKarte.klassen) === '[1,2,3,10]' && JSON.stringify(awKarte.stufen) === '[0,1,5]',
+    `Auswertung: Fläche aus den Grenzen (0,01° × 0,01° bei Hamburg = ${awKarte.flaeche.toFixed(4)} km², Loch zählt ab) und Farbstufen`);
+  check(await page.locator('#aw-dichte [data-dichte-legende] li').count() >= 3 && await page.locator('#aw-dichte .aw-reihen.rang li').count() >= 1
+    && /Stadtteile ohne Mitglied\s*\d+ von \d+/.test(await page.locator('#aw-dichte .aw-liste').textContent()) && /^In \d+ von \d+ Stadtteilen/.test(await page.locator('#aw-t-dichte').textContent()),
+    'Auswertung: Dichte mit Legende, stärksten Stadtteilen und Zahl der Stadtteile ohne Mitglied');
+  await page.locator('#aw-dichte').scrollIntoViewIfNeeded();
+  await page.evaluate(() => document.querySelector('#aw-dichte').scrollIntoView({ block: 'start' }));
+  await shot('38-auswertung-dichte');
+  await page.click('#aw-dichte [data-dichte=flaeche]');
+  check((await page.locator('#aw-dichte [data-dichte-legende]').textContent()).includes('je km²') && await page.locator('#aw-dichte [data-dichte=flaeche][aria-pressed=true]').count() === 1
+    && (await page.locator('#aw-dichte .blatt-fuss').textContent()).includes('keine Dichte je Einwohner'), 'Auswertung: Dichte je km² (keine Dichte je Einwohner)');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.documentElement.classList.contains('compact'));
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && document.querySelector('#aw-dichte .aw-karte').getBoundingClientRect().right <= window.innerWidth),
+    'Auswertung: Karte der Stadtteile auf dem Handy (390 px) ohne seitliches Scrollen');
+  await page.evaluate(() => document.querySelector('#aw-dichte').scrollIntoView({ block: 'start' }));
+  await shot('38-auswertung-dichte-handy');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.waitForFunction(() => !document.documentElement.classList.contains('compact'));
 
   // Kleiner Bildschirm
   await page.setViewportSize({ width: 390, height: 844 });

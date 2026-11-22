@@ -269,4 +269,11 @@ html.compact[data-design="glas"] .main { padding: 20px 20px 56px; }
 [data-design="glas"] .kn-haken { background: var(--g-knopf); border-color: var(--g-knopf-rand); }
 [data-design="glas"] .kn-zeile.is-sel { background: var(--g-linse); box-shadow: var(--g-linse-schatten); }
 
+/* Auswertung (0.54): Grund hinter Punkten und Grenzen; im Dunkeln zweite Reihe und Kartenstufen (dunkel = wenig, hell = viel) */
+[data-design="glas"] .aw-page { --aw-grund: #f6f8fb; }
+[data-design="glas"][data-farbe="dunkel"] .aw-page { --aw-2: #5b83c4; --aw-grund: #131c2c;
+  --aw-seq-1: #1f3a5f; --aw-seq-2: #2c5490; --aw-seq-3: #4377bd; --aw-seq-4: #73a3e3; --aw-seq-5: #c0dafc; }
+[data-design="glas"] .aw-gross .wert { font-family: var(--g-titel); }
+[data-design="glas"] .aw-sprung, [data-design="glas"] .aw-wahl { border-radius: 20px; }
+
 }
