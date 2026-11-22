@@ -82,7 +82,7 @@ GET = {
                                   '/api/rpj-buchungen.csv', '/api/rpj-vorlage.csv', '/api/kv-ledger', '/api/kv.pdf', '/api/kv-detail')},
     # der Buchungsplatz braucht Haushaltstitel und RPJ-Projekte
     **{path: _r(_V, _B) for path in ('/api/haushalt-reference', '/api/rpj', '/api/rpj-offen')},
-    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account', '/api/doppelte', '/api/ov-abgleich', '/api/ov-gebiete',
+    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account', '/api/doppelte', '/api/ov-abgleich', '/api/ov-gebiete', '/api/mitgliedsnummer',
                                   '/api/wahlrecht', '/api/wahlrecht.pdf', '/api/wahlrecht.csv')},   # Status mit Gründen, ohne Beträge (0.37)
     '/api/beitrag-nach-alter': _r(_M, _B),
     '/api/adressen-status': _r(_M, 'einstellungen', 'verwaltung'),

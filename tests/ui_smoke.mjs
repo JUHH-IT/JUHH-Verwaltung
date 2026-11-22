@@ -1663,7 +1663,12 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.setViewportSize({ width: 1440, height: 900 });
   await dialogClose();
   await page.click('[data-new]');
+  // 0.53: Mitgliedsnummer wird vorgeschlagen (änderbar), Bankverbindung am Mitglied
+  check(await page.waitForFunction(() => document.querySelector('#member-form input[name=number]')?.value
+    && !document.querySelector('#member-form [data-nummer-vorschlag]').hidden, null, { timeout: 5000 }).then(() => true, () => false),
+    'Neues Mitglied: Mitgliedsnummer vorgeschlagen');
   await page.fill('#member-form input[name=number]', 'O-4');
+  await page.fill('#member-form input[name=iban]', 'DE02 1203 0000 0000 2020 51');
   await page.fill('#member-form input[name=first_name]', 'Nele');
   await page.fill('#member-form input[name=last_name]', 'Neumitglied');
   await page.fill('#member-form input[name=birth]', '2002-02-02');
@@ -1687,6 +1692,18 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
     const m = (await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json()).members.find((x) => x.number === 'O-4');
     return m.ov_id === o.testdorf && m.geworben_von === o.gleich;
   }, ova), 'Neumitglied: Ortsverband und „geworben von“ gespeichert');
+  const neuId = await page.evaluate(async () => (await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json()).members.find((x) => x.number === 'O-4').id);
+  check(await page.evaluate(async (id) => {
+    const m = (await (await fetch(`/api/member-account?id=${id}`)).json()).member;
+    return m.iban === 'DE02120300000000202051' && !m.kontoinhaber;
+  }, neuId), 'Neumitglied: IBAN gespeichert (kompakt), Kontoinhaber leer = Mitglied');
+  await page.click('main [data-liste="iban-ohne-mandat"]');
+  check(await page.waitForSelector(`main [data-member="${neuId}"]`, { timeout: 5000 }).then(() => true, () => false), 'Liste „IBAN ohne Mandat“ zeigt das Neumitglied');
+  await page.check(`main [data-pick="${neuId}"]`);
+  const [mandate] = await Promise.all([page.waitForEvent('download'), page.click('main .ml-bar [data-mandates]')]);
+  check(mandate.suggestedFilename().startsWith('SEPA-Mandate-') && readFileSync(await mandate.path()).subarray(0, 4).toString() === '%PDF', 'SEPA-Mandate als PDF zum Unterschreiben');
+  await shot('49b-iban-ohne-mandat');
+  await page.click('main .ml-bar [data-unpick]');
 
   // Kleiner Bildschirm
   await page.setViewportSize({ width: 390, height: 844 });

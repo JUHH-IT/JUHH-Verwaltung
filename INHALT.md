@@ -21,7 +21,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Einstellungen ändern:** `POST /api/mail-check`, `POST /api/mail-forget`, `POST /api/mail-password` ⚠, `POST /api/mail-test`, `POST /api/settings` ⚠
 
-**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/ov-abgleich`, `GET /api/ov-gebiete`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`, `POST /api/zusammenfuehren-vorschau`
+**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/mitgliedsnummer`, `GET /api/ov-abgleich`, `GET /api/ov-gebiete`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`, `POST /api/zusammenfuehren-vorschau`
 
 **Mitgliederverwaltung lesen oder Buchhaltung lesen:** `GET /api/beitrag-nach-alter`
 
@@ -84,7 +84,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/konten.js`: konten, saldo → /api/konten, /api/konto, /api/konto.csv
 - `static/js/views/kv.js`: bindKv, bindKvPage, bindTransfers, kvPage, kvTable, masterDialog, needsAttention, openKv, planRest, transferDialog, transferList, valuesDialog → /api/import-kv-master, /api/kv-detail, /api/kv-label, /api/kv-plan, /api/kv-transfer, /api/kv-transfer-reverse, /api/kv-values, /api/kv.pdf, /api/op-liste.pdf, /api/preview-kv-master
 - `static/js/views/mailing.js`: afterIssue, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
-- `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/sepa-mandat-vergessen
+- `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/mitgliedsnummer, /api/sepa-mandat-vergessen
 - `static/js/views/mitglieder-ueberblick.js`: mitgliederUeberblick → /api/doppelte, /api/regelwerk
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
 - `static/js/views/ov-abgleich.js`: ovAbgleichDialog → /api/ov-abgleich
@@ -178,7 +178,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -282,7 +282,7 @@ Mitglieder-Stammdaten: Vorname/Nachname und Anschrift in Feldern, Prüfung, Mitg
 
 Tabellen: `deleted_members`, `dues_rates`
 
-Tests: test_doppelte.py, test_gliederung.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_ovabgleich.py, test_pruefung.py, test_wahlrecht.py
+Tests: test_doppelte.py, test_gliederung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_ovabgleich.py, test_pruefung.py, test_wahlrecht.py
 
 - `next_id(db)` – Nächste Mitglieds-id: nie eine schon einmal vergebene (auch nicht die eines gelöschten Mitglieds).
 - `insert(db, v)` – Mitglied mit geprüften Werten (values) anlegen; liefert die id.
@@ -299,6 +299,7 @@ Tests: test_doppelte.py, test_gliederung.py, test_mitglieder.py, test_mitglieder
 - `angaben(store, m)` – Alle Angaben eines Mitglieds als [(Bezeichnung, Wert)] in der Reihenfolge der Mitgliederverwaltung – leere weggelassen.
 - `record_dues(db, member_id, old, new, year=…)` – Individuellen Jahresbeitrag ab einem Jahr festhalten (Tabelle dues_rates): ändert er sich – z. B. durch einen neuen Import der
 - `flag(value, label)` – Ja/Nein-Angabe (J/N, ja/nein, 1/0, x) → 1/0; leer = 0.
+- `naechste_nummer(db)` – Vorschlag für die Mitgliedsnummer eines neuen Mitglieds (ab 0.53): die höchste Nummer im häufigsten Format + 1, Breite und
 - `values(data, kvs, ovs=…, inactive=…)` – Geprüfte Stammdaten eines Mitglieds. Ältere Aufrufe mit name/address werden aufgeteilt.
 - `map_header(cells)` – Spalte → Feld; None, wenn die Zeile keine Kopfzeile einer Mitgliederliste ist.
 - Klasse `PasswordNeeded` – Kennwortgeschützte Datei: state = 'required' (Kennwort fehlt) oder 'wrong' (Kennwort falsch) – die Oberfläche fragt danach.
@@ -315,7 +316,7 @@ Tests: test_doppelte.py, test_gliederung.py, test_mitglieder.py, test_mitglieder
 
 Listen der Mitgliederverwaltung (ab 0.43, Wunsch Lennert Gust 21.11.2026): eine Auswahl aus der Mitgliederliste als CSV, als
 
-Tests: test_mitgliederverwaltung.py
+Tests: test_mitgliedbank.py, test_mitgliederverwaltung.py
 
 - `auswahl(store, ids)` – Mitglieder zu den Kennungen der Auswahl (sortiert nach Name) – prüft die Eingabe: Liste ganzer Zahlen, höchstens MAX, alle vorhanden.
 - `postfaehig(m)` – Bekommt Post: vollständige Anschrift (Straße, PLZ, Ort) und kein Postausschluss.
@@ -332,7 +333,7 @@ Doppelte Mitglieder finden (ab 0.45, Wunsch Lennert Gust 21.11.2026: „eine Fun
 
 Tabellen: `mitglieder_keine_doppelten`
 
-Tests: test_doppelte.py, test_ovabgleich.py
+Tests: test_doppelte.py, test_mitgliedbank.py, test_ovabgleich.py
 
 - `init(db)`
 - `paare(members)` – {(a, b): {Grund, …}} für alle Paare möglicher Doppelter (a < b); members: Zeilen mit id, name, first_name, last_name, birth,
@@ -584,7 +585,7 @@ SEPA-Basislastschrift (CORE) für Mitgliedsbeiträge – Mandate, Vorabankündig
 
 Tabellen: `debit_batches`, `debit_notices`, `debits`, `mandates`
 
-Tests: test_lastschrift.py, test_sepadatei.py, test_wahlrecht.py
+Tests: test_lastschrift.py, test_mitgliedbank.py, test_sepadatei.py, test_wahlrecht.py
 
 - `init(db)`
 - `creditor_id_valid(value)` – Gläubiger-Identifikationsnummer: Land, Prüfziffer (ISO 7064 Mod 97, ohne Geschäftsbereich), Geschäftsbereich, Kennung.
@@ -596,6 +597,7 @@ Tests: test_lastschrift.py, test_sepadatei.py, test_wahlrecht.py
 - `active_mandate(store, member_id)`
 - `last_use(store, mandate, exclude=…)` – Letzte Nutzung (eingereichte oder geplante Lastschrift, sonst Unterschrift bzw. bekannte Nutzung außerhalb).
 - `expires(store, mandate, exclude=…)` – Letzter möglicher Einzugstag: 36 Monate nach der letzten Nutzung (exclude: diese Lastschrift nicht mitzählen).
+- `mandat_gueltig(store, today=…, rows=…)` – {Mitglied: IBAN} der aktiven, nicht verfallenen Mandate (ab 0.53, Liste „IBAN ohne Mandat“); rows = schon gelesene mandates().
 - `mandates(store)`
 - `create_mandate(store, member_id, data, actor)` – Unterschriebenes Mandat erfassen. Ein aktives Mandat je Mitglied; Kontowechsel = neues Mandat.
 - `revoke_mandate(store, mandate_id, reason, actor)`
@@ -618,7 +620,7 @@ Tests: test_lastschrift.py, test_sepadatei.py, test_wahlrecht.py
 - `download(store, batch_id, actor)` – Datei zum Hochladen: nur solange nicht eingereicht und ohne Befund der erneuten Prüfung; Download wird vermerkt.
 - `xml_file(store, batch_id)` – pain.008.001.08 für eine Lastschriftdatei (je Einzugsdatum und Gläubiger-ID ein Zahlungsblock, Einzelbuchung gewünscht).
 - `filename(store, batch_id)`
-- `mandate_pdf(store, member_id=…)` – SEPA-Lastschriftmandat zum Unterschreiben (vorausgefüllt mit Mitglied und ggf. Mandat).
+- `mandate_pdf(store, member_id=…, member_ids=…, mit_mandat=…)` – SEPA-Lastschriftmandat zum Unterschreiben (vorausgefüllt mit Mitglied, Bankdaten des Mitglieds und ggf. Mandat);
 
 ## Buchhaltung
 
@@ -1025,7 +1027,7 @@ Rollen und Rechte im Serverbetrieb (ab 0.34).
 
 Tabellen: `roles`, `user_roles`
 
-Tests: test_keycloak_app.py, test_rollen.py, test_schutz.py, test_sicherheit.py
+Tests: test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py
 
 - `required(method, path)` – Nötiges Recht für eine Adresse; unbekannte Adressen verlangen „Verwaltung schreiben“.
 - `allowed(rights, need)`
