@@ -822,13 +822,13 @@ class PruefungTests(Basis):
         self.assertEqual(staende, {'keycloak': 'hinweis', 'authenticator': 'hinweis', 'notzugang': 'ok', 'firewall': 'ok', 'aufrufer': 'ok', 'bedrohungsliste': 'hinweis',
                                    'dateipruefung': 'hinweis', 'sicherung': 'ok', 'https': 'kritisch', 'ungenutzt': 'hinweis', 'verwaltung': 'hinweis',
                                    'serverschutz': 'hinweis'})
-        self.assertEqual((p['firewall']['ziel'], p['serverschutz']['ziel'], p['verwaltung']['ziel']), ('firewall', 'system', 'seite:users'))
+        self.assertEqual((p['firewall']['ziel'], p['serverschutz']['ziel'], p['verwaltung']['ziel']), ('abwehr', 'server', 'seite:users'))
         self.assertIn('Kein aktueller Bericht', p['serverschutz']['detail'])
 
     def test_unlesbare_aufruferadresse_ist_kritisch(self):
         self.assertEqual(schutz.aufrufer('127.0.0.1', 'unknown'), IP('127.0.0.1'))
         a = self.pruefung()['aufrufer']
-        self.assertEqual((a['stand'], a['ziel']), ('kritisch', 'firewall'))
+        self.assertEqual((a['stand'], a['ziel']), ('kritisch', 'abwehr'))
         self.assertIn('Aufruferadresse nicht lesbar oder lokal – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen)', a['detail'])
         self.weiter(86401)
         self.assertEqual(self.pruefung()['aufrufer']['stand'], 'ok')                       # nur, wenn es in den letzten 24 Stunden vorkam

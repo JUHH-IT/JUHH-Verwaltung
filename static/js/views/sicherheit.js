@@ -1,115 +1,292 @@
-// Verwaltung → Sicherheit (ab 0.35, nur Serverbetrieb): Lagebild, Ereignisse, Notfall & Wartung, Firewall & Sperren (0.39),
-// Sitzungen & Konten, System. Nur Anzeige und Auslöser – der Server prüft jede Anfrage selbst (rollen.py, sicherheit.py,
-// schutz.py) und verlangt bei kritischen Aktionen das Passwort erneut (api.onConfirm).
-// Diagramm „Abwehr je Stunde“: HTML/CSS ohne Bibliothek, eine Reihe in --teal, nur der Höchstwert beschriftet, jeder Wert
-// als Hinweis am Balken und in der Tabelle darunter (lesbar ohne Zeigen).
+// Verwaltung → Sicherheit (ab 0.35, nur Serverbetrieb). Ab 0.50 als Cockpit (Designvorschlag „Sicherheits-Cockpit“, freigegeben
+// von Lennert Gust 22.11.2026): vier Bereiche Übersicht, Abwehr, Zugänge (nur „Sicherheit ändern“), Protokoll; Notfall und Wartung
+// als Knöpfe im Kopf jeder Ansicht. Die Übersicht beantwortet zuerst „Ist alles in Ordnung?“ (Ring aus der Konfigurationsprüfung),
+// zeigt nur Offenes als „Zu tun“ mit der Aktion daneben und jede Angabe genau einmal.
+// Nur Anzeige und Auslöser – der Server prüft jede Anfrage selbst (rollen.py, sicherheit.py, schutz.py) und verlangt bei
+// kritischen Aktionen das Passwort erneut (api.onConfirm).
+// Diagramme: HTML/CSS ohne Bibliothek, eine Reihe in --teal, nur der Höchstwert beschriftet, jeder Wert als Hinweis am Balken und
+// in der Tabelle darunter (lesbar ohne Zeigen).
 import { api, download } from '../api.js';
 import { html, mount } from '../html.js';
-import { store, can, go, daysOverdue } from '../store.js';
+import { store, can, go } from '../store.js';
 import { pageHead, icon, safe, toast, dialog, table, badge } from '../ui.js';
 import { date, dateTime } from '../format.js';
 
-let tab = 'lagebild';
-const filter = { art: '', tage: '30', suche: '' };   // Ereignisse
+let tab = 'uebersicht';
+const filter = { art: '', tage: '30', suche: '' };   // Protokoll
 let loads = 0;                                        // nur die zuletzt gestartete Ladung zeigen
 let poll = 0;                                         // Live-Verkehr: Auffrischen während eines Mitschnitts
 
 const TABS = [
-  ['lagebild', 'Lagebild'],
-  ['ereignisse', 'Ereignisse'],
-  ['notfall', 'Notfall & Wartung'],
-  ['firewall', 'Firewall & Sperren'],
-  ['sitzungen', 'Sitzungen & Konten', true],   // true = nur mit „Sicherheit ändern“
-  ['system', 'System', true],
+  ['uebersicht', 'Übersicht'],
+  ['abwehr', 'Abwehr'],
+  ['zugaenge', 'Zugänge', true],   // true = nur mit „Sicherheit ändern“
+  ['protokoll', 'Protokoll'],
 ];
 const tabs = () => TABS.filter(([, , write]) => !write || can('sicherheit', 'schreiben'));
 
 const when = (iso) => (iso ? dateTime(iso) : 'nie');
 const n = (value) => Number(value || 0).toLocaleString('de-DE', { maximumFractionDigits: 1 });
-const card = (label, value, note, warn = false) => html`<div class="card ${warn ? 'sec-warn' : ''}"><span class="label">${label}</span>
-  <span class="value">${value}</span><span class="note">${note}</span></div>`;
-
-// ---- Lagebild ----
-function stateText(sperre) {
-  if (!sperre) return html`<p>${badge('Normalbetrieb', 'ok')} Kein Notfallmodus, keine Wartung.</p>`;
-  const notfall = sperre.art === 'notfall';
-  return html`<p>${badge(notfall ? 'Notfallmodus aktiv' : 'Wartung', notfall ? 'danger' : 'warn')}
-    seit ${dateTime(sperre.seit)}${sperre.von ? html` · ausgelöst von ${sperre.von}` : ''}</p>
-    ${sperre.grund ? html`<p class="small">Grund: ${sperre.grund}</p>` : ''}
-    ${sperre.text ? html`<p class="small">Hinweis: ${sperre.text}</p>` : ''}`;
-}
+const card = (label, value, note, warn = false, extra = '') => html`<div class="card ${warn ? 'sec-warn' : ''}"><span class="label">${label}</span>
+  <span class="value">${value}</span>${extra}<span class="note">${note}</span></div>`;
+const MODUS = { abweisen: ['Firewall weist ab', 'ok'], protokollieren: ['Firewall protokolliert nur', 'warn'], aus: ['Firewall aus', 'danger'] };
+const STAND = { ok: ['in Ordnung', 'ok'], hinweis: ['Hinweis', 'warn'], kritisch: ['kritisch', 'danger'] };
+const standBadge = (stand) => badge(...(STAND[stand] || STAND.hinweis));
+const ORDER = ['kritisch', 'hinweis', 'ok'];
+const mehrzahl = (zahl, eins, viele) => `${n(zahl)} ${zahl === 1 ? eins : viele}`;
 
 function checkSummary(d) {
   if (!d?.verfuegbar) return ['nicht verfügbar', d?.zeit ? `Stand ${dateTime(d.zeit)}` : 'noch nicht geprüft', false];
   const count = (d.geaendert?.length || 0) + (d.fehlend?.length || 0) + (d.zusaetzlich?.length || 0);
-  return [d.ok ? 'in Ordnung' : `${count} Befund${count === 1 ? '' : 'e'}`, `${n(d.dateien)} Dateien · ${dateTime(d.zeit)}`, !d.ok];
+  return [d.ok ? 'ohne Befund' : mehrzahl(count, 'Befund', 'Befunde'), `${n(d.dateien)} Dateien · ${dateTime(d.zeit)}`, !d.ok];
 }
 
-// Abwehr der letzten 24 Stunden: vier Zahlen und ein kleiner Verlauf je Stunde (auffällig = Treffer + abgewiesene Anfragen)
-const MODUS = { abweisen: ['Firewall weist ab', 'ok'], protokollieren: ['Firewall protokolliert nur', 'warn'], aus: ['Firewall aus', 'danger'] };
+// ---- Kopf: Zustand, Wartung, Notfall – in jeder Ansicht ----
+function kopf(sperre) {
+  const write = can('sicherheit', 'schreiben');
+  const notfall = sperre?.art === 'notfall';
+  const wartung = sperre?.art === 'wartung';
+  const zustand = notfall ? badge('Notfallmodus aktiv', 'danger') : wartung ? badge('Wartung läuft', 'warn') : badge('Normalbetrieb', 'ok');
+  return html`<span class="sec-zustand">${zustand}</span>
+    ${write && !notfall ? html`<button type="button" class="btn" data-wartung>${wartung ? 'Wartung beenden' : 'Wartung'}</button>` : ''}
+    ${notfall ? (write ? html`<button type="button" class="btn dark" data-emergency-off>Notfall beenden</button>` : '')
+      : html`<button type="button" class="btn sec-danger" data-emergency-on>${icon('shield', 16)} Notfall</button>`}`;
+}
+
+function stateText(sperre) {
+  const notfall = sperre.art === 'notfall';
+  return html`<p class="sub">seit ${dateTime(sperre.seit)}${sperre.von ? html` · ausgelöst von ${sperre.von}` : ''}</p>
+    ${sperre.grund ? html`<p class="small">Grund: ${sperre.grund}</p>` : ''}
+    ${sperre.text ? html`<p class="small">Hinweis für alle: ${sperre.text}</p>` : ''}
+    <p class="small muted">${notfall ? html`Alle ohne „Sicherheit ändern“ sind abgemeldet, der E-Mail-Versand ruht, die Firewall ist scharf. Beenden: hier mit „Sicherheit ändern“ oder auf dem Server mit <code>sudo ju-finanzen notfall-aus</code>.`
+      : 'Alle ohne „Sicherheit ändern“ sehen statt des Programms einen Hinweis. Die Daten bleiben unverändert.'}</p>`;
+}
+
+// ---- Übersicht ----
+/** Ring aus allen Prüfungen: je Stand ein Bogen (Reihenfolge in Ordnung, Hinweis, kritisch), in der Mitte die Zahl offener Punkte. */
+function ring(zahl) {
+  const r = 54;
+  const umfang = 2 * Math.PI * r;
+  const gesamt = zahl.ok + zahl.hinweis + zahl.kritisch || 1;
+  const teile = ['ok', 'hinweis', 'kritisch'].filter((s) => zahl[s]);
+  const luecke = teile.length > 1 ? 6 : 0;
+  let start = 0;
+  const boegen = teile.map((s) => {
+    const laenge = (zahl[s] / gesamt) * umfang;
+    const bogen = html`<circle class="${s}" cx="66" cy="66" r="${r}" stroke-dasharray="${Math.max(0.1, laenge - luecke).toFixed(1)} ${umfang.toFixed(1)}"
+      stroke-dashoffset="${(-start).toFixed(1)}"></circle>`;
+    start += laenge;
+    return bogen;
+  });
+  const offen = zahl.hinweis + zahl.kritisch;
+  return html`<svg class="sec-ring" viewBox="0 0 132 132" role="img"
+      aria-label="${`${gesamt} Prüfungen: ${zahl.ok} in Ordnung, ${zahl.hinweis} Hinweise, ${zahl.kritisch} kritisch`}">
+    <circle class="spur" cx="66" cy="66" r="${r}"></circle><g transform="rotate(-87 66 66)">${boegen}</g>
+    ${offen ? html`<text x="66" y="68" text-anchor="middle">${offen}</text><text class="klein" x="66" y="90" text-anchor="middle">offen</text>`
+      : html`<path class="haken" d="M48 67l12 12 24-26"></path>`}</svg>`;
+}
+
+const CHIPS = { firewall: 'Firewall weist ab', authenticator: 'Anmeldung mit Authenticator-App', sicherung: 'Sicherung aktuell' };
+
+function lage(l, pruefung) {
+  const zahl = { ok: 0, hinweis: 0, kritisch: 0 };
+  pruefung.forEach((p) => { zahl[p.stand] = (zahl[p.stand] || 0) + 1; });
+  const s = l.sperre;
+  const stand = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const [titel, text] = s ? [s.art === 'notfall' ? 'Notfallmodus aktiv' : 'Wartung läuft', null]
+    : zahl.kritisch ? [`${mehrzahl(zahl.kritisch, 'kritischer Punkt', 'kritische Punkte')}`, `Bitte sofort ansehen. ${zahl.ok} von ${pruefung.length} Prüfungen sind in Ordnung.`]
+    : zahl.hinweis ? ['Keine kritischen Punkte.', `${zahl.hinweis === 1 ? 'Einen Punkt solltest du dir ansehen' : `${n(zahl.hinweis)} Punkte solltest du dir ansehen`}. ${zahl.ok} von ${pruefung.length} Prüfungen sind in Ordnung.`]
+    : ['Alles in Ordnung.', `Alle ${pruefung.length} Prüfungen ohne Befund.`];
+  const chips = pruefung.filter((p) => p.stand === 'ok' && CHIPS[p.id]).map((p) => badge(CHIPS[p.id], 'ok'));
+  const alarm = s?.art === 'notfall' || (!s && zahl.kritisch);
+  return html`<section class="panel sec-lage ${alarm ? 'sec-alert' : s ? 'sec-hinweis' : ''}" aria-labelledby="sec-lage">
+    ${ring(zahl)}
+    <div class="sec-lage-text"><span class="eyebrow" id="sec-lage">Lage · Stand ${stand}</span>
+      <h2>${titel}</h2>${s ? stateText(s) : html`<p class="sub">${text}</p>`}
+      ${chips.length && !s ? html`<p class="sec-chips">${chips}</p>` : ''}</div></section>`;
+}
+
+const ZIEL = { abwehr: 'Zur Abwehr', zugaenge: 'Zugänge ansehen', server: 'Ansehen', 'seite:users': 'Benutzer & Rollen' };
+const AKTION = { bedrohungsliste: ['Jetzt laden', 'data-fw-list'], dateipruefung: ['Jetzt prüfen', 'data-check'] };   // direkt hier, mit „ändern“
+
+function erreichbar(ziel) {
+  if (!ziel) return false;
+  if (ziel.startsWith('seite:')) return can('verwaltung');
+  return ziel === 'server' || tabs().some(([id]) => id === ziel);
+}
+
+function zuTun(pruefung) {
+  const offen = pruefung.filter((p) => p.stand !== 'ok').sort((a, b) => ORDER.indexOf(a.stand) - ORDER.indexOf(b.stand));
+  const write = can('sicherheit', 'schreiben');
+  const knopf = (p) => {
+    if (write && AKTION[p.id]) return html`<button type="button" class="btn small" ${AKTION[p.id][1]}>${AKTION[p.id][0]}</button>`;
+    return erreichbar(p.ziel) ? html`<button type="button" class="btn small" data-ziel="${p.ziel}" aria-label="${p.titel}: ${ZIEL[p.ziel] || 'Öffnen'}">${ZIEL[p.ziel] || 'Öffnen'}</button>` : '';
+  };
+  return html`<section class="panel sec-todo" aria-labelledby="sec-todo">
+    <div class="panel-head"><h2 id="sec-todo">Zu tun</h2>${offen.length ? badge(n(offen.length), offen.some((p) => p.stand === 'kritisch') ? 'danger' : 'warn') : ''}</div>
+    ${offen.length ? html`<ul>${offen.map((p) => html`<li class="${p.stand}">
+        <span class="sym">${icon('alert', 18)}</span>
+        <div><strong>${p.titel}</strong><span class="small">${p.detail}</span><span class="stand">${STAND[p.stand][0]}</span></div>
+        ${knopf(p)}</li>`)}</ul>`
+      : html`<p class="sec-leer">${icon('check', 18)} Nichts zu tun – alle Prüfungen sind in Ordnung.</p>`}
+  </section>`;
+}
+
+function kennzahlen(l, a, v) {
+  const stunden = a.stunden.map((h) => h.treffer + h.abgewiesen);
+  const max = Math.max(1, ...stunden);
+  const linie = html`<span class="sec-spark" aria-hidden="true">${stunden.map((x) => html`<i style="height:${Math.max(x ? 2 : 0, Math.round((x / max) * 28))}px"></i>`)}</span>`;
+  const personen = v ? new Set(v.sitzungen.map((s) => s.person)).size : 0;
+  const fehl = [`${n(l.fehlanmeldungen_24h)} in 24 Stunden`];
+  if (l.verweigert_7t) fehl.push(mehrzahl(l.verweigert_7t, 'verweigerter Zugriff', 'verweigerte Zugriffe'));
+  if (l.bestaetigung_fehl_7t) fehl.push(mehrzahl(l.bestaetigung_fehl_7t, 'falsche Bestätigung', 'falsche Bestätigungen'));
+  if (l.gesperrt) fehl.push(mehrzahl(l.gesperrt, 'Zugang gesperrt', 'Zugänge gesperrt'));
+  return html`<section class="cards sec-kpis" aria-label="Kennzahlen">
+    ${card('Auffällige Anfragen', n(stunden.reduce((x, y) => x + y, 0)), `in 24 Stunden · ${n(a.treffer_gesamt)} Treffer, ${n(a.abgewiesen)} abgewiesen`, false, linie)}
+    ${card('Fehlanmeldungen', n(l.fehlanmeldungen_7t), `in 7 Tagen · ${fehl.join(' · ')}`, l.gesperrt > 0)}
+    ${card('Gerade angemeldet', n(l.sitzungen), v ? `${mehrzahl(personen, 'Person', 'Personen')} · aktive Sitzungen` : 'aktive Sitzungen')}
+    ${card('Gesperrte Adressen', n(a.gesperrt), `auf der Sperrliste · ${n(a.sperren)} neu in 24 Stunden`)}
+  </section>`;
+}
+
 const hourText = (h) => `${h.stunde}–${String((Number(h.stunde) + 1) % 24).padStart(2, '0')} Uhr: ${n(h.treffer)} Treffer, ${n(h.abgewiesen)} abgewiesen${h.sperren ? `, ${n(h.sperren)} gesperrt` : ''}`;
 
-function abwehr(a) {
+function verlauf(a) {
   const t = a.treffer;
   const hours = a.stunden.map((h) => ({ ...h, sum: h.treffer + h.abgewiesen }));
   const max = Math.max(...hours.map((h) => h.sum));
   const peak = hours.findIndex((h) => h.sum === max);
   const [modusText, modusKind] = MODUS[a.modus] || MODUS.aus;
   const busy = hours.filter((h) => h.sum || h.sperren);
-  return html`<section class="panel"><div class="panel-head"><h2>Abwehr der letzten 24 Stunden</h2>${badge(modusText, modusKind)}</div>
-    <dl class="sec-stats">
-      <div><dt>Treffer</dt><dd>${n(a.treffer_gesamt)}<small>${n(t.falle)} Fallen · ${n(t.muster)} Angriffsmuster · ${n(t.werkzeug)} Werkzeuge · ${n(t.fehler)} Fehlerbremse</small></dd></div>
-      <div><dt>Abgewiesene Anfragen</dt><dd>${n(a.abgewiesen)}<small>von gesperrten Adressen</small></dd></div>
-      <div><dt>Automatisch gesperrt</dt><dd>${n(a.sperren)}<small>neue Sperren</small></dd></div>
-      <div><dt>Gesperrte Adressen</dt><dd>${n(a.gesperrt)}<small>derzeit auf der Sperrliste</small></dd></div>
-    </dl>
-    <div class="sec-hours"><h3>Auffällige Anfragen je Stunde</h3>
-      ${max ? html`<ol class="sec-cols" aria-label="Auffällige Anfragen je Stunde, letzte 24 Stunden">${hours.map((h, i) => html`<li title="${hourText(h)}">
-          <span class="sr-only">${hourText(h)}</span>${i === peak ? html`<span class="sec-peak" aria-hidden="true">${n(h.sum)}</span>` : ''}
-          ${h.sum ? html`<span class="sec-bar" aria-hidden="true" style="height:${Math.max(2, Math.round((h.sum / max) * 72))}px"></span>` : ''}</li>`)}</ol>
-        <div class="sec-axis" aria-hidden="true">${[0, 6, 12, 18].map((i) => html`<span style="grid-column:${i + 1} / span 5">${hours[i].stunde} Uhr</span>`)}<span class="now">jetzt</span></div>
-        <details class="sec-details"><summary>Als Tabelle</summary>
-          ${table(['Stunde', { label: 'Treffer', className: 'num' }, { label: 'Abgewiesen', className: 'num' }, { label: 'Gesperrt', className: 'num' }], busy.map((h) => html`<tr>
-            <td>${h.stunde} Uhr</td><td class="num">${n(h.treffer)}</td><td class="num">${n(h.abgewiesen)}</td><td class="num">${n(h.sperren)}</td></tr>`))}</details>`
-        : html`<p class="muted">Keine auffälligen Anfragen in den letzten 24 Stunden.</p>`}
-    </div></section>`;
+  return html`<section class="panel sec-verlauf" aria-labelledby="sec-verlauf"><div class="panel-head"><h2 id="sec-verlauf">Abwehr der letzten 24 Stunden</h2>${badge(modusText, modusKind)}</div>
+    ${max ? html`<ol class="sec-cols" aria-label="Auffällige Anfragen je Stunde, letzte 24 Stunden">${hours.map((h, i) => html`<li title="${hourText(h)}">
+        <span class="sr-only">${hourText(h)}</span>${i === peak ? html`<span class="sec-peak" aria-hidden="true">${n(h.sum)}</span>` : ''}
+        ${h.sum ? html`<span class="sec-bar" aria-hidden="true" style="height:${Math.max(2, Math.round((h.sum / max) * 104))}px"></span>` : ''}</li>`)}</ol>
+      <div class="sec-axis" aria-hidden="true">${[0, 6, 12, 18].map((i) => html`<span style="grid-column:${i + 1} / span 5">${hours[i].stunde} Uhr</span>`)}<span class="now">jetzt</span></div>`
+      : html`<p class="muted">Keine auffälligen Anfragen in den letzten 24 Stunden.</p>`}
+    <p class="small sec-arten">${n(a.treffer_gesamt)} Treffer: ${n(t.falle)} Fallen · ${n(t.muster)} Angriffsmuster · ${n(t.werkzeug)} Werkzeuge · ${n(t.fehler)} Fehlerbremse.
+      ${mehrzahl(a.sperren, 'Adresse', 'Adressen')} automatisch gesperrt. <button type="button" class="link-button" data-ziel="abwehr">Zur Abwehr</button></p>
+    ${busy.length ? html`<details class="sec-details"><summary>Als Tabelle</summary>
+      ${table(['Stunde', { label: 'Treffer', className: 'num' }, { label: 'Abgewiesen', className: 'num' }, { label: 'Gesperrt', className: 'num' }], busy.map((h) => html`<tr>
+        <td>${h.stunde} Uhr</td><td class="num">${n(h.treffer)}</td><td class="num">${n(h.abgewiesen)}</td><td class="num">${n(h.sperren)}</td></tr>`))}</details>` : ''}
+  </section>`;
 }
 
-const STAND = { ok: ['in Ordnung', 'ok'], hinweis: ['Hinweis', 'warn'], kritisch: ['kritisch', 'danger'] };
-const standBadge = (stand) => badge(...(STAND[stand] || STAND.hinweis));
-const ORDER = ['kritisch', 'hinweis', 'ok'];
-
-function pruefung(list) {
-  const count = (stand) => list.filter((p) => p.stand === stand).length;
-  const reachable = (ziel) => (ziel.startsWith('seite:') ? can('verwaltung') : tabs().some(([id]) => id === ziel));
-  return html`<section class="panel"><div class="panel-head"><h2>Konfigurationsprüfung</h2>
-      <span class="small muted">${count('ok')} in Ordnung · ${count('hinweis')} Hinweise · ${count('kritisch')} kritisch</span></div>
-    <ul class="sec-checks">${[...list].sort((a, b) => ORDER.indexOf(a.stand) - ORDER.indexOf(b.stand)).map((p) => html`<li>
-      ${standBadge(p.stand)}<div><strong>${p.titel}</strong><span class="small muted">${p.detail}</span></div>
-      ${p.ziel && reachable(p.ziel) ? html`<button type="button" class="link-button small" data-ziel="${p.ziel}" aria-label="${p.titel}: öffnen">Öffnen</button>` : ''}</li>`)}</ul></section>`;
+function serverUndDaten(l, pruefung, b, v) {
+  const stand = Object.fromEntries(pruefung.map((p) => [p.id, p.stand]));
+  const d = l.dateipruefung || {};
+  const [pruefWert, pruefNotiz] = checkSummary(d);
+  const s = v?.system;
+  const zeile = (titel, wert, st = '') => html`<li><span class="sec-punkt ${st}" aria-hidden="true"></span>
+    <span>${titel}${st && st !== 'ok' ? html` <span class="sr-only">(${STAND[st]?.[0]})</span>` : ''}</span><span class="wert">${wert}</span></li>`;
+  const befunde = (d.geaendert?.length || 0) + (d.fehlend?.length || 0) + (d.zusaetzlich?.length || 0);
+  return html`<section class="panel sec-server" id="sec-server" aria-labelledby="sec-server-titel">
+    <div class="panel-head"><h2 id="sec-server-titel">Server &amp; Daten</h2>
+      ${can('sicherheit', 'schreiben') ? html`<button type="button" class="btn small" data-check>Dateiprüfung jetzt</button>` : ''}</div>
+    <ul class="sec-rows">
+      ${zeile('Sicherung', l.letzte_sicherung ? `zuletzt ${date(l.letzte_sicherung)}` : 'keine', stand.sicherung)}
+      ${zeile('Dateiprüfung', `${pruefWert} · ${pruefNotiz}`, stand.dateipruefung)}
+      ${zeile('Serverschutz', b.zeit ? `${mehrzahl(b.pruefungen.length, 'Prüfung', 'Prüfungen')} · Stand ${dateTime(b.zeit)}` : 'kein Bericht', stand.serverschutz)}
+      ${s ? zeile('Version', `${s.version}${s.stand && /^\d{4}-\d{2}-\d{2}/.test(s.stand) ? ` · ${dateTime(s.stand)}` : ''}`) : ''}
+      ${s ? zeile('Speicher', `${n(s.daten_frei_gb)} GB frei von ${n(s.daten_gesamt_gb)} GB`) : ''}
+    </ul>
+    ${befunde ? html`<details class="sec-details" open><summary>Befunde der Dateiprüfung (${n(befunde)})</summary>
+      ${findings('Geändert', d.geaendert)}${findings('Fehlend', d.fehlend)}${findings('Zusätzlich', d.zusaetzlich)}</details>` : ''}
+    <details class="sec-details"><summary>Bericht des Serverschutzes${s ? ' und Systemangaben' : ''}</summary>${serverschutz(b)}
+      ${s ? html`<dl class="sec-facts"><dt>Python</dt><dd>${s.python}</dd><dt>Datenbank</dt><dd>${n(s.datenbank_mb)} MB</dd>
+        <dt>Sicherungen</dt><dd>${n(s.sicherungen)} vorhanden</dd></dl>` : ''}</details>
+    <p class="small muted">Die Dateiprüfung vergleicht die Programmdateien mit dem Stand der Installation. Firewall, Sperrlisten und Updates des
+      Betriebssystems prüft der Server selbst und legt regelmäßig einen Bericht ab; das Programm zeigt ihn nur an.</p>
+  </section>`;
 }
 
-function lagebild(l, r) {
-  const old = !l.letzte_sicherung || daysOverdue(l.letzte_sicherung) > 2;
-  const [checkValue, checkNote, checkWarn] = checkSummary(l.dateipruefung);
-  return html`<section class="panel sec-state ${l.sperre ? 'sec-alert' : ''}"><h2>Zustand</h2>${stateText(l.sperre)}</section>
-    ${abwehr(r.abwehr)}
-    <section class="cards" aria-label="Kennzahlen">
-      ${card('Fehlanmeldungen', n(l.fehlanmeldungen_24h), `in 24 Stunden · ${n(l.fehlanmeldungen_7t)} in 7 Tagen`)}
-      ${card('Verweigerte Zugriffe', n(l.verweigert_7t), `in 7 Tagen${l.bestaetigung_fehl_7t ? ` · ${n(l.bestaetigung_fehl_7t)} falsche Bestätigungen` : ''}`)}
-      ${card('Aktive Sitzungen', n(l.sitzungen), 'angemeldet')}
-      ${card('Gesperrte Zugänge', n(l.gesperrt), 'nach Fehlversuchen', l.gesperrt > 0)}
-      ${card('Ungenutzte Konten', n(l.konten_ungenutzt), `länger als 90 Tage nicht angemeldet · ${n(l.konten_aktiv)} aktiv`, l.konten_ungenutzt > 0)}
-      ${card('Verwaltungsrechte', n(l.konten_privilegiert), 'Konten mit Rechten zur Verwaltung')}
-      ${card('Letzte Sicherung', l.letzte_sicherung ? date(l.letzte_sicherung) : 'keine', old ? 'älter als 2 Tage – bitte prüfen' : 'aktuell', old)}
-      ${card('Dateiprüfung', checkValue, checkNote, checkWarn)}
-      ${store.auth === 'keycloak' ? card('Notzugang', l.notzugang ? 'offen' : 'geschlossen',
-        l.notzugang ? `Passwort-Anmeldung bis ${dateTime(l.notzugang.bis)}` : 'öffnen nur auf dem Server: sudo ju-finanzen notzugang', !!l.notzugang) : ''}
-    </section>
-    ${pruefung(r.pruefung)}`;
+const WICHTIG = new Set(['anmeldung_fehl', 'verweigert', 'bestaetigung_fehl', 'notfall_an', 'notfall_aus', 'wartung_an', 'wartung_aus', 'notzugang',
+  'notzugang_auf', 'schutz_sperre', 'schutz_einstellung', 'schutz_aus']);
+
+function zuletzt(rows, arten) {
+  return html`<section class="panel sec-zuletzt" aria-labelledby="sec-zuletzt">
+    <div class="panel-head"><h2 id="sec-zuletzt">Zuletzt passiert</h2><button type="button" class="link-button" data-ziel="protokoll">Ganzes Protokoll</button></div>
+    ${rows.length ? html`<ul class="sec-rows sec-ereignisse">${rows.slice(0, 6).map((e) => html`<li>
+        <span class="sec-punkt ${WICHTIG.has(e.art) ? 'hinweis' : 'leer'}" aria-hidden="true"></span>
+        <span><strong>${e.text || arten[e.art] || e.art}</strong>${WICHTIG.has(e.art) ? html`<span class="sr-only"> (wichtig)</span>` : ''}
+          <span class="small muted">${[e.person, e.geraet, details(e.detail)].filter(Boolean).join(' · ') || '–'}</span></span>
+        <span class="wert">${dateTime(e.zeit)}</span></li>`)}</ul>`
+      : html`<p class="muted">Keine Ereignisse in den letzten 7 Tagen.</p>`}
+  </section>`;
 }
 
-// ---- Ereignisse ----
+function inOrdnung(pruefung) {
+  const ok = pruefung.filter((p) => p.stand === 'ok');
+  return html`<section class="panel sec-ok" aria-labelledby="sec-ok">
+    <div class="panel-head"><h2 id="sec-ok">In Ordnung</h2>${badge(n(ok.length), 'ok')}</div>
+    ${ok.length ? html`<ul>${ok.map((p) => html`<li title="${p.detail}">${icon('check', 15)} ${p.titel}</li>`)}</ul>` : html`<p class="muted">Noch keine Prüfung in Ordnung.</p>`}
+  </section>`;
+}
+
+/** Zwei Spalten ohne Lücken (breit); schmal eine Spalte in der Reihenfolge Lage, Zu tun, Kennzahlen, … (CSS `order`). */
+function uebersicht(r) {
+  return html`<div class="sec-grid">
+    <div class="sec-spalte">${lage(r.lage, r.pruefung)}${kennzahlen(r.lage, r.abwehr, r.verwaltung)}${verlauf(r.abwehr)}${zuletzt(r.zuletzt.ereignisse, r.zuletzt.arten)}</div>
+    <div class="sec-spalte">${zuTun(r.pruefung)}${serverUndDaten(r.lage, r.pruefung, r.serverschutz, r.verwaltung)}${inOrdnung(r.pruefung)}</div>
+  </div>`;
+}
+
+// ---- Notfall & Wartung (Dialoge aus dem Kopf) ----
+const WIRKUNGEN = [
+  ['Alle werden abgemeldet', 'Alle außer Personen mit „Sicherheit ändern“ – sofort; neue Anmeldungen sind gesperrt.', 'danger'],
+  ['E-Mail-Versand hält an', 'Bis der Notfall endet, verschickt das Programm keine E-Mails.', 'danger'],
+  ['Firewall wird scharf', 'Abweisen, Sperre ab dem ersten Treffer für 7 Tage, Bedrohungsliste an. Beim Beenden gelten wieder die vorherigen Einstellungen.', 'danger'],
+  ['Daten bleiben unverändert', 'Es wird nichts gelöscht.', 'ok'],
+];
+const EFFECTS = html`<ul class="sec-wirkungen">${WIRKUNGEN.map(([titel, text, art]) => html`<li class="${art}"><strong>${titel}</strong><span>${text}</span></li>`)}</ul>`;
+
+function emergencyDialog(reload) {
+  const el = dialog('Notfall auslösen', html`<form id="sec-emergency" style="display:flex;flex-direction:column;gap:14px">
+    <p>Bei Verdacht auf Missbrauch – etwa einem fremden Zugriff oder einem verlorenen Gerät – sperrt der Notfallmodus das Programm sofort.</p>
+    ${EFFECTS}
+    <label class="field">Was ist passiert?<textarea name="grund" required maxlength="500" placeholder="z. B. Laptop mit angemeldeter Sitzung verloren"></textarea></label>
+    ${can('sicherheit', 'schreiben') ? html`<label class="check"><input type="checkbox" name="alle"> Auch alle anderen Personen mit Sicherheitsrechten abmelden</label>` : ''}
+    <label class="check"><input type="checkbox" name="gelesen"> Ich habe die Wirkungen gelesen</label>
+    <p class="small muted">Beenden kann ihn nur eine Person mit „Sicherheit ändern“ und ihrem Passwort, auf dem Server auch <code>sudo ju-finanzen notfall-aus</code>.</p>
+    <div class="form-actions"><button type="button" class="btn ghost" data-cancel>Abbrechen</button>
+      <button type="submit" class="btn sec-danger" disabled>Notfall auslösen</button></div></form>`);
+  const form = el.querySelector('#sec-emergency');
+  const submit = form.querySelector('button[type=submit]');
+  form.elements.gelesen.onchange = () => { submit.disabled = !form.elements.gelesen.checked; };
+  el.querySelector('[data-cancel]').onclick = () => el.close();
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    safe(async () => {
+      const r = await api('/api/notfall-an', { grund: form.elements.grund.value.trim(), alle_abmelden: !!form.elements.alle?.checked });
+      el.close();
+      toast(`Notfallmodus ausgelöst – ${r.beendet === 1 ? '1 Sitzung' : `${n(r.beendet)} Sitzungen`} beendet.`);
+      await reload();
+    });
+  };
+}
+
+function wartungDialog(sperre, reload) {
+  const an = sperre?.art === 'wartung';
+  const el = dialog(an ? 'Wartung' : 'Wartung einschalten', html`<form id="sec-maintenance" style="display:flex;flex-direction:column;gap:14px">
+    <p class="small muted">Während der Wartung sehen alle ohne „Sicherheit ändern“ statt des Programms einen Hinweis. Niemand wird abgemeldet,
+      die Daten bleiben unverändert.</p>
+    <label class="field">Hinweis für alle (freiwillig)<input name="text" maxlength="300" value="${an ? sperre.text || '' : ''}" placeholder="z. B. Update – ab 18 Uhr wieder erreichbar"></label>
+    <div class="form-actions"><button type="button" class="btn ghost" data-cancel>Abbrechen</button>
+      ${an ? html`<button type="button" class="btn" data-text>Hinweis speichern</button><button type="submit" class="btn primary">Wartung beenden</button>`
+        : html`<button type="submit" class="btn primary">Wartung einschalten</button>`}</div></form>`);
+  const form = el.querySelector('#sec-maintenance');
+  const senden = (einschalten, meldung) => safe(async () => {
+    await api('/api/wartung', { an: einschalten, text: form.elements.text.value.trim() });
+    el.close();
+    toast(meldung);
+    await reload();
+  });
+  el.querySelector('[data-cancel]').onclick = () => el.close();
+  el.querySelector('[data-text]')?.addEventListener('click', () => senden(true, 'Hinweis gespeichert.'));
+  form.onsubmit = (e) => { e.preventDefault(); senden(!an, an ? 'Wartung ausgeschaltet.' : 'Wartung eingeschaltet.'); };
+}
+
+// ---- Protokoll ----
 const LABELS = { netz: 'Adresse', minuten: 'Minuten', weitere: 'weitere Sperren', geaendert: 'geändert', modus: 'Firewall', sperren: 'Sperren', art: 'Art',
   grund: 'Grund', anzahl: 'Anzahl', beendet: 'beendet', versuche: 'Versuche', name: 'Name', adresse: 'Adresse', pfad: 'Adresse',
   methode: 'Methode', recht: 'Recht', bereich: 'Bereich', stufe: 'Stufe', benutzer: 'Person', person: 'Person', sperre: 'Sperre', rolle: 'Rolle', alle_abmelden: 'alle abgemeldet', text: 'Hinweis' };
@@ -142,63 +319,7 @@ function ereignisse(r) {
       : html`<p class="muted">Keine Ereignisse in diesem Zeitraum.</p>`}</section>`;
 }
 
-// ---- Notfall & Wartung ----
-const EFFECTS = html`<ul class="sec-effects">
-  <li>Alle außer Personen mit „Sicherheit ändern“ werden sofort abgemeldet und können sich nicht mehr anmelden.</li>
-  <li>Der E-Mail-Versand wird angehalten.</li>
-  <li>Die Firewall wird scharf gestellt: abweisen, Sperre ab dem ersten Treffer für 7 Tage, Bedrohungsliste an. Beim Beenden gelten wieder die vorherigen Einstellungen.</li>
-  <li>Die Daten bleiben unverändert – es wird nichts gelöscht.</li>
-  <li>Beenden kann ihn nur eine Person mit „Sicherheit ändern“ und ihrem Passwort, auf dem Server auch mit <code>sudo ju-finanzen notfall-aus</code>.</li>
-</ul>`;
-
-function notfall(l) {
-  const s = l.sperre;
-  const write = can('sicherheit', 'schreiben');
-  const active = s?.art === 'notfall';
-  const maintenance = s?.art === 'wartung';
-  return html`<section class="panel sec-state ${active ? 'sec-alert' : ''}"><h2>Notfallmodus</h2>
-      ${active ? stateText(s) : html`<p class="muted">Bei Verdacht auf Missbrauch (z. B. ein fremder Zugriff oder ein verlorenes Gerät) sperrt der Notfallmodus das Programm sofort.</p>`}
-      ${EFFECTS}
-      <div class="form-actions">${active
-        ? (write ? html`<button type="button" class="btn dark" data-emergency-off>Notfall beenden</button>` : html`<span class="small muted">Beenden nur mit „Sicherheit ändern“.</span>`)
-        : html`<button type="button" class="btn sec-danger" data-emergency-on>${icon('alert', 16)} Notfall auslösen</button>`}</div>
-    </section>
-    ${write && !active ? html`<form class="panel switch-list" id="sec-maintenance">
-      <div class="switch-row">
-        <div class="switch-text"><h2>Wartung</h2>
-          <p class="small muted">Während der Wartung sehen alle ohne „Sicherheit ändern“ statt des Programms einen Hinweis. Die Daten bleiben unverändert.</p>
-          <label class="field">Hinweis für alle (freiwillig)<input name="text" maxlength="300" value="${maintenance ? s.text || '' : ''}" placeholder="z. B. Update – ab 18 Uhr wieder erreichbar"></label></div>
-        <label class="switch"><input type="checkbox" name="an" role="switch" aria-label="Wartung" ${maintenance ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
-          <span class="switch-label" data-switch-label>${maintenance ? 'An' : 'Aus'}</span></label>
-      </div>
-      <div class="form-actions"><button type="submit" class="btn primary">Speichern</button></div>
-    </form>` : ''}`;
-}
-
-function emergencyDialog(reload) {
-  const el = dialog('Notfall auslösen', html`<form id="sec-emergency" style="display:flex;flex-direction:column;gap:14px">
-    ${EFFECTS}
-    <label class="field">Grund<textarea name="grund" required maxlength="500" placeholder="Was ist passiert?"></textarea></label>
-    ${can('sicherheit', 'schreiben') ? html`<label class="check"><input type="checkbox" name="alle"> Auch alle anderen Personen mit Sicherheitsrechten abmelden</label>` : ''}
-    <label class="check"><input type="checkbox" name="gelesen"> Ich habe die Wirkungen gelesen</label>
-    <div class="form-actions"><button type="button" class="btn ghost" data-cancel>Abbrechen</button>
-      <button type="submit" class="btn sec-danger" disabled>Notfall auslösen</button></div></form>`);
-  const form = el.querySelector('#sec-emergency');
-  const submit = form.querySelector('button[type=submit]');
-  form.elements.gelesen.onchange = () => { submit.disabled = !form.elements.gelesen.checked; };
-  el.querySelector('[data-cancel]').onclick = () => el.close();
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    safe(async () => {
-      const r = await api('/api/notfall-an', { grund: form.elements.grund.value.trim(), alle_abmelden: !!form.elements.alle?.checked });
-      el.close();
-      toast(`Notfallmodus ausgelöst – ${r.beendet === 1 ? '1 Sitzung' : `${n(r.beendet)} Sitzungen`} beendet.`);
-      await reload();
-    });
-  };
-}
-
-// ---- Firewall & Sperren ----
+// ---- Abwehr ----
 const DAUER = { 10: '10 Minuten', 60: '1 Stunde', 360: '6 Stunden', 1440: '1 Tag', 10080: '7 Tage' };
 const dauer = (m) => DAUER[m] || `${n(m)} Minuten`;
 
@@ -305,7 +426,7 @@ function blockDialog(s, reload) {
   };
 }
 
-// ---- Sitzungen & Konten ----
+// ---- Zugänge ----
 const waitText = (s) => (s > 90 ? `noch ${Math.ceil(s / 60)} Min.` : s > 0 ? `noch ${s} s` : '–');
 
 function sitzungen(v) {
@@ -333,73 +454,60 @@ function sitzungen(v) {
     </section>`;
 }
 
-// ---- System ----
+// ---- Server & Daten ----
 function findings(label, list = []) {
   if (!list.length) return '';
   return html`<h3>${label} (${list.length})</h3><ul class="sec-files">${list.slice(0, 20).map((f) => html`<li>${f}</li>`)}
     ${list.length > 20 ? html`<li class="muted">und ${list.length - 20} weitere</li>` : ''}</ul>`;
 }
 
-function system(v, l, b) {
-  const s = v.system;
-  const d = l.dateipruefung || {};
-  const [checkValue, checkNote] = checkSummary(d);
-  return html`<section class="panel"><h2>System</h2>
-      <dl class="sec-facts">
-        <dt>Version</dt><dd>${s.version}${s.stand ? html` · Stand ${/^\d{4}-\d{2}-\d{2}/.test(s.stand) ? dateTime(s.stand) : s.stand}` : ''}</dd>
-        <dt>Python</dt><dd>${s.python}</dd>
-        <dt>Datenbank</dt><dd>${n(s.datenbank_mb)} MB</dd>
-        <dt>Speicher</dt><dd>${n(s.daten_frei_gb)} GB frei von ${n(s.daten_gesamt_gb)} GB</dd>
-        <dt>Sicherungen</dt><dd>${s.letzte_sicherung ? `zuletzt ${date(s.letzte_sicherung)}` : 'keine'} · ${n(s.sicherungen)} vorhanden</dd>
-      </dl>
-    </section>
-    <section class="panel"><div class="panel-head"><h2>Dateiprüfung</h2>
-        <button type="button" class="btn small" data-check>Jetzt prüfen</button></div>
-      <p>${d.verfuegbar ? badge(checkValue, d.ok ? 'ok' : 'danger') : badge(checkValue)} <span class="small muted">${checkNote}</span></p>
-      <p class="small muted">Vergleicht die Programmdateien mit dem Stand der Installation.</p>
-      ${findings('Geändert', d.geaendert)}${findings('Fehlend', d.fehlend)}${findings('Zusätzlich', d.zusaetzlich)}
-    </section>
-    ${serverschutz(b)}`;
-}
-
 /** Bericht der Betriebssystem-Härtung (Datei vom Server, nur gelesen): Texte kommen als fremde Eingabe – nur über html`` (maskiert). */
 function serverschutz(b) {
   const z = b.zahlen || {};
   const fact = (key, label, text) => (key in z ? html`<dt>${label}</dt><dd>${text(z[key])}</dd>` : '');
-  return html`<section class="panel"><div class="panel-head"><h2>Serverschutz (Betriebssystem)</h2>
-      <span class="small muted">${b.zeit ? `Stand ${dateTime(b.zeit)}` : ''}</span></div>
-    ${b.hinweis ? html`<p>${badge('Hinweis', 'warn')} <span class="small">${b.hinweis}</span></p>` : ''}
+  return html`${b.hinweis ? html`<p>${badge('Hinweis', 'warn')} <span class="small">${b.hinweis}</span></p>` : ''}
     ${b.pruefungen.length ? html`<ul class="sec-checks">${b.pruefungen.map((p) => html`<li>${standBadge(p.stand)}
       <div><strong>${p.titel}</strong><span class="small muted">${p.detail}</span></div></li>`)}</ul>` : ''}
     ${Object.keys(z).length ? html`<dl class="sec-facts">
       ${fact('sperrliste_netze', 'Sperrliste der Server-Firewall', (v) => `${n(v)} Netze${z.sperrliste_stand ? ` · Stand ${dateTime(z.sperrliste_stand)}` : ''}`)}
       ${fact('gebannt', 'Gebannte Adressen', n)}${fact('abgewiesen_24h', 'Abgewiesen in 24 Stunden', n)}
-      ${fact('updates_offen', 'Offene Sicherheitsupdates', n)}${fact('neustart_noetig', 'Neustart nötig', (v) => (v ? 'ja' : 'nein'))}</dl>` : ''}
-    <p class="small muted">Firewall, Sperrlisten und Updates des Betriebssystems prüft der Server selbst und legt regelmäßig einen Bericht ab; das Programm zeigt ihn nur an.</p>
-  </section>`;
+      ${fact('updates_offen', 'Offene Sicherheitsupdates', n)}${fact('neustart_noetig', 'Neustart nötig', (v) => (v ? 'ja' : 'nein'))}</dl>` : ''}`;
 }
 
 // ---- Seite ----
 async function load() {
-  if (tab === 'ereignisse') return { ereignisse: await api('/api/sicherheit-ereignisse?' + query()) };
-  if (tab === 'firewall') return { schutz: await api('/api/schutz') };
-  const [lage, verwaltung] = await Promise.all([api('/api/sicherheit'),
-    ['sitzungen', 'system'].includes(tab) ? api('/api/sicherheit-verwaltung') : null]);
-  return { lage: lage.lagebild, abwehr: lage.abwehr, pruefung: lage.pruefung, serverschutz: lage.serverschutz, verwaltung };
+  const extra = {
+    uebersicht: () => Promise.all([can('sicherheit', 'schreiben') ? api('/api/sicherheit-verwaltung') : null, api('/api/sicherheit-ereignisse?tage=7')]),
+    abwehr: () => api('/api/schutz'),
+    zugaenge: () => api('/api/sicherheit-verwaltung'),
+    protokoll: () => api('/api/sicherheit-ereignisse?' + query()),
+  }[tab];
+  const [lage, daten] = await Promise.all([api('/api/sicherheit'), extra()]);
+  const r = { lage: lage.lagebild, abwehr: lage.abwehr, pruefung: lage.pruefung, serverschutz: lage.serverschutz };
+  if (tab === 'uebersicht') [r.verwaltung, r.zuletzt] = daten;
+  if (tab === 'abwehr') r.schutz = daten;
+  if (tab === 'zugaenge') r.verwaltung = daten;
+  if (tab === 'protokoll') r.ereignisse = daten;
+  return r;
 }
 
 function bind(main, reload, r) {
-  main.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
-    tab = b.dataset.tab;
-    main.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-selected', String(x === b)));   // sofort, auch während des Ladens
-    reload();
-  }));
-  const action = (fn, text) => safe(async () => { await fn(); toast(text); await reload(); });
-  main.querySelectorAll('[data-ziel]').forEach((b) => (b.onclick = () => {   // Konfigurationsprüfung: Sprung zur passenden Stelle
-    if (b.dataset.ziel.startsWith('seite:')) return go(b.dataset.ziel.slice(6));
-    tab = b.dataset.ziel;
+  const zeigen = (id) => {
+    tab = id;
+    main.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-selected', String(x.dataset.tab === id)));   // sofort, auch während des Ladens
     return reload();
+  };
+  main.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => zeigen(b.dataset.tab)));
+  const action = (fn, text) => safe(async () => { await fn(); toast(text); await reload(); });
+  main.querySelectorAll('[data-ziel]').forEach((b) => (b.onclick = () => {   // aus „Zu tun“ und den Übersichtskarten zur passenden Stelle
+    const ziel = b.dataset.ziel;
+    if (ziel.startsWith('seite:')) return go(ziel.slice(6));
+    if (ziel === 'server') return main.querySelector('#sec-server')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return zeigen(ziel);
   }));
+  main.querySelector('[data-wartung]')?.addEventListener('click', () => wartungDialog(r.lage.sperre, reload));
+  main.querySelector('[data-emergency-on]')?.addEventListener('click', () => emergencyDialog(reload));
+  main.querySelector('[data-emergency-off]')?.addEventListener('click', () => action(() => api('/api/notfall-aus', {}), 'Notfallmodus beendet.'));
   main.querySelector('[data-fw-edit]')?.addEventListener('click', () => settingsDialog(r.schutz, reload));
   main.querySelector('[data-fw-block]')?.addEventListener('click', () => blockDialog(r.schutz, reload));
   main.querySelectorAll('[data-fw-free]').forEach((b) => (b.onclick = () => {
@@ -415,7 +523,7 @@ function bind(main, reload, r) {
   });
   clearTimeout(poll);
   const tick = () => {   // während des Mitschnitts alle 5 Sekunden auffrischen (nicht hinter einem offenen Dialog)
-    if (store.page !== 'security' || tab !== 'firewall' || !main.isConnected) return;
+    if (store.page !== 'security' || tab !== 'abwehr' || !main.isConnected) return;
     if (document.querySelector('dialog[open]')) poll = setTimeout(tick, 5000);
     else reload();
   };
@@ -430,42 +538,28 @@ function bind(main, reload, r) {
     filterForm.onsubmit = (e) => { e.preventDefault(); apply(); };
     filterForm.querySelector('[data-csv]').onclick = () => safe(() => read() && download('/api/sicherheit-ereignisse.csv?' + query(), 'sicherheitsereignisse.csv'));
   }
-  main.querySelector('[data-emergency-on]')?.addEventListener('click', () => emergencyDialog(reload));
-  main.querySelector('[data-emergency-off]')?.addEventListener('click', () => action(() => api('/api/notfall-aus', {}), 'Notfallmodus beendet.'));
-  const maintenance = main.querySelector('#sec-maintenance');
-  if (maintenance) {
-    const f = maintenance.elements;
-    f.an.onchange = () => { maintenance.querySelector('[data-switch-label]').textContent = f.an.checked ? 'An' : 'Aus'; };
-    maintenance.onsubmit = (e) => {
-      e.preventDefault();
-      const on = f.an.checked;
-      action(() => api('/api/wartung', { an: on, text: f.text.value.trim() }), on ? 'Wartung eingeschaltet.' : 'Wartung ausgeschaltet.');
-    };
-  }
   main.querySelectorAll('[data-end]').forEach((b) => (b.onclick = () => action(() => api('/api/sitzung-beenden', { id: b.dataset.end }), 'Sitzung beendet.')));
   main.querySelectorAll('[data-unlock]').forEach((b) => (b.onclick = () => action(() => api('/api/sperre-aufheben', { key: b.dataset.unlock }), 'Zugang freigegeben.')));
   main.querySelector('[data-users]')?.addEventListener('click', () => go('users'));
   main.querySelector('[data-check]')?.addEventListener('click', () => safe(async () => {
-    const r = await api('/api/dateipruefung', {});
-    toast(r.ergebnis?.ok ? 'Dateiprüfung: alles in Ordnung.' : 'Dateiprüfung: Befund – bitte die Liste ansehen.', !r.ergebnis?.ok);
+    const x = await api('/api/dateipruefung', {});
+    toast(x.ergebnis?.ok ? 'Dateiprüfung: alles in Ordnung.' : 'Dateiprüfung: Befund – bitte die Liste ansehen.', !x.ergebnis?.ok);
     await reload();
   }));
 }
 
 export function sicherheit(main) {
-  if (!tabs().some(([id]) => id === tab)) tab = 'lagebild';
-  const head = html`${pageHead('Verwaltung', 'Sicherheit')}
-    <div class="tabs" role="tablist" aria-label="Bereich">${tabs().map(([id, label]) => html`
+  if (!tabs().some(([id]) => id === tab)) tab = 'uebersicht';
+  const reiter = html`<div class="tabs" role="tablist" aria-label="Bereich">${tabs().map(([id, label]) => html`
       <button type="button" role="tab" data-tab="${id}" aria-selected="${tab === id}">${label}</button>`)}</div>`;
   const reload = () => sicherheit(main);
   const id = ++loads;
-  if (!main.querySelector('.sec-page')) mount(main, html`<div class="page sec-page">${head}<p class="muted">Lädt …</p></div>`);
+  if (!main.querySelector('.sec-page')) mount(main, html`<div class="page sec-page">${pageHead('Verwaltung', 'Sicherheit')}${reiter}<p class="muted">Lädt …</p></div>`);
   return safe(async () => {
     const r = await load();
     if (id !== loads || store.page !== 'security' || !main.isConnected) return;   // inzwischen anderer Reiter oder andere Seite
-    const views = { lagebild: () => lagebild(r.lage, r), ereignisse: () => ereignisse(r.ereignisse), notfall: () => notfall(r.lage),
-      firewall: () => firewall(r.schutz), sitzungen: () => sitzungen(r.verwaltung), system: () => system(r.verwaltung, r.lage, r.serverschutz) };
-    mount(main, html`<div class="page sec-page">${head}${views[tab]()}</div>`);
+    const views = { uebersicht: () => uebersicht(r), abwehr: () => firewall(r.schutz), zugaenge: () => sitzungen(r.verwaltung), protokoll: () => ereignisse(r.ereignisse) };
+    mount(main, html`<div class="page sec-page">${pageHead('Verwaltung', 'Sicherheit', kopf(r.lage.sperre))}${reiter}${views[tab]()}</div>`);
     bind(main, reload, r);
   });
 }

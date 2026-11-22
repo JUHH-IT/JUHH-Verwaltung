@@ -545,7 +545,7 @@ def mitschnitt(db, an, actor, geraet=''):
 
 
 def status(db, eigene=None):
-    """Übersicht für den Reiter „Firewall & Sperren“: Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr."""
+    """Übersicht für den Bereich „Abwehr“: Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr."""
     jetzt = int(UHR())
     rows = db.execute('SELECT id,netz,art,grund,bis,zeit,von FROM schutz_sperren WHERE bis=0 OR bis>? ORDER BY art DESC,zeit DESC LIMIT 300', (jetzt,)).fetchall()
     z = _aktuell(db)
@@ -559,7 +559,7 @@ def status(db, eigene=None):
 
 
 def abwehr(db):
-    """Abwehr der letzten 24 Stunden für das Lagebild: Treffer nach Art, Abweisungen, Sperren – gesamt und je Stunde."""
+    """Abwehr der letzten 24 Stunden für die Übersicht: Treffer nach Art, Abweisungen, Sperren – gesamt und je Stunde."""
     _statistik_schreiben(db)
     jetzt = datetime.fromtimestamp(UHR())
     stunden = [(jetzt - timedelta(hours=h)).strftime('%Y-%m-%dT%H') for h in range(23, -1, -1)]
@@ -708,8 +708,9 @@ def serverschutz(pfad=None, jetzt=None):
 
 # ---- Konfigurationsprüfung ----
 def pruefung(db, lage, bericht, keycloak=False, https=False):
-    """Konfigurationsprüfung für das Lagebild: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
-    `lage` = sicherheit.lagebild, `bericht` = serverschutz(); `ziel` = Reiter der Seite Sicherheit bzw. 'seite:<Seite>'."""
+    """Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
+    `lage` = sicherheit.lagebild, `bericht` = serverschutz(); `ziel` = Bereich der Seite Sicherheit
+    (abwehr, zugaenge, server = Karte „Server & Daten“ der Übersicht) bzw. 'seite:<Seite>'."""
     e, liste, d = einstellungen(db), liste_info(db), lage.get('dateipruefung') or {}
     unlesbar = _MERKER['unlesbar'] if UHR() - _MERKER['unlesbar'] < 86400 else 0   # in den letzten 24 Stunden
     ohne_app = db.execute(f'SELECT count(*) FROM users WHERE {rollen.GILT} AND NOT totp_pflicht').fetchone()[0]
@@ -728,27 +729,27 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
           'Der Notzugang (Passwort-Anmeldung der Verwaltung) ist gerade offen.' if lage.get('notzugang') else 'Passwort-Anmeldung der Verwaltung ist geschlossen.'),
         p('firewall', 'Firewall aktiv', {'abweisen': 'ok', 'protokollieren': 'hinweis', 'aus': 'kritisch'}[e['modus']],
           {'abweisen': 'Angriffe werden abgewiesen' + ('.' if e['auto'] else ' – automatisches Sperren ist aus.'),
-           'protokollieren': 'Die Firewall protokolliert nur und weist nichts ab.', 'aus': 'Die Firewall ist ausgeschaltet.'}[e['modus']], 'firewall'),
+           'protokollieren': 'Die Firewall protokolliert nur und weist nichts ab.', 'aus': 'Die Firewall ist ausgeschaltet.'}[e['modus']], 'abwehr'),
         p('aufrufer', 'Adresse jedes Aufrufers lesbar', 'kritisch' if unlesbar else 'ok',
           f'Aufruferadresse nicht lesbar oder lokal – Abwehr für diese Anfragen wirkungslos (Proxy-Einstellung prüfen). Zuletzt {_iso(unlesbar)}.' if unlesbar
-          else 'Der Proxy reicht für jede Anfrage eine lesbare Adresse weiter.', 'firewall'),
+          else 'Der Proxy reicht für jede Anfrage eine lesbare Adresse weiter.', 'abwehr'),
         p('bedrohungsliste', 'Bedrohungsliste aktuell', 'ok' if e['liste'] and not liste['veraltet'] else 'hinweis',
           'Die Bedrohungsliste ist ausgeschaltet.' if not e['liste'] else 'Noch nicht geladen – „Jetzt laden“.' if not liste['stand'] else
-          f'Älter als {LISTE_ALT_TAGE} Tage – der tägliche Abruf scheitert.' if liste['veraltet'] else f'{liste["anzahl"]} Netze (Spamhaus DROP).', 'firewall'),
+          f'Älter als {LISTE_ALT_TAGE} Tage – der tägliche Abruf scheitert.' if liste['veraltet'] else f'{liste["anzahl"]} Netze (Spamhaus DROP).', 'abwehr'),
         p('dateipruefung', 'Dateiprüfung ohne Befund', 'hinweis' if not d.get('verfuegbar') or tage(d.get('zeit', '')) > 2 else 'ok' if d.get('ok') else 'kritisch',
           'Keine Prüfliste vorhanden (nur nach Installation auf dem Server).' if not d.get('verfuegbar') else
           'Die letzte Prüfung ist älter als 2 Tage.' if tage(d.get('zeit', '')) > 2 else
-          'Programmdateien unverändert.' if d.get('ok') else f'{befunde} Befund(e) – bitte ansehen.', 'system'),
+          'Programmdateien unverändert.' if d.get('ok') else f'{befunde} Befund(e) – bitte ansehen.', 'server'),
         p('sicherung', 'Sicherung aktuell', 'ok' if tage(lage.get('letzte_sicherung') or '') <= 2 else 'kritisch',
-          'Letzte automatische Sicherung höchstens 2 Tage alt.' if tage(lage.get('letzte_sicherung') or '') <= 2 else 'Keine Sicherung aus den letzten 2 Tagen.', 'system'),
+          'Letzte automatische Sicherung höchstens 2 Tage alt.' if tage(lage.get('letzte_sicherung') or '') <= 2 else 'Keine Sicherung aus den letzten 2 Tagen.', 'server'),
         p('https', 'HTTPS und sichere Cookies', 'ok' if https else 'kritisch',
           'Alle Adressen laufen über HTTPS; die Sitzung ist an die Adresse gebunden (__Host-, Secure, HttpOnly, SameSite=Strict).' if https
           else 'Mindestens eine Adresse läuft ohne HTTPS – Anmeldung und Sitzung wären mitlesbar.'),
         p('ungenutzt', 'Keine ungenutzten Zugänge', 'hinweis' if lage.get('konten_ungenutzt') else 'ok',
           f'{lage["konten_ungenutzt"]} aktive(r) Zugang/Zugänge seit über {sicherheit.UNGENUTZT_TAGE} Tagen ohne Anmeldung.' if lage.get('konten_ungenutzt')
-          else 'Alle aktiven Zugänge werden genutzt.', 'sitzungen'),
+          else 'Alle aktiven Zugänge werden genutzt.', 'zugaenge'),
         p('verwaltung', 'Mehr als eine Person für die Verwaltung', 'ok' if verwalter > 1 else 'hinweis',
           f'{verwalter} aktive Personen können die Verwaltung ändern.' if verwalter > 1 else 'Nur eine Person kann die Verwaltung ändern – fällt sie aus, hilft nur der Server.', 'seite:users'),
         p('serverschutz', 'Serverschutz (Betriebssystem)', STAENDE[schlimmster] if bericht['aktuell'] else 'hinweis',
-          bericht['hinweis'] or f'{len(bericht["pruefungen"])} Prüfungen des Servers, schlechtester Stand: {("in Ordnung", "Hinweis", "kritisch")[schlimmster]}.', 'system'),
+          bericht['hinweis'] or f'{len(bericht["pruefungen"])} Prüfungen des Servers, schlechtester Stand: {("in Ordnung", "Hinweis", "kritisch")[schlimmster]}.', 'server'),
     ]

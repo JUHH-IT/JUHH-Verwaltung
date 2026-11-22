@@ -287,11 +287,13 @@ try {
   await gp.locator('#modal .dialog-head [data-close]').click();
   const light = (rgb) => rgb.match(/\d+/g).slice(0, 3).every((v) => Number(v) > 190);
   check(light(await gp.evaluate(() => getComputedStyle(document.querySelector('main h1')).color)), 'Dunkel: Überschrift hell auf dunklem Grund');
-  for (const id of ['overview', 'members', 'bank', 'budgets']) {
+  for (const id of ['overview', 'members', 'bank', 'budgets', 'security']) {
     await gp.click(`[data-page=${id}]`);
     await gp.waitForTimeout(300);
-    await gp.screenshot({ path: join(shots, `g2${['overview', 'members', 'bank', 'budgets'].indexOf(id) + 1}-glas-dunkel-${id}.png`) });
+    if (id === 'security') await gp.waitForSelector('.sec-lage');
+    await gp.screenshot({ path: join(shots, `g2${['overview', 'members', 'bank', 'budgets', 'security'].indexOf(id) + 1}-glas-dunkel-${id}.png`), fullPage: id === 'security' });
   }
+  check(light(await gp.evaluate(() => getComputedStyle(document.querySelector('.sec-lage h2')).color)), 'Dunkel: Lage im Sicherheits-Cockpit hell auf dunklem Grund');
   await gp.reload();
   await gp.waitForSelector('.sidebar');
   check(await design(gp) === 'glas dunkel', 'Darstellung bleibt nach dem Neuladen');
@@ -327,7 +329,7 @@ try {
   await login(gm, 'Test Schatzmeisterin', NEU);
   await gm.waitForSelector('.topbar');
   check(await gm.evaluate(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0), 'Glas Handy: Seitenleiste eingeklappt');
-  for (const id of PAGES) {
+  for (const id of [...PAGES, 'security']) {
     await gm.click('#menu-toggle');
     await gm.waitForFunction(() => document.querySelector('.shell').classList.contains('menu-open'));
     await gm.waitForTimeout(260);
@@ -337,7 +339,7 @@ try {
     check(!(await gm.evaluate(() => document.querySelector('.shell')?.classList.contains('menu-open'))), `Glas Handy ${id}: Menü schließt nach Auswahl`);
     const wide = await gm.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(wide <= 0, `Glas Handy ${id}: kein seitliches Scrollen (${wide})`);
-    if (['overview', 'members', 'bank'].includes(id)) await gm.screenshot({ path: join(shots, `g3${['overview', 'members', 'bank'].indexOf(id) + 2}-glas-handy-${id}.png`) });
+    if (['overview', 'members', 'bank', 'security'].includes(id)) await gm.screenshot({ path: join(shots, `g3${['overview', 'members', 'bank', 'security'].indexOf(id) + 2}-glas-handy-${id}.png`), fullPage: id === 'security' });
   }
   await glassPhone.close();
 
@@ -440,7 +442,7 @@ try {
     .then(() => true, () => false), 'Mitgliederbeauftragte: Austritt zurückgenommen');
   await mb.keyboard.press('Escape');
 
-  // ---------- Sicherheit (ab 0.35): Lagebild, Ereignisse, Notfall mit Sperrbildschirm und Passwortbestätigung ----------
+  // ---------- Sicherheit (ab 0.35, Cockpit ab 0.50): Übersicht, Protokoll, Notfall mit Sperrbildschirm und Passwortbestätigung ----------
   // eigene, frische Sitzung: die Bestätigung von „Person anlegen“ gilt hier nicht, „Notfall beenden“ muss nachfragen
   const secContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await guard(secContext);
@@ -451,13 +453,16 @@ try {
   await sp.waitForSelector('.sidebar');
   check(await mb.locator('[data-page=security]').count() === 0, 'Mitgliederbeauftragte: keine Seite Sicherheit');
   await sp.click('[data-page=security]');
-  await sp.waitForSelector('.sec-page .cards');
+  await sp.waitForSelector('.sec-page .sec-lage');
   const secTabs = await sp.locator('.sec-page [data-tab]').evaluateAll((els) => els.map((e) => e.dataset.tab));
-  check(['lagebild', 'ereignisse', 'notfall'].every((t) => secTabs.includes(t)), `Sicherheit: Reiter Lagebild, Ereignisse, Notfall (${secTabs.join(', ')})`);
-  check(await sp.locator('.sec-page .card').count() === 8, 'Sicherheit: Kennzahlen im Lagebild');
-  check((await sp.locator('.sec-state').textContent()).includes('Normalbetrieb'), 'Sicherheit: Lagebild zeigt Normalbetrieb');
-  await sp.screenshot({ path: join(shots, 's50-sicherheit-lagebild.png') });
-  await sp.click('[data-tab=ereignisse]');
+  check(secTabs.join(',') === 'uebersicht,abwehr,zugaenge,protokoll', `Sicherheit: Bereiche Übersicht, Abwehr, Zugänge, Protokoll (${secTabs.join(', ')})`);
+  check(await sp.locator('.sec-page .card').count() === 4, 'Sicherheit: vier Kennzahlen in der Übersicht');
+  check((await sp.locator('.sec-zustand').textContent()).includes('Normalbetrieb'), 'Sicherheit: Kopf zeigt Normalbetrieb');
+  check(await sp.locator('.pagehead [data-emergency-on]').count() === 1 && await sp.locator('.pagehead [data-wartung]').count() === 1, 'Sicherheit: Notfall und Wartung im Kopf');
+  check((await sp.locator('.sec-lage h2').textContent()).trim().length > 0 && await sp.locator('.sec-ring').count() === 1, 'Sicherheit: Lage mit Ring und Satz');
+  check(await sp.locator('.sec-zuletzt li').count() > 0, 'Sicherheit: „Zuletzt passiert“ zeigt Ereignisse');
+  await sp.screenshot({ path: join(shots, 's50-sicherheit-uebersicht.png'), fullPage: true });
+  await sp.click('[data-tab=protokoll]');
   await sp.waitForSelector('#sec-filter');
   await sp.waitForSelector('.sec-page table tbody tr');
   const events = await sp.locator('.sec-page table tbody').textContent();
@@ -467,8 +472,8 @@ try {
   await sp.waitForTimeout(400);
   const kinds = await sp.locator('.sec-page table tbody tr td:nth-child(2)').allTextContents();
   check(kinds.length > 0 && kinds.every((k) => k === 'Anmeldung'), `Sicherheit: Filter nach Art (${kinds.length} Anmeldungen)`);
-  await sp.screenshot({ path: join(shots, 's52-sicherheit-ereignisse.png') });
-  // ---------- Abwehr (ab 0.39): Musterdaten wie von außen (X-Forwarded-For vom lokalen Proxy), Lagebild, Reiter „Firewall & Sperren“ ----------
+  await sp.screenshot({ path: join(shots, 's52-sicherheit-protokoll.png') });
+  // ---------- Abwehr (ab 0.39): Musterdaten wie von außen (X-Forwarded-For vom lokalen Proxy), Übersicht, Bereich „Abwehr“ ----------
   const outsideCall = (path, ip, agent = 'Mozilla/5.0 (Musterdaten)') => fetch(url + path, { headers: { 'X-Forwarded-For': ip, 'User-Agent': agent } }).then((r) => r.status);
   // Verlauf der letzten 24 Stunden: erfundene Zahlen direkt in die Stundenstatistik (die Uhr des Servers lässt sich nicht verstellen)
   execFileSync('python3', ['-c', `import sqlite3, sys
@@ -495,15 +500,16 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   await fp.waitForSelector('.sidebar');
   await fp.click('[data-page=security]');
   await fp.waitForSelector('.sec-cols');
-  check(await fp.locator('.sec-cols li').count() === 24, 'Lagebild: Verlauf mit 24 Stunden');
-  check((await fp.locator('.sec-peak').textContent()).trim() === '42', 'Lagebild: Höchstwert am Balken beschriftet');
-  check((await fp.locator('.sec-stats').textContent()).includes('Fallen'), 'Lagebild: Abwehr der letzten 24 Stunden mit Zahlen');
-  check(await fp.locator('.sec-checks li').count() === 12, 'Lagebild: Konfigurationsprüfung mit 12 Punkten');
-  check(await fp.locator('.sec-page .card').count() === 8, 'Lagebild: Kennzahlen bleiben');
-  await fp.screenshot({ path: join(shots, 's55-lagebild-abwehr-1280.png'), fullPage: true });
-  await fp.locator('.sec-checks [data-ziel=firewall]').first().click();   // Sprung aus der Konfigurationsprüfung
+  check(await fp.locator('.sec-cols li').count() === 24, 'Übersicht: Verlauf mit 24 Stunden');
+  check((await fp.locator('.sec-peak').textContent()).trim() === '42', 'Übersicht: Höchstwert am Balken beschriftet');
+  check((await fp.locator('.sec-arten').textContent()).includes('Fallen'), 'Übersicht: Abwehr der letzten 24 Stunden mit Zahlen');
+  check(await fp.locator('.sec-todo li').count() + await fp.locator('.sec-ok li').count() === 12, 'Übersicht: alle 12 Prüfungen – offen unter „Zu tun“, der Rest unter „In Ordnung“');
+  check(await fp.locator('.sec-todo li', { hasText: 'Bedrohungsliste' }).locator('[data-fw-list]').count() === 1, 'Zu tun: Bedrohungsliste mit „Jetzt laden“ direkt daneben');
+  check(await fp.locator('.sec-page .card').count() === 4, 'Übersicht: vier Kennzahlen');
+  await fp.screenshot({ path: join(shots, 's55-uebersicht-1280.png'), fullPage: true });
+  await fp.locator('.sec-arten [data-ziel=abwehr]').click();   // Sprung aus dem Verlauf
   await fp.waitForSelector('[data-fw-edit]');
-  check(await fp.locator('[data-tab=firewall]').getAttribute('aria-selected') === 'true', 'Konfigurationsprüfung: Sprung zum Reiter „Firewall & Sperren“');
+  check(await fp.locator('[data-tab=abwehr]').getAttribute('aria-selected') === 'true', 'Übersicht: Sprung zum Bereich „Abwehr“');
   const fwText = () => fp.locator('.sec-page').textContent();
   // nach einer Aktion lädt der Reiter neu: auf den Text warten statt sofort zu lesen
   const fwHas = (text, there = true) => fp.waitForFunction(([t, want]) => document.querySelector('.sec-page')?.textContent.includes(t) === want, [text, there], { timeout: 5000 }).then(() => true, () => false);
@@ -543,11 +549,26 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   await fp.waitForSelector('#modal[open] #sec-fw-form');
   await fp.screenshot({ path: join(shots, 's57-firewall-einstellungen.png') });
   await fp.keyboard.press('Escape');
-  await fp.click('[data-tab=system]');
-  await fp.waitForSelector('.sec-checks');
-  check((await fp.locator('.sec-page').textContent()).includes('<b id="xss-serverschutz">'), 'System: Serverschutz-Bericht als Text (maskiert)');
-  check(await fp.locator('#xss-serverschutz').count() === 0, 'System: kein Markup aus dem Serverschutz-Bericht');
-  await fp.screenshot({ path: join(shots, 's58-system-serverschutz-1280.png'), fullPage: true });
+  await fp.click('[data-tab=uebersicht]');
+  await fp.waitForSelector('#sec-server');
+  await fp.click('#sec-server details:last-of-type summary');
+  check((await fp.locator('#sec-server').textContent()).includes('<b id="xss-serverschutz">'), 'Server & Daten: Serverschutz-Bericht als Text (maskiert)');
+  check(await fp.locator('#xss-serverschutz').count() === 0, 'Server & Daten: kein Markup aus dem Serverschutz-Bericht');
+  await fp.locator('#sec-server').screenshot({ path: join(shots, 's58-server-und-daten-1280.png') });
+  // Wartung aus dem Kopf: ein- und ausschalten (eigene Sitzung fp – die Passwortbestätigung gilt dort schon)
+  await fp.click('[data-wartung]');
+  await fp.waitForSelector('#modal[open] #sec-maintenance');
+  await fp.fill('#sec-maintenance input[name=text]', 'Musterdaten: Update – gleich wieder da');
+  await fp.click('#sec-maintenance button[type=submit]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Wartung eingeschaltet'));
+  await fp.waitForSelector('.sec-lage.sec-hinweis');
+  check((await fp.locator('.sec-zustand').textContent()).includes('Wartung läuft') && (await fp.locator('.sec-lage').textContent()).includes('gleich wieder da'),
+    'Wartung: Kopf und Lage zeigen die Wartung mit Hinweis');
+  await fp.click('[data-wartung]');
+  await fp.click('#sec-maintenance button[type=submit]');
+  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Wartung ausgeschaltet'));
+  await fp.waitForFunction(() => document.querySelector('.sec-zustand')?.textContent.includes('Normalbetrieb'));
+  check(true, 'Wartung: aus dem Kopf wieder ausgeschaltet');
   // Handy: alle Reiter ohne seitliches Scrollen
   await sp.setViewportSize({ width: 390, height: 844 });
   for (const t of secTabs) {
@@ -555,12 +576,11 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
     await sp.waitForTimeout(400);
     const wide = await sp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(wide <= 0, `Handy Sicherheit ${t}: kein seitliches Scrollen (${wide})`);
-    if (t === 'lagebild' || t === 'firewall') await sp.screenshot({ path: join(shots, `s59-handy-390-${t}.png`), fullPage: true });
+    if (t === 'uebersicht' || t === 'abwehr') await sp.screenshot({ path: join(shots, `s59-handy-390-${t}.png`), fullPage: true });
   }
-  check(secTabs.includes('firewall'), 'Sicherheit: Reiter „Firewall & Sperren“');
-  await sp.screenshot({ path: join(shots, 's53-handy-sicherheit-system.png') });
+  await sp.screenshot({ path: join(shots, 's53-handy-sicherheit-protokoll.png') });
   await sp.setViewportSize({ width: 1440, height: 900 });
-  await fp.click('[data-tab=firewall]');
+  await fp.click('[data-tab=abwehr]');
   await fp.waitForSelector('[data-fw-capture]');
   await fp.click('[data-fw-capture]');
   await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Mitschnitt beendet'));
@@ -569,8 +589,7 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Adresse freigegeben'));
   check(await fwHas('192.0.2.99/32', false), 'Firewall: Sperre von Hand freigegeben');
   await fwContext.close();
-  // Notfall auslösen
-  await sp.click('[data-tab=notfall]');
+  // Notfall auslösen – aus dem Kopf, hier aus dem Protokoll
   await sp.click('[data-emergency-on]');
   await sp.waitForSelector('#modal[open] #sec-emergency');
   check(await sp.locator('#sec-emergency button[type=submit]').isDisabled(), 'Notfall: Auslösen erst nach „Ich habe die Wirkungen gelesen“');
@@ -579,7 +598,11 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   await sp.click('#sec-emergency button[type=submit]');
   await sp.waitForFunction(() => document.getElementById('toast').textContent.includes('Notfallmodus ausgelöst'));
   await sp.waitForSelector('[data-emergency-off]');
-  check((await sp.locator('.sec-state').textContent()).includes('Übung mit erfundenem Verdacht'), 'Notfall: Zustand mit Grund');
+  await sp.click('[data-tab=uebersicht]');
+  await sp.waitForSelector('.sec-lage.sec-alert');
+  check((await sp.locator('.sec-lage').textContent()).includes('Übung mit erfundenem Verdacht') && (await sp.locator('.sec-zustand').textContent()).includes('Notfallmodus aktiv'),
+    'Notfall: Kopf und Lage zeigen den Notfall mit Grund');
+  await sp.screenshot({ path: join(shots, 's60-notfall-uebersicht.png') });
   // eingeschränkte Person: abgemeldet, nach erneuter Anmeldung nur der Sperrbildschirm
   await mb.reload();
   await mb.waitForSelector('#login-form, #lock-retry');

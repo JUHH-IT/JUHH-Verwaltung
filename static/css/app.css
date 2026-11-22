@@ -771,15 +771,11 @@ button.map-kv:hover { background: var(--surface-2); }
 .panel .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--navy); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .panel .link-button:hover { color: var(--teal-ink); }
 
-/* Sicherheit (ab 0.35): Zustand, Warnkarten, Notfall-Knopf, Systemangaben */
-.sec-state p { margin: 8px 0 0; }
-.sec-state.sec-alert { border-color: var(--danger); }
+/* Sicherheit (ab 0.35): Warnkarten, Notfall-Knopf, Systemangaben */
 .card.sec-warn { border-color: var(--orange); }
 .card.sec-warn .value { color: var(--orange-ink); }
 .btn.sec-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.sec-danger:hover:not(:disabled) { background: var(--danger); filter: brightness(0.9); color: #fff; }
-.sec-effects { margin: 12px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; }
-.sec-effects code { overflow-wrap: anywhere; }
 .sec-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 12px 0 0; font-size: 14px; }
 .sec-facts dt { color: var(--muted); }
 .sec-facts dd { margin: 0; overflow-wrap: anywhere; }
@@ -788,15 +784,8 @@ button.map-kv:hover { background: var(--surface-2); }
 .sec-filter { justify-content: flex-start; }
 .sec-filter [data-csv] { margin-left: auto; }
 /* 0.39: Abwehr, Konfigurationsprüfung, Firewall & Sperren */
-.sec-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px 24px; margin: 0; }
-.sec-stats div { min-width: 0; }
-.sec-stats dt { font-size: 13px; font-weight: 500; color: var(--muted); }
-.sec-stats dd { margin: 2px 0 0; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
-.sec-stats small { display: block; margin-top: 2px; font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.4; }
-.sec-hours { margin-top: 20px; }
-.sec-hours h3 { margin: 0 0 8px; color: var(--ink-2); }
 /* Säulen je Stunde: eine Reihe (--teal), 2 px Abstand, oben gerundet, unten an der Grundlinie; nur der Höchstwert beschriftet */
-.sec-cols { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; height: 92px; border-bottom: 1px solid var(--line); }
+.sec-cols { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 2px; height: 124px; border-bottom: 1px solid var(--line); }
 .sec-cols li { min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; }
 .sec-bar { width: min(24px, 100%); background: var(--teal); border-radius: 4px 4px 0 0; }
 .sec-cols li:hover .sec-bar { background: var(--teal-700); }
@@ -816,6 +805,74 @@ button.map-kv:hover { background: var(--surface-2); }
 .sec-mono { font-family: var(--mono); font-size: 13px; overflow-wrap: anywhere; }
 .sec-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .sec-facts + p { margin-top: 12px; }
+/* Cockpit (0.50): Übersicht mit Lage, Zu tun, Kennzahlen, Verlauf, Server & Daten, Zuletzt passiert, In Ordnung; Kopf mit Notfall und Wartung */
+.sec-page .pagehead .actions { align-items: center; }
+.sec-zustand { display: inline-flex; }
+.sec-zustand .badge { font-size: 13px; padding: 6px 12px; }
+.sec-grid { display: flex; flex-direction: column; gap: 16px; }
+.sec-spalte { display: contents; }
+.sec-spalte > * { min-width: 0; }
+.sec-lage { order: 1; } .sec-todo { order: 2; } .sec-kpis { order: 3; } .sec-verlauf { order: 4; } .sec-server { order: 5; } .sec-zuletzt { order: 6; } .sec-ok { order: 7; }
+@media (min-width: 1100px) {
+  .sec-grid { flex-direction: row; align-items: flex-start; }
+  .sec-spalte { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .sec-spalte:first-child { flex: 7 1 0; }
+  .sec-spalte:last-child { flex: 5 1 0; }
+  .sec-spalte .cards.sec-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.sec-grid h2 { font-size: 16px; margin: 0; }
+.sec-lage { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; }
+.sec-lage .eyebrow { font-size: 13px; font-weight: 500; color: var(--muted); }
+.sec-grid .sec-lage h2 { font-size: 24px; letter-spacing: -0.015em; line-height: 1.2; }
+.sec-lage-text { flex: 1 1 240px; display: flex; flex-direction: column; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
+.sec-lage-text p { margin: 0; }
+.sec-lage .sub { font-size: 15px; color: var(--ink-2); }
+.panel.sec-alert { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger), var(--shadow); }
+.panel.sec-hinweis { border-color: var(--orange); }
+.sec-lage-text .sec-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.sec-ring { flex: none; width: 128px; height: 128px; }
+.sec-ring circle { fill: none; stroke-width: 12; stroke-linecap: round; }
+.sec-ring .spur { stroke: var(--line-2); }
+.sec-ring .ok { stroke: var(--teal); }
+.sec-ring .hinweis { stroke: var(--orange); }
+.sec-ring .kritisch { stroke: var(--danger); }
+.sec-ring text { fill: var(--ink); font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sec-ring text.klein { fill: var(--muted); font-size: 13px; font-weight: 500; }
+.sec-ring .haken { fill: none; stroke: var(--teal); stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+.sec-todo ul, .sec-ok ul, .sec-rows { list-style: none; margin: 0; padding: 0; }
+.sec-todo ul { display: flex; flex-direction: column; gap: 8px; }
+.sec-todo li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 14px; border-radius: var(--radius); background: var(--orange-50); }
+.sec-todo li.kritisch { background: var(--danger-50); }
+.sec-todo .sym { flex: none; display: inline-flex; align-self: flex-start; color: var(--orange-ink); }
+.sec-todo .kritisch .sym, .sec-todo .kritisch .stand { color: var(--danger); }
+.sec-todo li > div { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; overflow-wrap: anywhere; }
+.sec-todo .small { color: var(--ink-2); }
+.sec-todo .stand { font-size: 12px; font-weight: 600; color: var(--orange-ink); }
+.sec-todo li .btn { flex: none; margin-left: auto; }
+.sec-leer { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--teal-ink); font-weight: 500; }
+.cards.sec-kpis { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+@media (max-width: 640px) { .cards.sec-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cards.sec-kpis > .card { min-width: 0; overflow-wrap: anywhere; } }
+.sec-spark { display: flex; align-items: flex-end; gap: 2px; height: 28px; margin: 4px 0 2px; }
+.sec-spark i { flex: 1 1 0; max-width: 6px; border-radius: 2px 2px 0 0; background: var(--teal); }
+.sec-arten { margin: 12px 0 0; color: var(--ink-2); }
+.sec-rows li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--line-2); font-size: 14px; }
+.sec-rows li:first-child { border-top: 0; padding-top: 0; }
+.sec-rows li > span:nth-child(2) { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.sec-rows .wert { font-size: 13px; color: var(--ink-2); text-align: right; }
+.sec-server .sec-rows li { grid-template-columns: auto max-content minmax(0, 1fr); }
+.sec-ereignisse .small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sec-punkt { width: 10px; height: 10px; border-radius: 50%; background: var(--teal); }
+.sec-punkt.hinweis { background: var(--orange); }
+.sec-punkt.kritisch { background: var(--danger); }
+.sec-punkt.leer { background: var(--field); }
+.sec-server .sec-details, .sec-server > p { margin-top: 12px; }
+.sec-ok ul { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.sec-ok li { display: flex; align-items: center; gap: 8px; }
+.sec-ok li svg { flex: none; color: var(--teal); }
+.sec-wirkungen { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.sec-wirkungen li { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: var(--radius); background: var(--danger-50); font-size: 13px; color: var(--ink-2); }
+.sec-wirkungen li.ok { background: var(--teal-50); }
+.sec-wirkungen strong { font-size: 14px; color: var(--ink); }
 @media (max-width: 640px) {
   /* Sperrliste und Live-Verkehr auf dem Handy: je Eintrag ein Block statt einer Tabelle zum seitlichen Schieben */
   table.sec-stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
@@ -836,11 +893,14 @@ button.map-kv:hover { background: var(--surface-2); }
   .sec-blocks td:nth-child(6) { grid-area: 3 / 2 / span 2; align-self: center; }
 }
 @media (max-width: 480px) {
-  .sec-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sec-facts { grid-template-columns: 1fr; gap: 2px 0; }
   .sec-facts dd { margin-bottom: 8px; }
   .sec-checks li { grid-template-columns: minmax(0, 1fr) auto; }
   .sec-checks li div { grid-column: 1 / -1; grid-row: 2; }
+  .sec-rows li { grid-template-columns: auto minmax(0, 1fr); }
+  .sec-rows .wert { grid-column: 2; text-align: left; }
+  .sec-ring { width: 96px; height: 96px; }
+  .sec-grid .sec-lage h2 { font-size: 20px; }
 }
 /* Benutzer & Rollen im Keycloak-Betrieb (0.36): Startpasswort einmal groß und gut abschreibbar */
 .kc-startpasswort { font: 600 26px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .04em; text-align: center; padding: 16px; background: var(--line-2); border-radius: var(--radius); user-select: all; overflow-wrap: anywhere; }

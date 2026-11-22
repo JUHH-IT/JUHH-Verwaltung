@@ -1069,8 +1069,8 @@ Tests: test_haertung.py, test_schutz.py
 - `aus(db, actor=…)` – Notausgang (verwaltung.py schutz-aus): alle Sperren löschen, Firewall auf „nur protokollieren“. Liefert die Anzahl.
 - `notfall(db, an)` – Notfallmodus: Vorlage NOTFALL anwenden und den vorherigen Stand merken bzw. beim Beenden zurückbringen – je Feld und
 - `mitschnitt(db, an, actor, geraet=…)` – Mitschnitt aller Anfragen für MITSCHNITT_MINUTEN starten bzw. beenden (nur Adresse, Methode, Pfad, Status).
-- `status(db, eigene=…)` – Übersicht für den Reiter „Firewall & Sperren“: Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr.
-- `abwehr(db)` – Abwehr der letzten 24 Stunden für das Lagebild: Treffer nach Art, Abweisungen, Sperren – gesamt und je Stunde.
+- `status(db, eigene=…)` – Übersicht für den Bereich „Abwehr“: Einstellungen, Sperrliste, Bedrohungsliste, Live-Verkehr.
+- `abwehr(db)` – Abwehr der letzten 24 Stunden für die Übersicht: Treffer nach Art, Abweisungen, Sperren – gesamt und je Stunde.
 - Klasse `_KeineWeiterleitung`
   - `_KeineWeiterleitung.redirect_request(req, fp, code, msg, headers, newurl)`
 - `holen(url)` – Eine Quelle der Bedrohungsliste abrufen: nur https, ohne Weiterleitung, höchstens LISTE_BYTES + 1 Bytes und HOLEN_FRIST
@@ -1079,7 +1079,7 @@ Tests: test_haertung.py, test_schutz.py
 - `liste_info(db)` – Stand der Bedrohungsliste: {'stand', 'anzahl', 'veraltet'} – ohne Liste stand = ''.
 - `stuendlich(db)` – Hintergrundlauf (app.py, jede Stunde): Stundenstatistik schreiben; Bedrohungsliste neu laden, wenn eingeschaltet und
 - `serverschutz(pfad=…, jetzt=…)` – Bericht der Betriebssystem-Härtung lesen: {'vorhanden', 'aktuell', 'hinweis', 'zeit', 'pruefungen', 'zahlen'}.
-- `pruefung(db, lage, bericht, keycloak=…, https=…)` – Konfigurationsprüfung für das Lagebild: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
+- `pruefung(db, lage, bericht, keycloak=…, https=…)` – Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
 
 ### keycloak.py
 
