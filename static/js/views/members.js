@@ -158,6 +158,8 @@ function bindWerber(form, m) {
 
 /** Mitglied anlegen (m = null; preset: Vorgaben, z. B. Name aus einem Klärfall) oder bearbeiten. onSaved(id) nach dem Speichern. */
 export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
+  // Aus der Gesamtliste fehlen die Angaben, die erst beim Öffnen kommen (mitglieder.PRIVATE) – ohne sie würde Speichern sie leeren
+  if (m && !('phone' in m)) return safe(async () => memberDialog((await api('/api/member-account?id=' + m.id)).member, { preset, onSaved }));
   const v = m || preset || {};
   const fixed = v.dues !== null && v.dues !== undefined;   // fester Jahresbeitrag; sonst automatisch nach Alter
   const legacy = m && !v.zip;   // vor 0.22 angelegt und Anschrift ohne erkennbare PLZ: bitte aufteilen

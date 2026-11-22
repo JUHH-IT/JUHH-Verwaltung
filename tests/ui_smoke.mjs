@@ -1616,7 +1616,8 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   const ova = await page.evaluate(async () => {
     const { csrf } = await (await fetch('/api/status')).json();
     const add = async (number, street, zip, city, kv) => (await (await fetch('/api/member', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify({ number, first_name: 'Ole', last_name: `Abgleich${number}`, birth: '2001-01-01', joined: '2025-01-01', kv, street, zip, city }) })).json()).id;
+      body: JSON.stringify({ number, first_name: 'Ole', last_name: `Abgleich${number}`, birth: '2001-01-01', joined: '2025-01-01', kv, street, zip, city,
+        mobile: '0151 00000042', gender: 'D' }) })).json()).id;
     const data = await (await fetch(`/api/data?year=${new Date().getFullYear()}`)).json();
     return { gleich: await add('O-1', 'Musterweg 4', '20000', 'Hamburg', '5100'), anders: await add('O-2', 'Musterweg 5', '20000', 'Hamburg', '5300'),
       kiel: await add('O-3', 'Testgasse 1', '24103', 'Kiel', '5100'), testdorf: data.ovs.find((o) => o.name === 'Testdorf').id };
@@ -1631,6 +1632,13 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check(await wahl(ova.anders) === '' && (await page.locator(`#modal [data-ova-row="${ova.anders}"]`).textContent()).includes('anderer Kreisverband'),
     'Abgleich: Wechsel des Kreisverbands markiert und nicht vorausgewählt');
   check((await page.locator(`#modal [data-ova-fehler] [data-ova-row="${ova.kiel}"]`).textContent()).includes('außerhalb Hamburgs'), 'Abgleich: Adresse außerhalb Hamburgs unter „Adresse prüfen“');
+  await page.click(`#modal [data-ova-edit="${ova.kiel}"]`);   // aus dem Abgleich bearbeiten: Angaben, die nur in der Akte stehen, bleiben erhalten
+  await page.waitForSelector('#member-form');
+  check(await page.inputValue('#member-form input[name=mobile]') === '0151 00000042', 'Abgleich → Bearbeiten: Dialog mit allen Angaben (auch Handy)');
+  await page.click('#member-form button[type=submit]');
+  await page.waitForSelector('#modal [data-ova-form]');
+  check(await page.evaluate(async (id) => (await (await fetch(`/api/member-account?id=${id}`)).json()).member.mobile === '0151 00000042', ova.kiel),
+    'Abgleich → Bearbeiten → Speichern: Handy bleibt erhalten');
   await page.selectOption(`#modal [data-ova-wahl="${ova.kiel}"]`, 'fest');
   await shot('48-ov-abgleich');
   await page.click('#modal [data-ova-ok]');
