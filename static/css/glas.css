@@ -260,4 +260,9 @@ html.compact[data-design="glas"] .main { padding: 20px 20px 56px; }
   [data-design="glas"], [data-design="glas"][data-farbe="dunkel"] { --g-flaeche: var(--surface); --g-dicht: var(--surface); --g-duenn: var(--surface-2); --g-kopf: var(--surface); }
 }
 
+
+/* Blatt (0.54): wie die Flächen auf dem Grund – durchscheinend, ohne Unschärfe */
+[data-design="glas"] .blatt { background: var(--g-flaeche); box-shadow: var(--g-rand), var(--shadow); }
+[data-design="glas"] .blatt-aussage, [data-design="glas"] .kz .wert { font-family: var(--g-titel); }
+
 }

@@ -1050,3 +1050,45 @@ table.aw-kv th, table.aw-kv td { padding-left: 8px; padding-right: 8px; }
 .sidebar-foot .ds-open { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; }
 .dialog-body > .ds-pick { border-top: 0; padding-top: 0; }   /* im Dialog trennt schon der Kopf */
 @media (max-width: 380px) { .ds-seg span { padding: 0 9px; } }
+
+/* ---------- Blatt (0.54): eine ruhige Fläche mit Abschnitten statt vieler Karten – Cockpit, Zur Kenntnis, Auswertung ---------- */
+/* Aufbau: .blatt > (.blatt-teil | .blatt-reihe > .blatt-teil[.schmal] | .kz-band). Trennung nur durch Haarlinien. */
+.blatt { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow); min-width: 0; }
+.blatt > * + * { border-top: 1px solid var(--line); }
+.blatt-teil { padding: 28px 32px 26px; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; }
+.blatt-reihe { display: flex; flex-wrap: wrap; }
+.blatt-reihe > .blatt-teil { flex: 13 1 440px; }
+.blatt-reihe > .blatt-teil.schmal { flex: 8 1 320px; border-left: 1px solid var(--line); }
+.blatt-kopf { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; padding-bottom: 12px; }
+.blatt-kopf h2, .blatt-kopf h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.blatt-kopf .small { color: var(--muted); }
+.blatt-marke { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.blatt-aussage { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; text-wrap: balance; }
+.blatt-aussage.gross { font-size: 30px; }
+.blatt-text { margin: 10px 0 0; max-width: 640px; font-size: 16px; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
+.blatt-fuss { margin: auto 0 0; padding-top: 14px; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.5; color: var(--muted); }
+.blatt-link { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 600; color: var(--teal-ink); cursor: pointer; text-decoration: none; }
+.blatt-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* Kennzahlenband: Zahlen nebeneinander, getrennt durch Haarlinien */
+.kz-band { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); }
+.kz { display: flex; flex-direction: column; gap: 4px; padding: 20px 24px 22px; border-left: 1px solid var(--line); min-width: 0; }
+.kz:first-child { border-left: 0; padding-left: 32px; }
+.kz .label { font-size: 13px; color: var(--muted); }
+.kz .wert { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 12px; }
+.kz .note { font-size: 13px; color: var(--ink-2); }
+/* dünner Balken neben einer Zahl (Anteil 0–100 %) */
+.strich { flex: 1 1 auto; max-width: 96px; height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.strich > span { display: block; height: 100%; background: var(--ink-2); }
+.strich.warn > span { background: var(--orange); }
+/* Zeilen mit Haarlinie: Liste aus Rasterzeilen (Spalten setzt der Bereich) */
+.zeilen { display: flex; flex-direction: column; }
+.zeilen > * { border-top: 1px solid var(--line); min-height: 48px; display: grid; align-items: center; gap: 16px; }
+.zeilen > .zeilen-kopf { min-height: 0; border-top: 0; padding: 4px 0 8px; font-size: 13px; color: var(--muted); align-items: end; }
+.zeilen .zahl, .zahl { font-variant-numeric: tabular-nums; }
+.punkt { flex: none; width: 7px; height: 7px; border-radius: 99px; background: var(--orange); }
+@media (max-width: 900px) {
+  .blatt-teil { padding: 22px 18px 20px; }
+  .blatt-reihe > .blatt-teil.schmal { border-left: 0; border-top: 1px solid var(--line); }
+  .kz, .kz:first-child { padding: 16px 18px; }
+  .blatt-aussage, .blatt-aussage.gross { font-size: 22px; }
+}
