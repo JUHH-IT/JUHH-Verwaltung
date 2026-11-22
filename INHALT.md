@@ -496,6 +496,10 @@ Auswertung der Mitgliederdaten (Wunsch Lennert Gust 10.11.2026: „ein Punkt Aus
 
 Tests: test_auswertung.py
 
+- `cohorts(pool, day)` – Bindung je Eintrittsjahr (die letzten COHORT_YEARS Jahre bis zum Tag): Eintritte und in `kept` der Anteil, der 1 bis KEPT_YEARS Jahre
+- `left_by_tenure(left)` – Austritte nach vollendeten Jahren Mitgliedschaft am Austrittstag (LEFT_GROUPS) und wie viele am Tag danach 35 oder älter waren
+- `age_limit_ahead(active, day)` – Wie viele der Mitglieder im Rest des Jahres (nach dem Tag) und in jedem der nächsten AHEAD_YEARS Jahre 35 werden. Reine Zahlen.
+- `recruited(joined)` – Eintritte mit eingetragenem Werber (Mitglied `geworben_von` oder Freitext `geworben_text`): Anzahl und Anteil. Reine Zahlen.
 - `report(store, stichtag=…, kv=…, ov=…, today=…)` – Auswertung zum Stichtag (JJJJ-MM-TT); kv: Kostenstelle, ov: id oder 'none' (ohne Ortsverband).
 - `redact(r, amounts=…, names=…)` – Auswertung für eine Rolle (rollen.py, ab 0.34): ohne Buchhaltung keine Beitragsbeträge, ohne Mitgliederverwaltung
 - `pdf(store, stichtag=…, kv=…, ov=…, amounts=…)` – Mitgliederstatistik als PDF – nur Zahlen, keine Namen (für Vorstand und Gremien); `amounts=False`: ohne Beitragsbeträge.
