@@ -423,6 +423,14 @@ def _iso(t):
     return datetime.fromtimestamp(t).isoformat(timespec='seconds') if t else ''
 
 
+def _uhrzeit(iso):
+    """ISO-Zeitpunkt für Texte der Prüfung, z. B. „22.11.2026, 18:30 Uhr“."""
+    try:
+        return datetime.fromisoformat(str(iso)[:19]).strftime('%d.%m.%Y, %H:%M Uhr')
+    except ValueError:
+        return 'unbekannt'
+
+
 def einstellungen_speichern(db, daten, actor, eigene=None, geraet=''):
     """Einstellungen prüfen und speichern (nur genannte Felder). Schutz vor Aussperrung: die Bedrohungsliste lässt sich nicht
     einschalten, solange die eigene Adresse darauf steht und nicht unter „nie sperren“."""
@@ -708,7 +716,7 @@ def serverschutz(pfad=None, jetzt=None):
 
 # ---- Konfigurationsprüfung ----
 def pruefung(db, lage, bericht, keycloak=False, https=False):
-    """Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
+    """Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel', 'aktion'}.
     `lage` = sicherheit.lagebild, `bericht` = serverschutz(); `ziel` = Bereich der Seite Sicherheit
     (abwehr, zugaenge, server = Karte „Server & Daten“ der Übersicht) bzw. 'seite:<Seite>'."""
     e, liste, d = einstellungen(db), liste_info(db), lage.get('dateipruefung') or {}
@@ -718,7 +726,7 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
     tage = lambda iso: (datetime.now() - datetime.fromisoformat(iso[:19])).days if iso else 9999
     befunde = len(d.get('geaendert', [])) + len(d.get('fehlend', [])) + len(d.get('zusaetzlich', []))
     schlimmster = max((STAENDE.index(p['stand']) for p in bericht['pruefungen']), default=0)
-    p = lambda id, titel, stand, detail, ziel='': {'id': id, 'titel': titel, 'stand': stand, 'detail': detail, 'ziel': ziel}
+    p = lambda id, titel, stand, detail, ziel='', aktion=True: {'id': id, 'titel': titel, 'stand': stand, 'detail': detail, 'ziel': ziel, 'aktion': aktion}
     return [
         p('keycloak', 'Anmeldung über Keycloak', 'ok' if keycloak else 'hinweis',
           'Anmeldung mit zweitem Faktor über Keycloak.' if keycloak else 'Anmeldung nur mit Passwort – ohne zweiten Faktor.'),
@@ -726,7 +734,8 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
           'Alle aktiven Personen brauchen die Authenticator-App.' if keycloak and not ohne_app else
           f'{ohne_app} aktive Person(en) ohne Authenticator-Pflicht.' if keycloak else 'Erst mit Anmeldung über Keycloak möglich.', 'seite:users'),
         p('notzugang', 'Notzugang geschlossen', 'hinweis' if lage.get('notzugang') else 'ok',
-          'Der Notzugang (Passwort-Anmeldung der Verwaltung) ist gerade offen.' if lage.get('notzugang') else 'Passwort-Anmeldung der Verwaltung ist geschlossen.'),
+          f"Der Notzugang (Passwort-Anmeldung der Verwaltung) ist offen bis {_uhrzeit(lage['notzugang'].get('bis', ''))}." if lage.get('notzugang')
+          else 'Passwort-Anmeldung der Verwaltung ist geschlossen.'),
         p('firewall', 'Firewall aktiv', {'abweisen': 'ok', 'protokollieren': 'hinweis', 'aus': 'kritisch'}[e['modus']],
           {'abweisen': 'Angriffe werden abgewiesen' + ('.' if e['auto'] else ' – automatisches Sperren ist aus.'),
            'protokollieren': 'Die Firewall protokolliert nur und weist nichts ab.', 'aus': 'Die Firewall ist ausgeschaltet.'}[e['modus']], 'abwehr'),
@@ -735,7 +744,7 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
           else 'Der Proxy reicht für jede Anfrage eine lesbare Adresse weiter.', 'abwehr'),
         p('bedrohungsliste', 'Bedrohungsliste aktuell', 'ok' if e['liste'] and not liste['veraltet'] else 'hinweis',
           'Die Bedrohungsliste ist ausgeschaltet.' if not e['liste'] else 'Noch nicht geladen – „Jetzt laden“.' if not liste['stand'] else
-          f'Älter als {LISTE_ALT_TAGE} Tage – der tägliche Abruf scheitert.' if liste['veraltet'] else f'{liste["anzahl"]} Netze (Spamhaus DROP).', 'abwehr'),
+          f'Älter als {LISTE_ALT_TAGE} Tage – der tägliche Abruf scheitert.' if liste['veraltet'] else f'{liste["anzahl"]} Netze (Spamhaus DROP).', 'abwehr', aktion=bool(e['liste'])),
         p('dateipruefung', 'Dateiprüfung ohne Befund', 'hinweis' if not d.get('verfuegbar') or tage(d.get('zeit', '')) > 2 else 'ok' if d.get('ok') else 'kritisch',
           'Keine Prüfliste vorhanden (nur nach Installation auf dem Server).' if not d.get('verfuegbar') else
           'Die letzte Prüfung ist älter als 2 Tage.' if tage(d.get('zeit', '')) > 2 else

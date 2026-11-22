@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.50'
+VERSION='0.51'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -830,7 +830,7 @@ class Handler(BaseHTTPRequestHandler):
                         SESSIONS.pop(k,None);beendet+=1
                 result['beendet']=beendet;log(f'Notfall ausgelöst durch {actor}, {beendet} Sitzungen beendet')
             elif path=='/api/notfall-aus': sicherheit.notfall_aus(store.db,actor,self.device());schutz.notfall(store.db,False);log(f'Notfall beendet durch {actor}')
-            elif path=='/api/wartung': sicherheit.wartung(store.db,actor,data.get('an') is True,data.get('text'),self.device())
+            elif path=='/api/wartung': sicherheit.wartung(store.db,actor,data.get('an') is True,data.get('text'),self.device(),nur_text=data.get('nur_text') is True)
             elif path=='/api/sitzung-beenden':
                 found=[k for k in list(SESSIONS) if hashlib.sha256(k.encode()).hexdigest()[:16]==str(data.get('id',''))]
                 if not found: raise ValueError('Diese Sitzung gibt es nicht mehr.')

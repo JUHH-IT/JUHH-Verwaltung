@@ -1035,7 +1035,7 @@ Tests: test_keycloak_app.py, test_schutz.py, test_sicherheit.py
 - `darf_trotz_sperre(rights)`
 - `notfall_an(db, actor, grund, geraet=…)`
 - `notfall_aus(db, actor, geraet=…)`
-- `wartung(db, actor, an, text=…, geraet=…)`
+- `wartung(db, actor, an, text=…, geraet=…, nur_text=…)` – Wartung ein- oder ausschalten bzw. mit nur_text den Hinweis einer laufenden Wartung ändern (Beginn und Auslöser bleiben).
 - `notzugang_offen(db)` – Freischaltung des Notzugangs ({'bis', 'von'}) oder None. Im Keycloak-Betrieb gilt die Passwort-Anmeldung nur solange.
 - `notzugang_setzen(db, minuten, actor, geraet=…)` – Notzugang für `minuten` freischalten (1 … NOTZUGANG_HOECHSTENS) bzw. mit 0 schließen. Liefert das Ende oder None.
 - `ereignisse(db, art=…, tage=…, suche=…, limit=…)` – Sicherheitsereignisse und Änderungen an Personen/Rollen, neueste zuerst.
@@ -1079,7 +1079,7 @@ Tests: test_haertung.py, test_schutz.py
 - `liste_info(db)` – Stand der Bedrohungsliste: {'stand', 'anzahl', 'veraltet'} – ohne Liste stand = ''.
 - `stuendlich(db)` – Hintergrundlauf (app.py, jede Stunde): Stundenstatistik schreiben; Bedrohungsliste neu laden, wenn eingeschaltet und
 - `serverschutz(pfad=…, jetzt=…)` – Bericht der Betriebssystem-Härtung lesen: {'vorhanden', 'aktuell', 'hinweis', 'zeit', 'pruefungen', 'zahlen'}.
-- `pruefung(db, lage, bericht, keycloak=…, https=…)` – Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
+- `pruefung(db, lage, bericht, keycloak=…, https=…)` – Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel', 'aktion'}.
 
 ### keycloak.py
 
