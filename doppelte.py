@@ -13,7 +13,7 @@ dieselbe E-Mail-Adresse haben – dann „kein Duplikat“.
 """
 import re
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from itertools import combinations
 
 GRUENDE = {'name_geburt': 'gleicher Name und Geburtsdatum', 'name_anschrift': 'gleicher Name und Anschrift',
@@ -148,6 +148,16 @@ def _zeigen(key, value):
     return euro(value) if key == 'dues' else str(value)
 
 
+def _endete_vor(left_on, joined):
+    """Endete die Mitgliedschaft (letzter Tag `left_on`) mit Lücke vor `joined`? Austritt am Vortag = lückenlos, keine Lücke."""
+    if not left_on:
+        return False
+    try:
+        return (date.fromisoformat(left_on) + timedelta(days=1)).isoformat() < joined
+    except ValueError:
+        return left_on < joined
+
+
 def vorschau(store, keep, drop, buchhaltung=False):
     """Was beim Zusammenführen passiert: bleibendes und entfallendes Mitglied, ergänzte Angaben, Unterschiede, umgehängte Einträge,
     Hindernisse (gleiche Rechnung/Festlegung im selben Jahr, zwei aktive Mandate, Buchhaltung ohne Recht „Buchhaltung ändern“)."""
@@ -161,13 +171,19 @@ def vorschau(store, keep, drop, buchhaltung=False):
     a, b = dict(a), dict(b)
     neu = {k: b[k] for k in ERGAENZEN if not a.get(k) and b.get(k)}
     hinweise = []
-    if a['kv'] == b['kv']:                               # Ortsverband und Eintritt in den Kreisverband nur im selben Kreisverband
-        neu.update({k: b[k] for k in ('ov_id', 'kv_joined') if not a.get(k) and b.get(k)})
-    if b['joined'] < a['joined'] and not (b['left_on'] and b['left_on'] < a['joined']):
-        neu['joined'] = b['joined']                      # dieselbe Mitgliedschaft: der frühere Eintritt zählt
-    elif b['joined'] < a['joined']:                      # Wiedereintritt: die frühere Mitgliedschaft war vorher beendet
-        hinweise.append(f"Eintritt bleibt {_zeigen('joined', a['joined'])}: die frühere Mitgliedschaft "
-                        f"({_zeigen('joined', b['joined'])} bis {_zeigen('left_on', b['left_on'])}) endete vorher.")
+    # Wiedereintritt: eine Mitgliedschaft endete, bevor die andere begann – dann keine Daten der alten übernehmen
+    b_vorher, a_vorher = _endete_vor(b['left_on'], a['joined']), _endete_vor(a['left_on'], b['joined'])
+    if b_vorher:
+        hinweise.append(f"Eintritt ({_zeigen('joined', a['joined'])}), Ortsverband und Eintritt Kreisverband bleiben die des bleibenden "
+                        f"Mitglieds: die frühere Mitgliedschaft ({_zeigen('joined', b['joined'])} bis {_zeigen('left_on', b['left_on'])}) endete vorher.")
+    elif a_vorher:
+        hinweise.append(f"Das bleibende Mitglied ist zum {_zeigen('left_on', a['left_on'])} ausgetreten, das entfallende trat "
+                        f"{_zeigen('joined', b['joined'])} wieder ein – vermutlich ein Wiedereintritt: das neuere behalten oder „Kein Duplikat“.")
+    else:
+        if a['kv'] == b['kv']:                           # Ortsverband und Eintritt in den Kreisverband nur im selben Kreisverband
+            neu.update({k: b[k] for k in ('ov_id', 'kv_joined') if not a.get(k) and b.get(k)})
+        if b['joined'] < a['joined']:
+            neu['joined'] = b['joined']                  # dieselbe Mitgliedschaft: der frühere Eintritt zählt
     if b['no_mail'] and not a['no_mail']:
         neu['no_mail'] = 1                               # Postausschluss bleibt bestehen
     if b.get('note') and a['left_on'] and a['left_on'] <= date.today().isoformat():
@@ -182,8 +198,8 @@ def vorschau(store, keep, drop, buchhaltung=False):
                                                     'SELECT year,kind FROM invoices WHERE member_id=? AND year IS NOT NULL', (keep, drop))]
     konflikte += [f'Für beide ist der Beitrag {year} festgelegt – eine Festlegung entfernen.' for (year,) in store.db.execute(
         'SELECT year FROM dues_targets WHERE member_id=? INTERSECT SELECT year FROM dues_targets WHERE member_id=?', (keep, drop))]
-    konflikte += [f'Für {year} hat eines eine offene Beitragsrechnung, das andere einen festgelegten Beitrag – erst die Rechnung stornieren '
-                  'oder die Festlegung entfernen.' for (year,) in store.db.execute(
+    konflikte += [f'Für {year} hat eines eine offene Beitragsrechnung, das andere einen festgelegten Beitrag – erst die Festlegung entfernen '
+                  '(oder die Rechnung stornieren – geht nur ohne zugeordnete Zahlung und außerhalb einer offenen Lastschriftdatei).' for (year,) in store.db.execute(
                       f'SELECT year FROM ({OFFENE_BEITRAGSRECHNUNG}) UNION SELECT year FROM ({OFFENE_BEITRAGSRECHNUNG})', (keep, drop, drop, keep))]
     if all(store.db.execute("SELECT 1 FROM mandates WHERE member_id=? AND status='active'", (i,)).fetchone() for i in (keep, drop)):
         konflikte.append('Beide haben ein aktives SEPA-Mandat – eins widerrufen.')
