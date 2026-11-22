@@ -140,6 +140,12 @@ def expires(store, mandate, exclude=None):
     return add_months(last_use(store, mandate, exclude), MANDATE_MONTHS)
 
 
+def mandat_gueltig(store, today=None):
+    """Kennungen der Mitglieder mit aktivem, nicht verfallenem Mandat (ab 0.53, Liste „IBAN ohne Mandat“)."""
+    today = today or date.today().isoformat()
+    return {m['member_id'] for m in mandates(store) if m['status'] == 'active' and m['expires'] >= today}
+
+
 def mandates(store):
     rows = store.rows('SELECT m.*,(SELECT MAX(d.collection_date) FROM debits d WHERE d.mandate_id=m.id AND d.status!=\'cancelled\') last_used '
                       'FROM mandates m ORDER BY m.id DESC')
@@ -631,23 +637,22 @@ def filename(store, batch_id):
 
 # ---------------------------------------------------------------- Mandatsformular
 
-def mandate_pdf(store, member_id=None):
-    """SEPA-Lastschriftmandat zum Unterschreiben (vorausgefüllt mit Mitglied und ggf. Mandat)."""
+def mandate_pdf(store, member_id=None, member_ids=None):
+    """SEPA-Lastschriftmandat zum Unterschreiben (vorausgefüllt mit Mitglied, Bankdaten des Mitglieds und ggf. Mandat);
+    mit member_ids eine Seite je Mitglied (ab 0.53, Serie aus der Mitgliederverwaltung)."""
     from pdfschrift import exclusive
-    return exclusive(_mandate_pdf)(store, member_id)
+    return exclusive(_mandate_pdf)(store, member_ids or [member_id])
 
 
-def _mandate_pdf(store, member_id):
+def _mandate_pdf(store, member_ids):
     import io
     from xml.sax.saxutils import escape
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate
     from pdfschrift import SANS, SANS_BOLD
     cfg = store.config()
-    m = store.db.execute('SELECT * FROM members WHERE id=?', (member_id,)).fetchone() if member_id else None
-    mandate = active_mandate(store, member_id) if member_id else None
     navy, muted = colors.HexColor('#043770'), colors.HexColor('#5b6b7f')
     st = {'t': ParagraphStyle('t', fontName=SANS_BOLD, fontSize=15, leading=19, textColor=navy),
           'b': ParagraphStyle('b', fontName=SANS, fontSize=10, leading=14.5),
@@ -656,18 +661,35 @@ def _mandate_pdf(store, member_id):
     p = lambda text, style='b': Paragraph(escape(str(text)).replace('\n', '<br/>'), st[style])
     issuer = cfg.get('issuer') or 'Junge Union Hamburg'
     line = lambda label, value='': [p(label, 's'), p(value or ' ')]
+    story = []
+    for member_id in member_ids:
+        if story:
+            story.append(PageBreak())
+        story += _mandat_seite(store, cfg, member_id, p, line, issuer)
+    buf = io.BytesIO()
+    SimpleDocTemplate(buf, pagesize=A4, leftMargin=55, rightMargin=55, topMargin=50, bottomMargin=50,
+                      title='SEPA-Lastschriftmandat').build(story)
+    return buf.getvalue()
+
+
+def _mandat_seite(store, cfg, member_id, p, line, issuer):
+    from reportlab.lib import colors
+    from reportlab.platypus import Spacer, Table
+    m = store.db.execute('SELECT * FROM members WHERE id=?', (member_id,)).fetchone() if member_id else None
+    mandate = active_mandate(store, member_id) if member_id else None
+    bank = {'holder': (m['kontoinhaber'] or m['name']) if m else '', 'iban': m['iban'] if m and m['iban'] else ''}   # Bankdaten am Mitglied (ab 0.53)
     rows = [line('Zahlungsempfänger', f"{issuer}\n{cfg.get('issuer_address', '')}"),
             line('Gläubiger-Identifikationsnummer', re.sub(r'\s+', '', cfg.get('creditor_id') or '').upper()),
             line('Mandatsreferenz', mandate['reference'] if mandate else 'wird mit der ersten Beitragsrechnung mitgeteilt'),
-            line('Kontoinhaber (Vor- und Nachname)', mandate['holder'] if mandate else (m['name'] if m else '')),
+            line('Kontoinhaber (Vor- und Nachname)', mandate['holder'] if mandate else bank['holder']),
             line('Anschrift', m['address'] if m else ''),
             line('Mitgliedsnummer', m['number'] if m else ''),
-            line('IBAN', iban_pretty(mandate['iban']) if mandate else ''),
+            line('IBAN', iban_pretty(mandate['iban']) if mandate else iban_pretty(bank['iban']) if bank['iban'] else ''),
             line('BIC (optional)', (mandate['bic'] or '') if mandate else '')]
     table = Table(rows, colWidths=[150, 330], style=[('LINEBELOW', (1, 0), (1, -1), 0.5, colors.HexColor('#d5dde8')),
                                                       ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 7),
                                                       ('BOTTOMPADDING', (0, 0), (-1, -1), 7)])
-    story = [p('SEPA-Lastschriftmandat', 't'), p('für wiederkehrende Zahlungen (Mitgliedsbeitrag)', 's'), Spacer(1, 14), table, Spacer(1, 14),
+    return [p('SEPA-Lastschriftmandat', 't'), p('für wiederkehrende Zahlungen (Mitgliedsbeitrag)', 's'), Spacer(1, 14), table, Spacer(1, 14),
              p(f'Ich ermächtige den Zahlungsempfänger {issuer}, Zahlungen von meinem Konto mittels Lastschrift einzuziehen. Zugleich weise ich '
                f'mein Kreditinstitut an, die vom Zahlungsempfänger {issuer} auf mein Konto gezogenen Lastschriften einzulösen.'),
              Spacer(1, 6),
@@ -679,7 +701,3 @@ def _mandate_pdf(store, member_id):
              Spacer(1, 40),
              Table([['', '', ''], [p('Ort, Datum', 's'), '', p('Unterschrift Kontoinhaber', 's')]], colWidths=[180, 40, 260],
                    style=[('LINEABOVE', (0, 1), (0, 1), 0.6, colors.black), ('LINEABOVE', (2, 1), (2, 1), 0.6, colors.black)])]
-    buf = io.BytesIO()
-    SimpleDocTemplate(buf, pagesize=A4, leftMargin=55, rightMargin=55, topMargin=50, bottomMargin=50,
-                      title='SEPA-Lastschriftmandat').build(story)
-    return buf.getvalue()

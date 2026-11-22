@@ -23,6 +23,8 @@ export function listen(year = store.year, today = todayIso()) {
     { id: 'ohne-mail', label: 'Ohne E-Mail', test: (m) => isActive(m, today) && !m.email, hint: 'Für Einladungen und Rechnungen per E-Mail' },
     { id: 'anschrift', label: 'Anschrift prüfen', test: (m) => isActive(m, today) && !anschriftVollstaendig(m), hint: 'Straße, PLZ oder Ort fehlen' },
     { id: 'werden-35', label: `Werden ${year} 35`, test: (m) => isActive(m, today) && birthYear(m) === year - 35, hint: 'Altersgrenze nach Satzung § 2 Abs. 1 Nr. 4' },
+    { id: 'iban-ohne-mandat', label: 'IBAN ohne Mandat', test: (m) => isActive(m, today) && m.hat_iban && !m.sepa_mandat,
+      hint: 'Bankdaten liegen vor, ein gültiges SEPA-Mandat fehlt – auswählen und „SEPA-Mandate“ drucken' },
     { id: 'beitrag-offen', label: 'Beitrag offen', test: (m) => isActive(m, today) && (m.dues_open_years || []).length > 0, hint: 'Fällige Beiträge nicht eingegangen' },
     ...(wahl ? [{ id: 'wahlberechtigt', label: 'Wahlberechtigt', test: (m) => isActive(m, today) && m.wahl?.status === 'wahlberechtigt' },
       { id: 'nicht-wahlberechtigt', label: 'Nicht wahlberechtigt', test: (m) => isActive(m, today) && m.wahl?.status === 'nicht', hint: 'Grund steht in der Liste' }] : []),
