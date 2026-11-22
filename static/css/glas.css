@@ -82,7 +82,7 @@
 [data-design="glas"] body { background: var(--g-grund); background-attachment: fixed; }
 [data-design="glas"] h1 { font-family: var(--g-titel); font-size: 32px; letter-spacing: -0.025em; line-height: 1.12; }
 [data-design="glas"] h2 { letter-spacing: -0.005em; }
-[data-design="glas"] .card .value, [data-design="glas"] .sec-stats dd, [data-design="glas"] .kv-tile .rest { font-family: var(--g-titel); letter-spacing: -0.02em; }
+[data-design="glas"] .card .value, [data-design="glas"] .sec-lage h2, [data-design="glas"] .kv-tile .rest { font-family: var(--g-titel); letter-spacing: -0.02em; }
 
 /* ---------- Gerüst: schwebende Seitenleiste aus Glas ---------- */
 [data-design="glas"] .sidebar {
@@ -155,8 +155,14 @@
 [data-design="glas"] .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
 [data-design="glas"] .btn.ghost:hover { background: var(--g-hover); }
 [data-design="glas"] .btn.warn { background: var(--orange-50); border-color: transparent; color: var(--orange-ink); box-shadow: none; }
-[data-design="glas"] .btn.sec-danger { background: #b4233a; border-color: #b4233a; color: #fff; }
+[data-design="glas"] .btn.sec-danger { background: linear-gradient(180deg, #c93049, #a81f35); border-color: transparent; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 18px -8px rgba(180, 35, 58, 0.7); color: #fff; }
 [data-design="glas"] .btn.sec-danger:hover:not(:disabled) { background: #9d1f33; border-color: #9d1f33; filter: none; color: #fff; }
+/* Cockpit (0.50): Rahmen der Lage als Linie im Glas */
+[data-design="glas"] .panel.sec-alert { box-shadow: var(--g-rand), inset 0 0 0 2px var(--danger), var(--shadow); }
+[data-design="glas"] .panel.sec-hinweis { box-shadow: var(--g-rand), inset 0 0 0 2px var(--orange), var(--shadow); }
+[data-design="glas"] .sec-todo li, [data-design="glas"] .sec-wirkungen li { border-radius: 18px; }
+[data-design="glas"] .sec-ring .spur { stroke: var(--line); }
+@media (max-width: 480px) { [data-design="glas"] .sec-page .tabs button { padding: 0 11px; } }   /* vier Bereiche passen auf 390 px */
 [data-design="glas"] .btn .count { background: #087f8c; color: #fff; }
 [data-design="glas"] .btn:disabled { box-shadow: none; }
 

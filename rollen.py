@@ -28,7 +28,7 @@ AREAS = (
     ('einstellungen', 'Einstellungen', 'Stammdaten des Verbands, Schalter, E-Mail-Konto'),
     ('sicherung', 'Sicherung', 'lesen: Stand der Sicherung; schreiben: Sicherung herunterladen (enthält alle Daten)'),
     ('verwaltung', 'Benutzer und Rollen', 'Personen anlegen, Rollen und Rechte ändern'),
-    ('sicherheit', 'Sicherheit', 'lesen: Lagebild, Ereignisse, Notfall auslösen; ändern: Sitzungen und Sperren, Notfall beenden, Wartung, Dateiprüfung (ab 0.35)'),
+    ('sicherheit', 'Sicherheit', 'lesen: Übersicht, Abwehr, Protokoll, Notfall auslösen; ändern: Zugänge (Sitzungen und Sperren), Firewall, Notfall beenden, Wartung, Dateiprüfung (ab 0.35)'),
 )
 AREA_IDS = tuple(area for area, _, _ in AREAS)
 ALL = {area: 'schreiben' for area in AREA_IDS}

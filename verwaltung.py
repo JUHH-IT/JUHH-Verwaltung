@@ -172,7 +172,7 @@ def cmd_schutz_aus(args):
     finally:
         con.close()
     print(f'{n} Sperre(n) gelöscht, Firewall auf „nur protokollieren“ – wirkt nach spätestens {schutz.NACHLADEN} Sekunden. '
-          'Wieder einschalten: Sicherheit → Firewall & Sperren → Einstellungen.')
+          'Wieder einschalten: Sicherheit → Abwehr → Einstellungen.')
     return 0
 
 

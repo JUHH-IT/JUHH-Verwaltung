@@ -285,7 +285,7 @@ sudo ju-finanzen notzugang --aus         # sofort schließen
 ```
 
 Sonst lehnt das Programm das Passwort ab wie ein falsches – ein abgegriffenes Passwort allein umgeht so die
-Authenticator-App nicht. Ob der Notzugang offen ist, zeigt Sicherheit → Lagebild; Freischalten und Schließen stehen in
+Authenticator-App nicht. Ob der Notzugang offen ist, zeigt Sicherheit → Übersicht; Freischalten und Schließen stehen in
 den Ereignissen. Zurück zur Passwort-Anmeldung für alle: `sudo ju-finanzen anmeldung passwort`.
 
 Die Verwaltungsbefehle lesen `JU_FINANZEN_KEYCLOAK_*` selbst aus `/etc/ju-finanzen/ju-finanzen.env`; das Client-Secret
@@ -670,7 +670,8 @@ Ein Neustart während eines E-Mail-Versands hält den Versand nach der aktuellen
   - Anmeldungen mit Benutzername und Tailscale-Gerät;
   - bei Fehlern die Programmstelle.
   Mitgliedernamen, Beträge und IBANs stehen nie darin.
-- Sicherheit (ab 0.35): Programm → Verwaltung → Sicherheit (Lagebild, Ereignisse, Notfall, Wartung, Sitzungen, Dateiprüfung).
+- Sicherheit (ab 0.35, Cockpit ab 0.50): Programm → Verwaltung → Sicherheit (Übersicht mit Lage, Zu tun und Dateiprüfung, Abwehr,
+  Zugänge, Protokoll; Notfall und Wartung oben rechts).
   Die Dateiprüfung vergleicht die Programmdateien mit der Prüfliste, die `install.sh` beim Installieren anlegt
   (`server/PRUEFLISTE`). Sie erkennt Änderungen ohne root-Rechte; wer root ist, kann Prüfliste und Programm zugleich
   ändern – dagegen schützt nur der Zugang zum Server (Tailscale, SSH-Schlüssel).
