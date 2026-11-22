@@ -119,7 +119,8 @@ function zuTun(pruefung) {
   const offen = pruefung.filter((p) => p.stand !== 'ok').sort((a, b) => ORDER.indexOf(a.stand) - ORDER.indexOf(b.stand));
   const write = can('sicherheit', 'schreiben');
   const knopf = (p) => {
-    if (write && AKTION[p.id]) return html`<button type="button" class="btn small" ${AKTION[p.id][1]}>${AKTION[p.id][0]}</button>`;
+    const ausgeschaltet = p.id === 'bedrohungsliste' && p.detail.includes('ausgeschaltet');
+    if (write && AKTION[p.id] && !ausgeschaltet) return html`<button type="button" class="btn small" ${AKTION[p.id][1]}>${AKTION[p.id][0]}</button>`;
     return erreichbar(p.ziel) ? html`<button type="button" class="btn small" data-ziel="${p.ziel}" aria-label="${p.titel}: ${ZIEL[p.ziel] || 'Öffnen'}">${ZIEL[p.ziel] || 'Öffnen'}</button>` : '';
   };
   return html`<section class="panel sec-todo" aria-labelledby="sec-todo">
@@ -180,14 +181,14 @@ function serverUndDaten(l, pruefung, b, v) {
   const zeile = (titel, wert, st = '') => html`<li><span class="sec-punkt ${st}" aria-hidden="true"></span>
     <span>${titel}${st && st !== 'ok' ? html` <span class="sr-only">(${STAND[st]?.[0]})</span>` : ''}</span><span class="wert">${wert}</span></li>`;
   const befunde = (d.geaendert?.length || 0) + (d.fehlend?.length || 0) + (d.zusaetzlich?.length || 0);
-  return html`<section class="panel sec-server" id="sec-server" aria-labelledby="sec-server-titel">
+  return html`<section class="panel sec-server" id="sec-server" tabindex="-1" aria-labelledby="sec-server-titel">
     <div class="panel-head"><h2 id="sec-server-titel">Server &amp; Daten</h2>
       ${can('sicherheit', 'schreiben') ? html`<button type="button" class="btn small" data-check>Dateiprüfung jetzt</button>` : ''}</div>
     <ul class="sec-rows">
       ${zeile('Sicherung', l.letzte_sicherung ? `zuletzt ${date(l.letzte_sicherung)}` : 'keine', stand.sicherung)}
       ${zeile('Dateiprüfung', `${pruefWert} · ${pruefNotiz}`, stand.dateipruefung)}
       ${zeile('Serverschutz', b.zeit ? `${mehrzahl(b.pruefungen.length, 'Prüfung', 'Prüfungen')} · Stand ${dateTime(b.zeit)}` : 'kein Bericht', stand.serverschutz)}
-      ${s ? zeile('Version', `${s.version}${s.stand && /^\d{4}-\d{2}-\d{2}/.test(s.stand) ? ` · ${dateTime(s.stand)}` : ''}`) : ''}
+      ${s ? zeile('Version', `${s.version}${s.stand ? ` · Stand ${/^\d{4}-\d{2}-\d{2}/.test(s.stand) ? dateTime(s.stand) : s.stand}` : ''}`) : ''}
       ${s ? zeile('Speicher', `${n(s.daten_frei_gb)} GB frei von ${n(s.daten_gesamt_gb)} GB`) : ''}
     </ul>
     ${befunde ? html`<details class="sec-details" open><summary>Befunde der Dateiprüfung (${n(befunde)})</summary>
@@ -226,7 +227,8 @@ function inOrdnung(pruefung) {
 /** Zwei Spalten ohne Lücken (breit); schmal eine Spalte in der Reihenfolge Lage, Zu tun, Kennzahlen, … (CSS `order`). */
 function uebersicht(r) {
   return html`<div class="sec-grid">
-    <div class="sec-spalte">${lage(r.lage, r.pruefung)}${kennzahlen(r.lage, r.abwehr, r.verwaltung)}${verlauf(r.abwehr)}${zuletzt(r.zuletzt.ereignisse, r.zuletzt.arten)}</div>
+    <div class="sec-spalte">${lage(r.lage, r.pruefung)}${kennzahlen(r.lage, r.abwehr, r.verwaltung)}${verlauf(r.abwehr)}${r.zuletzt ? zuletzt(r.zuletzt.ereignisse, r.zuletzt.arten)
+      : html`<p class="small muted sec-gesperrt">Während der Sperre zeigt das Cockpit nur die Lage.</p>`}</div>
     <div class="sec-spalte">${zuTun(r.pruefung)}${serverUndDaten(r.lage, r.pruefung, r.serverschutz, r.verwaltung)}${inOrdnung(r.pruefung)}</div>
   </div>`;
 }
@@ -272,7 +274,7 @@ function wartungDialog(sperre, reload) {
       die Daten bleiben unverändert.</p>
     <label class="field">Hinweis für alle (freiwillig)<input name="text" maxlength="300" value="${an ? sperre.text || '' : ''}" placeholder="z. B. Update – ab 18 Uhr wieder erreichbar"></label>
     <div class="form-actions"><button type="button" class="btn ghost" data-cancel>Abbrechen</button>
-      ${an ? html`<button type="button" class="btn" data-text>Hinweis speichern</button><button type="submit" class="btn primary">Wartung beenden</button>`
+      ${an ? html`<button type="button" class="btn primary" data-end-wartung>Wartung beenden</button><button type="submit" class="btn">Hinweis speichern</button>`
         : html`<button type="submit" class="btn primary">Wartung einschalten</button>`}</div></form>`);
   const form = el.querySelector('#sec-maintenance');
   const senden = (einschalten, meldung) => safe(async () => {
@@ -282,8 +284,8 @@ function wartungDialog(sperre, reload) {
     await reload();
   });
   el.querySelector('[data-cancel]').onclick = () => el.close();
-  el.querySelector('[data-text]')?.addEventListener('click', () => senden(true, 'Hinweis gespeichert.'));
-  form.onsubmit = (e) => { e.preventDefault(); senden(!an, an ? 'Wartung ausgeschaltet.' : 'Wartung eingeschaltet.'); };
+  el.querySelector('[data-end-wartung]')?.addEventListener('click', () => senden(false, 'Wartung ausgeschaltet.'));
+  form.onsubmit = (e) => { e.preventDefault(); senden(true, an ? 'Hinweis gespeichert.' : 'Wartung eingeschaltet.'); };   // Enter beendet nie die Wartung
 }
 
 // ---- Protokoll ----
@@ -295,6 +297,7 @@ function details(detail) {
   return Object.entries(detail || {}).map(([key, value]) => {
     const label = LABELS[key] || key.replace(/_/g, ' ');
     if (typeof value === 'boolean') return `${label}: ${value ? 'ja' : 'nein'}`;
+    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return `${label}: ${dateTime(value)}`;
     if (typeof value === 'number' || typeof value === 'string') return value === '' ? '' : `${label}: ${value}`;
     if (Array.isArray(value)) return value.every((v) => typeof v === 'string') && value.length <= 5 ? `${label}: ${value.join(', ') || '–'}` : `${label}: ${value.length}`;
     return '';
@@ -482,8 +485,12 @@ async function load() {
     zugaenge: () => api('/api/sicherheit-verwaltung'),
     protokoll: () => api('/api/sicherheit-ereignisse?' + query()),
   }[tab];
-  const [lage, daten] = await Promise.all([api('/api/sicherheit'), extra()]);
+  // Erst die Lage: Während Notfall oder Wartung beantwortet der Server ohne „Sicherheit ändern“ nur GET /api/sicherheit (sonst 503 → Sperrbildschirm)
+  const lage = await api('/api/sicherheit');
+  const gesperrt = Boolean(lage.lagebild.sperre) && !can('sicherheit', 'schreiben');
+  const daten = gesperrt ? null : await extra();
   const r = { lage: lage.lagebild, abwehr: lage.abwehr, pruefung: lage.pruefung, serverschutz: lage.serverschutz };
+  if (gesperrt) { tab = 'uebersicht'; return r; }
   if (tab === 'uebersicht') [r.verwaltung, r.zuletzt] = daten;
   if (tab === 'abwehr') r.schutz = daten;
   if (tab === 'zugaenge') r.verwaltung = daten;
@@ -502,7 +509,11 @@ function bind(main, reload, r) {
   main.querySelectorAll('[data-ziel]').forEach((b) => (b.onclick = () => {   // aus „Zu tun“ und den Übersichtskarten zur passenden Stelle
     const ziel = b.dataset.ziel;
     if (ziel.startsWith('seite:')) return go(ziel.slice(6));
-    if (ziel === 'server') return main.querySelector('#sec-server')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (ziel === 'server') {
+      const ziel = main.querySelector('#sec-server');
+      ziel?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+      return ziel?.focus({ preventScroll: true });
+    }
     return zeigen(ziel);
   }));
   main.querySelector('[data-wartung]')?.addEventListener('click', () => wartungDialog(r.lage.sperre, reload));
@@ -515,8 +526,8 @@ function bind(main, reload, r) {
     ask(all ? 'Automatische Sperren freigeben' : 'Adresse freigeben', all ? 'Alle automatisch gesperrten Adressen wieder zulassen?' : `${b.dataset.netz} wieder zulassen?`, 'Freigeben',
       () => action(() => api('/api/schutz-freigeben', { id: all ? 'auto' : Number(b.dataset.fwFree) }), all ? 'Automatische Sperren freigegeben.' : 'Adresse freigegeben.'));
   }));
-  main.querySelector('[data-fw-list]')?.addEventListener('click', () => ask('Bedrohungsliste laden', 'Die Liste Spamhaus DROP jetzt von www.spamhaus.org laden? Dabei werden keine Daten des Programms übertragen.', 'Jetzt laden',
-    () => safe(async () => { const x = await api('/api/schutz-liste-laden', {}); toast(`Bedrohungsliste geladen: ${n(x.liste.anzahl)} Netze.`); await reload(); })));
+  main.querySelectorAll('[data-fw-list]').forEach((b) => b.addEventListener('click', () => ask('Bedrohungsliste laden', 'Die Liste Spamhaus DROP jetzt von www.spamhaus.org laden? Dabei werden keine Daten des Programms übertragen.', 'Jetzt laden',
+    () => safe(async () => { const x = await api('/api/schutz-liste-laden', {}); toast(`Bedrohungsliste geladen: ${n(x.liste.anzahl)} Netze.`); await reload(); }))));
   main.querySelector('[data-fw-capture]')?.addEventListener('click', (ev) => {
     const on = ev.currentTarget.dataset.fwCapture === '1';
     action(() => api('/api/schutz-mitschnitt', { an: on }), on ? 'Mitschnitt gestartet – endet nach 15 Minuten von selbst.' : 'Mitschnitt beendet.');
@@ -541,11 +552,13 @@ function bind(main, reload, r) {
   main.querySelectorAll('[data-end]').forEach((b) => (b.onclick = () => action(() => api('/api/sitzung-beenden', { id: b.dataset.end }), 'Sitzung beendet.')));
   main.querySelectorAll('[data-unlock]').forEach((b) => (b.onclick = () => action(() => api('/api/sperre-aufheben', { key: b.dataset.unlock }), 'Zugang freigegeben.')));
   main.querySelector('[data-users]')?.addEventListener('click', () => go('users'));
-  main.querySelector('[data-check]')?.addEventListener('click', () => safe(async () => {
+  main.querySelectorAll('[data-check]').forEach((b) => (b.onclick = () => safe(async () => {   // „Zu tun“ und „Server & Daten“
     const x = await api('/api/dateipruefung', {});
-    toast(x.ergebnis?.ok ? 'Dateiprüfung: alles in Ordnung.' : 'Dateiprüfung: Befund – bitte die Liste ansehen.', !x.ergebnis?.ok);
+    const e = x.ergebnis || {};
+    toast(!e.verfuegbar ? 'Dateiprüfung: keine Prüfliste vorhanden (nur nach Installation auf dem Server).'
+      : e.ok ? 'Dateiprüfung: alles in Ordnung.' : 'Dateiprüfung: Befund – bitte die Liste ansehen.', e.verfuegbar && !e.ok);
     await reload();
-  }));
+  })));
 }
 
 export function sicherheit(main) {

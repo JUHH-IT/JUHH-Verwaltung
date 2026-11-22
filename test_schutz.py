@@ -850,6 +850,8 @@ class PruefungTests(Basis):
         p = self.pruefung(bericht, keycloak=True, https=True, sicherung=(datetime.now() - timedelta(days=4)).date().isoformat())
         self.assertEqual({k: v['stand'] for k, v in p.items() if v['stand'] != 'ok'},
                          {'notzugang': 'hinweis', 'firewall': 'kritisch', 'dateipruefung': 'hinweis', 'sicherung': 'kritisch', 'serverschutz': 'kritisch'})
+        bis = datetime.fromisoformat(sicherheit.notzugang_offen(self.db)['bis'])
+        self.assertIn(f"offen bis {bis:%d.%m.%Y, %H:%M} Uhr", p['notzugang']['detail'])         # Ende des Notzugangs steht im Text
         self.setze(modus='protokollieren', liste=False)
         p = self.pruefung(bericht, keycloak=True, https=True)
         self.assertEqual((p['firewall']['stand'], p['bedrohungsliste']['stand']), ('hinweis', 'hinweis'))

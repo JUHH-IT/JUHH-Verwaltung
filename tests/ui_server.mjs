@@ -23,6 +23,9 @@ const check = (ok, message) => { if (!ok) failures.push(message); console.log((o
 
 // Passwort wie auf dem Server über verwaltung.py setzen (Passwort zweimal über stdin)
 execFileSync('python3', [join(repo, 'verwaltung.py'), '--data', data, 'passwort', 'Test Schatzmeisterin'], { input: `${PASSWORT}\n${PASSWORT}\n` });
+// Prüfbefund 0.50: eine Person nur mit „Sicherheit lesen“ (Rolle Landesgeschäftsführer) löst den Notfall aus
+execFileSync('python3', [join(repo, 'verwaltung.py'), '--data', data, 'passwort', '--neu', 'Test Leitung'], { input: `${PASSWORT}\n${PASSWORT}\n` });
+execFileSync('python3', [join(repo, 'verwaltung.py'), '--data', data, 'rolle', 'Test Leitung', 'Landesgeschäftsführer']);
 // Bericht des Serverschutzes (0.39): erfundene Datei, wie sie der Zeitgeber der Betriebssystem-Härtung schreibt – mit einem Text, der maskiert werden muss
 const serverschutz = join(base, 'serverschutz.json');
 writeFileSync(serverschutz, JSON.stringify({ zeit: new Date().toISOString(), version: 1,
@@ -555,6 +558,11 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   check((await fp.locator('#sec-server').textContent()).includes('<b id="xss-serverschutz">'), 'Server & Daten: Serverschutz-Bericht als Text (maskiert)');
   check(await fp.locator('#xss-serverschutz').count() === 0, 'Server & Daten: kein Markup aus dem Serverschutz-Bericht');
   await fp.locator('#sec-server').screenshot({ path: join(shots, 's58-server-und-daten-1280.png') });
+  if (await fp.locator('.sec-todo [data-check]').count()) {   // Prüfbefund 0.50: zwei Knöpfe – beide müssen wirken
+    await fp.click('#sec-server [data-check]');
+    check(await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Dateiprüfung'), null, { timeout: 8000 }).then(() => true, () => false),
+      'Server & Daten: „Dateiprüfung jetzt“ wirkt auch, wenn „Zu tun“ die Dateiprüfung nennt');
+  }
   // Wartung aus dem Kopf: ein- und ausschalten (eigene Sitzung fp – die Passwortbestätigung gilt dort schon)
   await fp.click('[data-wartung]');
   await fp.waitForSelector('#modal[open] #sec-maintenance');
@@ -564,11 +572,17 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   await fp.waitForSelector('.sec-lage.sec-hinweis');
   check((await fp.locator('.sec-zustand').textContent()).includes('Wartung läuft') && (await fp.locator('.sec-lage').textContent()).includes('gleich wieder da'),
     'Wartung: Kopf und Lage zeigen die Wartung mit Hinweis');
+  await fp.click('[data-wartung]');   // laufende Wartung: Enter im Feld speichert nur den Hinweis (Prüfbefund 0.50), beendet nie die Wartung
+  await fp.fill('#sec-maintenance input[name=text]', 'Musterdaten: zweiter Hinweis');
+  await fp.press('#sec-maintenance input[name=text]', 'Enter');
+  check(await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Hinweis gespeichert')
+    && (document.querySelector('.sec-lage')?.textContent || '').includes('zweiter Hinweis') && document.querySelector('.sec-zustand')?.textContent.includes('Wartung läuft'),
+    null, { timeout: 8000 }).then(() => true, () => false), 'Wartung: Hinweis während der Wartung geändert, Wartung läuft weiter');
   await fp.click('[data-wartung]');
-  await fp.click('#sec-maintenance button[type=submit]');
-  await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Wartung ausgeschaltet'));
-  await fp.waitForFunction(() => document.querySelector('.sec-zustand')?.textContent.includes('Normalbetrieb'));
-  check(true, 'Wartung: aus dem Kopf wieder ausgeschaltet');
+  await fp.click('#sec-maintenance [data-end-wartung]');
+  check(await fp.waitForFunction(() => document.getElementById('toast').textContent.includes('Wartung ausgeschaltet')
+    && document.querySelector('.sec-zustand')?.textContent.includes('Normalbetrieb'), null, { timeout: 8000 }).then(() => true, () => false),
+    'Wartung: aus dem Kopf wieder ausgeschaltet');
   // Handy: alle Reiter ohne seitliches Scrollen
   await sp.setViewportSize({ width: 390, height: 844 });
   for (const t of secTabs) {
@@ -641,6 +655,38 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
   await login(mb, 'test.mitglieder', PASSWORT);
   await mb.waitForSelector('.sidebar');
   check(true, 'Nach dem Notfall: eingeschränkte Person kommt nach neuer Anmeldung wieder hinein');
+  // Leserecht „Sicherheit“: Notfall auslösen – danach Erfolgsmeldung und Lage, nicht der Sperrbildschirm mit Fehlermeldung
+  const leserContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await guard(leserContext);
+  const lp = await leserContext.newPage();
+  watch(lp, 'Leitung');
+  await lp.goto(url);
+  await login(lp, 'Test Leitung', PASSWORT);
+  await lp.waitForSelector('.sidebar');
+  await lp.click('[data-page=security]');
+  await lp.waitForSelector('.pagehead [data-emergency-on]');
+  check(await lp.locator('.pagehead [data-wartung]').count() === 0, 'Leitung: Notfall im Kopf, keine Wartung');
+  await lp.click('.pagehead [data-emergency-on]');
+  await lp.waitForSelector('#modal[open] #sec-emergency');
+  await lp.fill('#sec-emergency textarea[name=grund]', 'Übung der Leitung mit erfundenem Verdacht');
+  await lp.check('#sec-emergency input[name=gelesen]');
+  await lp.click('#sec-emergency button[type=submit]');
+  check(await lp.waitForFunction(() => document.getElementById('toast').textContent.includes('Notfallmodus ausgelöst') && !document.getElementById('toast').classList.contains('error'),
+    null, { timeout: 8000 }).then(() => true, () => false), 'Leitung: Notfall ausgelöst mit Erfolgsmeldung');
+  check(await lp.waitForSelector('.sec-lage.sec-alert', { timeout: 8000 }).then(() => true, () => false) && await lp.locator('#lock-retry').count() === 0,
+    'Leitung: danach die Lage mit dem Notfall, kein Sperrbildschirm');
+  await lp.screenshot({ path: join(shots, 's61-notfall-leitung.png') });
+  await leserContext.close();
+  await sp.reload();
+  await sp.waitForSelector('.sidebar');
+  await sp.click('[data-page=security]');
+  await sp.waitForSelector('.sec-page .sec-lage');
+  await sp.waitForSelector('[data-emergency-off]', { timeout: 15000 });
+  await sp.click('[data-emergency-off]');
+  const beendet = () => document.getElementById('toast').textContent.includes('Notfallmodus beendet');
+  await Promise.race([sp.waitForSelector('#preview[open] #confirm-form'), sp.waitForFunction(beendet)]);
+  if (await sp.locator('#preview[open] #confirm-form').count()) await confirmPassword(sp, NEU);   // Bestätigung gilt 5 Minuten
+  await sp.waitForFunction(beendet);
   await secContext.close();
   await limited.close();
   await adminContext.close();

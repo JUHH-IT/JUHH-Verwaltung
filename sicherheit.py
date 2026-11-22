@@ -122,8 +122,11 @@ def notfall_aus(db, actor, geraet=''):
 def wartung(db, actor, an, text='', geraet=''):
     with db:
         db.execute('BEGIN IMMEDIATE')
-        aktiv = bool(_lesen(db, 'wartung'))
-        if an == aktiv:
+        aktiv = _lesen(db, 'wartung')
+        if an and aktiv:                          # läuft schon: nur den Hinweis ändern, Beginn und Auslöser bleiben
+            _schreiben(db, 'wartung', {**aktiv, 'text': ' '.join(str(text or '').split())[:300]})
+            return
+        if not an and not aktiv:
             return
         _schreiben(db, 'wartung', {'seit': _jetzt(), 'von': actor, 'text': ' '.join(str(text or '').split())[:300]} if an else None)
     ereignis(db, 'wartung_an' if an else 'wartung_aus', actor, geraet)

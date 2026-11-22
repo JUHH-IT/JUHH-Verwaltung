@@ -423,6 +423,14 @@ def _iso(t):
     return datetime.fromtimestamp(t).isoformat(timespec='seconds') if t else ''
 
 
+def _uhrzeit(iso):
+    """ISO-Zeitpunkt für Texte der Prüfung, z. B. „22.11.2026, 18:30 Uhr“."""
+    try:
+        return datetime.fromisoformat(str(iso)[:19]).strftime('%d.%m.%Y, %H:%M Uhr')
+    except ValueError:
+        return 'unbekannt'
+
+
 def einstellungen_speichern(db, daten, actor, eigene=None, geraet=''):
     """Einstellungen prüfen und speichern (nur genannte Felder). Schutz vor Aussperrung: die Bedrohungsliste lässt sich nicht
     einschalten, solange die eigene Adresse darauf steht und nicht unter „nie sperren“."""
@@ -726,7 +734,8 @@ def pruefung(db, lage, bericht, keycloak=False, https=False):
           'Alle aktiven Personen brauchen die Authenticator-App.' if keycloak and not ohne_app else
           f'{ohne_app} aktive Person(en) ohne Authenticator-Pflicht.' if keycloak else 'Erst mit Anmeldung über Keycloak möglich.', 'seite:users'),
         p('notzugang', 'Notzugang geschlossen', 'hinweis' if lage.get('notzugang') else 'ok',
-          'Der Notzugang (Passwort-Anmeldung der Verwaltung) ist gerade offen.' if lage.get('notzugang') else 'Passwort-Anmeldung der Verwaltung ist geschlossen.'),
+          f"Der Notzugang (Passwort-Anmeldung der Verwaltung) ist offen bis {_uhrzeit(lage['notzugang'].get('bis', ''))}." if lage.get('notzugang')
+          else 'Passwort-Anmeldung der Verwaltung ist geschlossen.'),
         p('firewall', 'Firewall aktiv', {'abweisen': 'ok', 'protokollieren': 'hinweis', 'aus': 'kritisch'}[e['modus']],
           {'abweisen': 'Angriffe werden abgewiesen' + ('.' if e['auto'] else ' – automatisches Sperren ist aus.'),
            'protokollieren': 'Die Firewall protokolliert nur und weist nichts ab.', 'aus': 'Die Firewall ist ausgeschaltet.'}[e['modus']], 'abwehr'),
