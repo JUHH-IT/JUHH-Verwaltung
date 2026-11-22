@@ -251,11 +251,15 @@ class ZusammenfuehrenTests(unittest.TestCase):
         self.assertEqual(doppelte.vorschau(self.s, a, b, True)['konflikte'], [])
 
     def test_wiedereintritt_kreisverband_und_beitragsfrei(self):
-        a = self.member('Erika', 'Muster', joined='2026-01-01', kv_joined='2026-01-01')
-        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2015-01-01', left_on='2018-12-31', dues_free='1', guest='1')
+        a = self.member('Erika', 'Muster', joined='2026-01-01')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2015-01-01', left_on='2018-12-31', kv_joined='2016-03-01',
+                        dues_free='1', guest='1')
         v = doppelte.vorschau(self.s, a, b)
-        self.assertNotIn('joined', v['neu'])                                               # Wiedereintritt: eigene Mitgliedschaft
+        self.assertEqual(v['neu'], {})                                                     # Wiedereintritt: nichts aus der alten Mitgliedschaft
         self.assertIn('endete vorher', v['hinweise'][0])
+        andersherum = doppelte.vorschau(self.s, b, a)                                      # die alte bleibt: ebenfalls ein Hinweis
+        self.assertIn('vermutlich ein Wiedereintritt', andersherum['hinweise'][0])
+        self.assertNotIn('joined', andersherum['neu'])
         labels = [u[0] for u in v['unterschiede']]
         self.assertIn('Beitragsfrei', labels)
         self.assertIn('Gastmitglied', labels)
