@@ -1,5 +1,5 @@
 // Browser-Durchlauf der Oberfläche mit erfundenen Daten (Playwright): die fachlichen Abläufe aller Seiten.
-// Aufruf: node tests/ui_smoke.mjs [Ordner für Bildschirmfotos]
+// Aufruf: node tests/ui_smoke.mjs [Ordner für Bildschirmfotos] – mit JU_DARSTELLUNG=glas:hell bzw. glas:dunkel im neuen Design (0.48)
 // Startet einen eigenen Server mit leerem Datenordner; berührt keine echten Daten. Anmeldung, Sperre, Handy und
 // Passwortbestätigung im Dialog prüft tests/ui_server.mjs.
 import { createRequire } from 'node:module';
@@ -55,6 +55,9 @@ try {
   const origin = `http://127.0.0.1:${port}`;
   browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  // ganzer Durchlauf in einer anderen Darstellung (0.48), z. B. JU_DARSTELLUNG=glas:dunkel – sonst klassisch wie bisher
+  const [design, farbe] = (process.env.JU_DARSTELLUNG || '').split(':');
+  if (design) await context.addInitScript((wahl) => { try { localStorage.setItem('ju-finanzen-darstellung', JSON.stringify(wahl)); } catch { /* E-Mail-Vorschau: abgeschotteter Rahmen */ } }, { design, farbe: farbe || 'hell' });
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: `http://127.0.0.1:${port}` });
   // Kartenkacheln (OpenStreetMap) nie wirklich laden: leeres Bild; jede andere Anfrage nach außen ist ein Fehler
   const outside = [], tiles = [];
@@ -1601,6 +1604,39 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('[data-page=bank]');
   await shot('08-mobil');
   await page.setViewportSize({ width: 1440, height: 900 });
+
+  // 0.48: Darstellung „Glas“ mit den Daten dieses Durchlaufs – hell und dunkel, danach zurück zu Klassisch
+  const glassShots = async (prefix) => {
+    for (const [id, name] of [['overview', 'start'], ['mv-overview', 'mitglieder-ueberblick'], ['members', 'mitglieder'], ['bank', 'kontoauszuege'],
+      ['budgets', 'haushalt'], ['auswertung', 'auswertung'], ['settings', 'einstellungen']]) {
+      await page.click(`[data-page=${id}]`);
+      await page.waitForTimeout(400);
+      await shot(`${prefix}-${name}`);
+    }
+    await page.click('[data-page=members]');
+    await page.click('main [data-liste=aktiv]');
+    await page.locator('main [data-member]').first().click();
+    await page.waitForSelector('#modal .akte-head');
+    await shot(`${prefix}-akte`);
+    await dialogClose();
+  };
+  await page.click('#darstellung');
+  await page.waitForSelector('#modal [data-darstellung]');
+  await page.click('#modal .ds-option:has(input[value=glas])');
+  await page.click('#modal .ds-farben label:has(input[value=hell])');
+  check(await page.evaluate(() => document.documentElement.dataset.design === 'glas' && document.documentElement.dataset.farbe === 'hell'), 'Darstellung: Glas hell');
+  await shot('70-glas-darstellung');
+  await dialogClose();
+  await glassShots('71-glas');
+  await page.click('#darstellung');
+  await page.click('#modal .ds-farben label:has(input[value=dunkel])');
+  check(await page.evaluate(() => document.documentElement.dataset.farbe === 'dunkel'), 'Darstellung: Glas dunkel');
+  await dialogClose();
+  await glassShots('72-glas-dunkel');
+  await page.click('#darstellung');
+  await page.click('#modal .ds-option:has(input[value=klassisch])');
+  check(await page.evaluate(() => !document.documentElement.hasAttribute('data-design')), 'Darstellung: zurück zu Klassisch');
+  await dialogClose();
 
   // Abmelden und wieder anmelden
   await page.click('#logout');

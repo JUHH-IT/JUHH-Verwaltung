@@ -96,3 +96,5 @@ jobs:
           }
           lauf ui_smoke
           lauf ui_server
+          # fachliche Abläufe noch einmal in der Darstellung „Glas“ dunkel (0.48) – Bausteine dürfen dort nichts verdecken
+          JU_DARSTELLUNG=glas:dunkel lauf ui_smoke

@@ -1,0 +1,257 @@
+/* JU Hamburg Finanzen – Darstellung „Glas“ (0.48, Konzept „Glas & Hafen“, Wunsch Lennert Gust 22.11.2026).
+   Liegt über app.css und gilt nur mit html[data-design="glas"] (darstellung.js); hell und dunkel über html[data-farbe].
+   Ohne die Attribute bleibt alles klassisch – app.css ändert sich dafür nicht.
+   Regeln: Farben nur über die Variablen (unten je hell/dunkel). Unschärfe nur auf schwebenden Ebenen (Seitenleiste, Kopfzeile,
+   Dialoge, Auswahlleiste, Meldung, Anmeldung) – Flächen auf dem Grund sind durchscheinend ohne Unschärfe (gleiches Bild, weniger
+   Rechenarbeit). Wo app.css auf --navy/--danger als Hintergrund mit weißer Schrift setzt, steht hier ein fester Farbwert, weil
+   --navy im Dunkeln hell wird (Schriftfarbe). Nur für den Bildschirm: Drucken bleibt klassisch. */
+@media screen {
+
+/* ---------- Werte: hell ---------- */
+[data-design="glas"] {
+  --navy: #043770; --navy-700: #0a2a52; --navy-50: rgba(4, 55, 112, 0.08);
+  --teal: #087f8c; --teal-700: #066a75; --teal-ink: #0b5560; --teal-50: rgba(8, 127, 140, 0.11); --teal-100: rgba(8, 127, 140, 0.3);
+  --ink: #0b1a30; --ink-2: #33445a; --muted: #55667c;
+  --line: rgba(11, 26, 48, 0.1); --line-2: rgba(11, 26, 48, 0.065); --field: rgba(11, 26, 48, 0.16);
+  --bg: #edf1f6; --surface: #ffffff; --surface-2: rgba(255, 255, 255, 0.55);
+  --orange: #c2620a; --orange-ink: #8a4a06; --orange-50: rgba(194, 98, 10, 0.11);
+  --danger: #b4233a; --danger-50: rgba(180, 35, 58, 0.09);
+  --radius: 14px; --radius-lg: 22px;
+  --shadow: 0 1px 2px rgba(11, 26, 48, 0.04), 0 14px 34px -18px rgba(11, 26, 48, 0.24);
+  --shadow-float: 0 2px 6px rgba(11, 26, 48, 0.06), 0 30px 60px -20px rgba(11, 26, 48, 0.42);
+  --focus: 0 0 0 3px rgba(8, 127, 140, 0.35);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --g-titel: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --g-flaeche: rgba(255, 255, 255, 0.6);
+  --g-duenn: rgba(255, 255, 255, 0.42);
+  --g-dicht: rgba(250, 252, 255, 0.86);
+  --g-rand: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  --g-unschaerfe: blur(26px) saturate(170%);
+  --g-linse: radial-gradient(130% 150% at 30% 0%, #ffffff, rgba(255, 255, 255, 0.7) 62%);
+  --g-linse-schatten: inset 0 1px 0 #ffffff, inset 0 -1px 2px rgba(11, 26, 48, 0.07), 0 5px 14px -6px rgba(11, 26, 48, 0.3);
+  --g-hover: rgba(255, 255, 255, 0.6);
+  --g-knopf: rgba(255, 255, 255, 0.72);
+  --g-knopf-rand: rgba(255, 255, 255, 0.85);
+  --g-primaer: linear-gradient(180deg, #0b4d94, #043770);
+  --g-primaer-hover: linear-gradient(180deg, #0e59a9, #064386);
+  --g-primaer-schatten: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 8px 18px -8px rgba(4, 55, 112, 0.6);
+  --g-kopf: rgba(255, 255, 255, 0.62);
+  --g-grund:
+    radial-gradient(62vw 62vw at -8% -14%, rgba(126, 163, 222, 0.55), rgba(126, 163, 222, 0) 62%),
+    radial-gradient(54vw 54vw at 108% 34%, rgba(122, 200, 207, 0.45), rgba(122, 200, 207, 0) 62%),
+    radial-gradient(50vw 40vw at 46% 114%, rgba(236, 206, 166, 0.55), rgba(236, 206, 166, 0) 64%),
+    #edf1f6;
+  color-scheme: light;
+}
+
+/* ---------- Werte: dunkel („Hafen bei Nacht“) ---------- */
+[data-design="glas"][data-farbe="dunkel"] {
+  --navy: #9cc3f5; --navy-700: #c4dbfa; --navy-50: rgba(156, 195, 245, 0.13);
+  --teal: #1fb0bd; --teal-700: #3cc2cd; --teal-ink: #7fdde6; --teal-50: rgba(44, 194, 207, 0.14); --teal-100: rgba(44, 194, 207, 0.38);
+  --ink: #eef3fa; --ink-2: #c6d1de; --muted: #9eafc4;
+  --line: rgba(255, 255, 255, 0.1); --line-2: rgba(255, 255, 255, 0.065); --field: rgba(255, 255, 255, 0.18);
+  --bg: #060d1b; --surface: #111c30; --surface-2: rgba(255, 255, 255, 0.05);
+  --orange: #e3923a; --orange-ink: #f3c37a; --orange-50: rgba(227, 146, 58, 0.15);
+  --danger: #ff8fa0; --danger-50: rgba(255, 120, 140, 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -20px rgba(0, 0, 0, 0.7);
+  --shadow-float: 0 30px 70px -20px rgba(0, 0, 0, 0.8);
+  --focus: 0 0 0 3px rgba(44, 194, 207, 0.5);
+  --aw-x: #7d8da3;
+  --g-flaeche: rgba(255, 255, 255, 0.055);
+  --g-duenn: rgba(255, 255, 255, 0.045);
+  --g-dicht: rgba(15, 25, 43, 0.88);
+  --g-rand: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  --g-linse: radial-gradient(130% 150% at 30% 0%, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.1) 62%);
+  --g-linse-schatten: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 6px 16px -6px rgba(0, 0, 0, 0.7);
+  --g-hover: rgba(255, 255, 255, 0.07);
+  --g-knopf: rgba(255, 255, 255, 0.08);
+  --g-knopf-rand: rgba(255, 255, 255, 0.1);
+  --g-primaer: linear-gradient(180deg, #11939f, #076f7a);
+  --g-primaer-hover: linear-gradient(180deg, #15a3b0, #087c88);
+  --g-primaer-schatten: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 24px -8px rgba(20, 167, 180, 0.5);
+  --g-kopf: rgba(9, 17, 32, 0.72);
+  --g-grund:
+    radial-gradient(64vw 64vw at -10% -16%, rgba(14, 58, 115, 0.9), rgba(14, 58, 115, 0) 62%),
+    radial-gradient(56vw 56vw at 110% 30%, rgba(11, 107, 116, 0.55), rgba(11, 107, 116, 0) 62%),
+    radial-gradient(52vw 40vw at 44% 114%, rgba(106, 67, 16, 0.42), rgba(106, 67, 16, 0) 64%),
+    #060d1b;
+  color-scheme: dark;
+}
+
+/* ---------- Grundlagen ---------- */
+[data-design="glas"] body { background: var(--g-grund); background-attachment: fixed; }
+[data-design="glas"] h1 { font-family: var(--g-titel); font-size: 32px; letter-spacing: -0.025em; line-height: 1.12; }
+[data-design="glas"] h2 { letter-spacing: -0.005em; }
+[data-design="glas"] .card .value, [data-design="glas"] .sec-stats dd, [data-design="glas"] .kv-tile .rest { font-family: var(--g-titel); letter-spacing: -0.02em; }
+
+/* ---------- Gerüst: schwebende Seitenleiste aus Glas ---------- */
+[data-design="glas"] .sidebar {
+  --side-ink: var(--ink-2); --side-muted: var(--muted); --side-line: var(--line); --side-field: var(--g-knopf);
+  flex-basis: 252px; margin: 12px 0 12px 12px; top: 12px; height: calc(100vh - 24px); padding: 22px 14px 14px; border-radius: 26px;
+  background: var(--g-flaeche); -webkit-backdrop-filter: var(--g-unschaerfe); backdrop-filter: var(--g-unschaerfe);
+  box-shadow: var(--g-rand), var(--shadow);
+}
+[data-design="glas"] .sidebar .logo { filter: none; }
+[data-design="glas"][data-farbe="dunkel"] .sidebar .logo { filter: brightness(0) invert(1); }
+[data-design="glas"] .sidebar :focus-visible { box-shadow: var(--focus); }
+[data-design="glas"] .year-select select { border: 0; border-radius: 999px; padding: 0 12px; background: var(--g-knopf); color: var(--ink); box-shadow: var(--g-rand); }
+[data-design="glas"] .nav button { border-radius: 12px; color: var(--ink-2); }
+[data-design="glas"] .nav button svg { color: var(--muted); }
+[data-design="glas"] .nav button:hover { background: var(--g-hover); color: var(--ink); }
+[data-design="glas"] .nav button[aria-current="page"] { background: var(--g-linse); box-shadow: var(--g-linse-schatten); color: var(--ink); }
+[data-design="glas"] .nav button[aria-current="page"] svg { color: var(--teal); }
+[data-design="glas"] .nav .count, [data-design="glas"] .nav button[aria-current="page"] .count { background: #087f8c; color: #fff; }
+[data-design="glas"] .sidebar-foot { border-top-color: var(--line); }
+[data-design="glas"] .sidebar-foot .user { color: var(--ink); }
+[data-design="glas"] .sidebar-foot .avatar { background: linear-gradient(160deg, #0b4d94, #087f8c); color: #fff; }
+[data-design="glas"] .sidebar-foot .link-button { color: var(--teal-ink); }
+[data-design="glas"] .sidebar-foot .btn { background: var(--g-knopf); border-color: var(--g-knopf-rand); color: var(--ink); }
+[data-design="glas"] .main { padding: 28px 36px 64px; }
+
+/* ---------- Flächen ---------- */
+[data-design="glas"] .panel, [data-design="glas"] .card, [data-design="glas"] .task-card, [data-design="glas"] .kv-tile,
+[data-design="glas"] .detail-card, [data-design="glas"] .transfer-card, [data-design="glas"] .approval-card, [data-design="glas"] .map-frame,
+[data-design="glas"] .akte-card {
+  background: var(--g-flaeche); box-shadow: var(--g-rand), var(--shadow);
+}
+[data-design="glas"] .detail-card { border-radius: var(--radius-lg); }
+[data-design="glas"] .transfer-card.done, [data-design="glas"] .approval-card.done { background: var(--surface-2); }
+[data-design="glas"] .akte-card { box-shadow: var(--g-rand); }
+[data-design="glas"] .hero {
+  background: linear-gradient(135deg, #0b4d94, #043770 62%, #062f63); color: #fff; border-radius: 24px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 20px 40px -18px rgba(4, 55, 112, 0.6);
+}
+[data-design="glas"] .hero .title { color: #fff; }
+[data-design="glas"] .hero .sub { color: #c9daee; }
+[data-design="glas"] .hero .btn { background: #fff; border-color: #fff; color: #043770; box-shadow: none; }
+[data-design="glas"] .hero.done { background: var(--teal-50); color: var(--teal-ink); box-shadow: var(--g-rand); }
+[data-design="glas"] .hero.done .title, [data-design="glas"] .hero.done .sub { color: var(--teal-ink); }
+[data-design="glas"] .notice { background: var(--navy-50); color: var(--ink-2); border-radius: 14px; }
+[data-design="glas"] .notice.warn { background: var(--orange-50); color: var(--orange-ink); }
+[data-design="glas"] .reference { color: var(--ink-2); }
+[data-design="glas"] .suggestion { background: var(--teal-50); border-color: var(--teal-100); }
+[data-design="glas"] .suggestion .what { color: var(--ink-2); }
+[data-design="glas"] .park label { color: var(--orange-ink); }
+[data-design="glas"] .hh-table tr.row-total td { background: var(--navy-50); }
+[data-design="glas"] .hh-table tr.row-flag td { background: var(--orange-50); }
+[data-design="glas"] .meter { background: var(--line-2); }
+[data-design="glas"] .meter > span, [data-design="glas"] .kv-bar > span { background: linear-gradient(90deg, #087f8c, #19a7b5); }
+[data-design="glas"] .meter > span.warn, [data-design="glas"] .kv-bar > span.warn { background: linear-gradient(90deg, #c2620a, #e39a4a); }
+[data-design="glas"] .meter.navy > span { background: linear-gradient(90deg, #0b4d94, #3f78c4); }
+
+/* ---------- Schaltflächen ---------- */
+[data-design="glas"] .btn {
+  border-radius: 999px; background: var(--g-knopf); border-color: var(--g-knopf-rand);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(11, 26, 48, 0.06);
+}
+[data-design="glas"][data-farbe="dunkel"] .btn { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); }
+[data-design="glas"] .btn:hover { background: var(--g-hover); }
+[data-design="glas"] .btn.primary, [data-design="glas"] .btn.dark {
+  background: var(--g-primaer); border-color: transparent; color: #fff; box-shadow: var(--g-primaer-schatten);
+}
+[data-design="glas"] .btn.dark { background: linear-gradient(180deg, #0b4d94, #043770); }
+[data-design="glas"] .btn.primary:hover { background: var(--g-primaer-hover); color: #fff; }
+[data-design="glas"] .btn.dark:hover { background: linear-gradient(180deg, #0e59a9, #064386); color: #fff; }
+[data-design="glas"] .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
+[data-design="glas"] .btn.ghost:hover { background: var(--g-hover); }
+[data-design="glas"] .btn.warn { background: var(--orange-50); border-color: transparent; color: var(--orange-ink); box-shadow: none; }
+[data-design="glas"] .btn.sec-danger { background: #b4233a; border-color: #b4233a; color: #fff; }
+[data-design="glas"] .btn.sec-danger:hover:not(:disabled) { background: #9d1f33; border-color: #9d1f33; filter: none; color: #fff; }
+[data-design="glas"] .btn .count { background: #087f8c; color: #fff; }
+[data-design="glas"] .btn:disabled { box-shadow: none; }
+
+/* ---------- Formulare ---------- */
+[data-design="glas"] input, [data-design="glas"] select, [data-design="glas"] textarea { border-radius: 12px; }
+[data-design="glas"] .search { border-radius: 999px; }
+[data-design="glas"] .account-button { border-radius: 12px; }
+[data-design="glas"] .kv-chip { background: var(--g-knopf); border-color: var(--g-knopf-rand); }
+[data-design="glas"] .kv-chip[aria-pressed="true"] { background: linear-gradient(180deg, #0b4d94, #043770); border-color: transparent; color: #fff; }
+
+/* ---------- Reiter und Umschalter als Glasleiste mit Linse ---------- */
+[data-design="glas"] .tabs {
+  gap: 2px; width: fit-content; max-width: 100%; padding: 4px; border-bottom: 0; border-radius: 22px;
+  background: var(--g-duenn); box-shadow: var(--g-rand);
+}
+[data-design="glas"] .tabs button { margin: 0; padding: 0 16px; min-height: 36px; border-bottom: 0; border-radius: 999px; }
+[data-design="glas"] .tabs button:hover { background: var(--g-hover); color: var(--ink); }
+[data-design="glas"] .tabs button[aria-selected="true"] { background: var(--g-linse); box-shadow: var(--g-linse-schatten); color: var(--ink); }
+[data-design="glas"] .tabs button[aria-selected="true"] .n { color: var(--ink-2); }
+[data-design="glas"] .segmented, [data-design="glas"] .ds-seg { background: var(--g-duenn); border-radius: 999px; box-shadow: var(--g-rand); }
+[data-design="glas"] .segmented button, [data-design="glas"] .ds-seg span { border-radius: 999px; }
+[data-design="glas"] .segmented button[aria-pressed="true"], [data-design="glas"] .ds-seg input:checked + span {
+  background: var(--g-linse); box-shadow: var(--g-linse-schatten); color: var(--ink);
+}
+
+/* ---------- Buchungsplatz und Listen ---------- */
+[data-design="glas"] .bank-item { background: var(--g-flaeche); border-color: var(--line); border-radius: 16px; }
+[data-design="glas"] .bank-item:hover { border-color: var(--field); }
+[data-design="glas"] .bank-item[aria-current="true"] {
+  border: 1px solid transparent; padding: 12px 14px; background: var(--g-linse); box-shadow: var(--g-linse-schatten), 0 0 0 2px var(--teal);
+}
+[data-design="glas"] tr.clickable:hover td { background: var(--g-hover); }
+
+/* ---------- Mitglieder: Auswahlleiste schwebt als Glas, Akte ---------- */
+[data-design="glas"] .ml-bar {
+  background: var(--g-dicht); color: var(--ink); border-radius: 22px;
+  -webkit-backdrop-filter: var(--g-unschaerfe); backdrop-filter: var(--g-unschaerfe); box-shadow: var(--g-rand), var(--shadow-float);
+}
+[data-design="glas"] .ml-bar > .small { color: var(--muted); }
+[data-design="glas"] .ml-bar .btn.ghost { color: var(--ink); }
+[data-design="glas"] .ml-bar .btn.ghost:hover { background: var(--g-hover); }
+[data-design="glas"] .akte-avatar { background: linear-gradient(160deg, #2f6fb8, #043770); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+
+/* ---------- Dialoge, Meldung, Anmeldung ---------- */
+[data-design="glas"] dialog#modal, [data-design="glas"] dialog#preview {
+  background: var(--g-dicht); color: var(--ink); border-radius: 28px;
+  -webkit-backdrop-filter: var(--g-unschaerfe); backdrop-filter: var(--g-unschaerfe); box-shadow: var(--g-rand), var(--shadow-float);
+}
+[data-design="glas"] dialog#modal::backdrop, [data-design="glas"] dialog#preview::backdrop {
+  background: rgba(11, 26, 48, 0.22); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+[data-design="glas"][data-farbe="dunkel"] dialog#modal::backdrop, [data-design="glas"][data-farbe="dunkel"] dialog#preview::backdrop { background: rgba(0, 0, 0, 0.45); }
+[data-design="glas"] .dialog-head { border-bottom-color: var(--line-2); }
+[data-design="glas"] #toast {
+  background: rgba(11, 26, 48, 0.86); color: #fff; border-radius: 18px;
+  -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), var(--shadow-float);
+}
+[data-design="glas"][data-farbe="dunkel"] #toast { background: rgba(38, 52, 76, 0.92); }
+[data-design="glas"] #toast.error { background: rgba(180, 35, 58, 0.94); }
+[data-design="glas"] .login-card {
+  background: var(--g-dicht); border-color: transparent; border-radius: 28px;
+  -webkit-backdrop-filter: var(--g-unschaerfe); backdrop-filter: var(--g-unschaerfe); box-shadow: var(--g-rand), var(--shadow-float);
+}
+[data-design="glas"][data-farbe="dunkel"] .login > img { filter: brightness(0) invert(1); }
+
+/* ---------- Karte: Hinweise auf hellem Kartengrund bleiben dunkel beschriftet ---------- */
+[data-design="glas"][data-farbe="dunkel"] .leaflet-container { color: #0b1a30; }
+[data-design="glas"][data-farbe="dunkel"] .leaflet-tooltip.map-tip, [data-design="glas"][data-farbe="dunkel"] .leaflet-tooltip.map-area-label { color: #0b1a30; }
+[data-design="glas"][data-farbe="dunkel"] .map-tip-note { color: #55667c; }
+
+/* ---------- Kompakte Ansicht (bis 1100 px): Kopfzeile aus Glas, Seitenleiste als schwebendes Menü ---------- */
+html.compact[data-design="glas"] .topbar {
+  background: var(--g-kopf); border-bottom: 0; -webkit-backdrop-filter: var(--g-unschaerfe); backdrop-filter: var(--g-unschaerfe);
+  box-shadow: 0 1px 0 var(--line), 0 10px 30px -22px rgba(11, 26, 48, 0.5);
+}
+html.compact[data-design="glas"] .topbar-year { background: var(--navy-50); color: var(--navy); }
+html.compact[data-design="glas"] .sidebar {
+  position: fixed; top: 8px; bottom: 8px; left: 8px; height: auto; margin: 0; width: min(296px, calc(100vw - 48px)); border-radius: 24px;
+  background: var(--g-dicht); transform: translateX(calc(-100% - 16px));
+}
+html.compact[data-design="glas"] .menu-open .sidebar { transform: none; box-shadow: var(--g-rand), var(--shadow-float); }
+html.compact[data-design="glas"] .main { padding: 20px 20px 56px; }
+@media (max-width: 900px) {
+  [data-design="glas"] h1 { font-size: 26px; }
+  [data-design="glas"] .main { padding: 20px 16px 48px; }
+}
+@media (max-width: 640px) {
+  [data-design="glas"] dialog#modal, [data-design="glas"] dialog#modal.wide, [data-design="glas"] dialog#preview { border-radius: 0; }
+  [data-design="glas"] .dialog-head { background: var(--g-dicht); -webkit-backdrop-filter: var(--g-unschaerfe); backdrop-filter: var(--g-unschaerfe); }
+}
+/* Fokus mit der Tastatur immer sichtbar – die Glas-Schatten der Knöpfe, Reiter und Linsen dürfen ihn nicht verdecken */
+[data-design="glas"] :focus-visible, [data-design="glas"] .ds-seg input:focus-visible + span { box-shadow: var(--focus) !important; }
+@media (prefers-reduced-transparency: reduce) {
+  [data-design="glas"] { --g-flaeche: var(--surface); --g-dicht: var(--surface); --g-duenn: var(--surface-2); --g-kopf: var(--surface); }
+}
+
+}

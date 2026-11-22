@@ -165,6 +165,14 @@ Links die Seitenleiste mit Haushaltsjahr und den Bereichen (ab 0.31 nach Aufgabe
 
 Tastatur im Buchungsplatz: **J/K** (oder Pfeiltasten) nächster/vorheriger Umsatz, **Enter** verbuchen, **P** parken, **/** Suche.
 
+### Darstellung: Klassisch oder Glas (ab 0.48)
+
+Auf der Anmeldeseite (unter „Mit JU-Konto anmelden“ bzw. „Anmelden“) und jederzeit über **Darstellung** unten in der Seitenleiste:
+- **Klassisch** – das bisherige Design, unverändert.
+- **Glas** – das neue Design: Seitenleiste, Kopfzeile, Dialoge und die Auswahlleiste schweben als Glas über einem ruhigen Grund, Reiter als Glasleiste mit hervorgehobener Auswahl. **Hell**, **Dunkel** oder **Automatisch** (folgt der Einstellung des Geräts).
+
+Die Wahl gilt sofort – auf der Anmeldeseite schon vor dem Anmelden – und bleibt in diesem Browser gespeichert (auf jedem Gerät einmal wählen; nichts davon liegt auf dem Server). Ohne Wahl gilt Klassisch. Drucken und PDFs sehen in beiden Darstellungen gleich aus. Die Anmeldeseite von Keycloak (Benutzername, Passwort, Code) bleibt im bisherigen Aussehen. Wer im System weniger Transparenz eingestellt hat, bekommt im Glas-Design undurchsichtige Flächen.
+
 ## Sicherung
 
 - Der Server legt einmal täglich eine Sicherung unter `Sicherungen/Automatisch` an (die letzten 30 Tage bleiben erhalten).

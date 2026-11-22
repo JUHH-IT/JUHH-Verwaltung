@@ -856,7 +856,7 @@ button.map-kv:hover { background: var(--surface-2); }
   .wr-page td.wr-ov { padding-left: 16px; }
   .wr-wide { display: none; }
   .wr-page .sub.wr-narrow { display: block; }
-
+}   /* fehlte bis 0.47: dadurch galten die Diagramme der Auswertung (unten) nur bis 640 px Breite */
 
 /* ---------- 0.39: Auswertung – Diagramme aus HTML/CSS (Werte stehen als Text am Balken) ---------- */
 :root {
@@ -944,3 +944,35 @@ table.aw-kv th, table.aw-kv td { padding-left: 8px; padding-right: 8px; }
   table.aw-ov td:nth-child(2) { grid-column: 1 / -1; margin-top: -4px; font-size: 13px; color: var(--muted); }
   table.aw-ov td[data-label]::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); }
 }
+
+/* ---------- Darstellung wählen (0.48): beim Anmelden und im Dialog „Darstellung“ (darstellung.js) ---------- */
+.ds-pick { display: flex; flex-direction: column; gap: 14px; padding-top: 16px; border-top: 1px solid var(--line-2); text-align: left; }
+.ds-pick fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.ds-pick fieldset[hidden] { display: none; }
+.ds-pick legend { padding: 0; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.ds-designs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ds-option { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--field); border-radius: 12px;
+  background: var(--surface); font-size: 13px; color: var(--ink); cursor: pointer; }
+.ds-option:has(input:checked) { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
+.ds-option:has(input:focus-visible) { box-shadow: var(--focus); }
+.ds-option input, .ds-seg input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.ds-option strong { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+.ds-option .sub { display: block; color: var(--muted); font-size: 12px; }
+.ds-thumb { display: block; position: relative; height: 56px; border-radius: 8px; overflow: hidden; }
+.ds-thumb i, .ds-thumb b { position: absolute; display: block; }
+.ds-klassisch { background: #f4f6f9; box-shadow: inset 0 0 0 1px #e3e8ef; }
+.ds-klassisch i { left: 0; top: 0; bottom: 0; width: 26%; background: #0a2a52; }
+.ds-klassisch b { left: 33%; right: 8%; height: 14px; top: 9px; background: #fff; border: 1px solid #e3e8ef; border-radius: 3px; }
+.ds-glas { background: radial-gradient(circle at 8% 0%, #b9cdec 0, transparent 60%), radial-gradient(circle at 100% 70%, #bfe5e8 0, transparent 60%),
+  linear-gradient(135deg, #edf1f6 0 58%, #0b1526 58% 100%); }
+.ds-glas i { left: 6%; top: 10%; bottom: 10%; width: 22%; border-radius: 6px; background: rgba(255, 255, 255, 0.72); box-shadow: inset 0 1px 0 #fff, 0 4px 10px -4px rgba(11, 26, 48, 0.3); }
+.ds-glas b { left: 34%; right: 8%; height: 14px; top: 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.62); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9); }
+.ds-thumb b + b { top: 31px; right: 30%; }
+.ds-seg { display: inline-flex; background: #e9eef4; border-radius: var(--radius); padding: 4px; max-width: 100%; }
+.ds-seg label { position: relative; flex: none; }
+.ds-seg span { display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border-radius: 6px; font-size: 14px; font-weight: 500; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.ds-seg input:checked + span { background: var(--surface); color: var(--navy); font-weight: 600; box-shadow: 0 1px 2px rgba(20, 36, 58, 0.12); }
+.ds-seg input:focus-visible + span { box-shadow: var(--focus); }
+.sidebar-foot .ds-open { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; }
+.dialog-body > .ds-pick { border-top: 0; padding-top: 0; }   /* im Dialog trennt schon der Kopf */
+@media (max-width: 380px) { .ds-seg span { padding: 0 9px; } }
