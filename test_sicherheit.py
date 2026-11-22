@@ -33,7 +33,9 @@ class SicherheitTests(unittest.TestCase):
         sicherheit.wartung(self.db, 'Erste', True, 'Update')
         self.assertEqual((sicherheit.sperre(self.db)['art'], sicherheit.sperre(self.db)['text']), ('wartung', 'Update'))
         vorher = sicherheit.sperre(self.db)
-        sicherheit.wartung(self.db, 'Zweite', True, '  Update   bis 18 Uhr ')                  # läuft schon: nur der Hinweis ändert sich
+        with self.assertRaisesRegex(ValueError, 'läuft bereits'):                           # veralteter Dialog „einschalten“ überschreibt nichts
+            sicherheit.wartung(self.db, 'Zweite', True, 'anderer Text')
+        sicherheit.wartung(self.db, 'Zweite', True, '  Update   bis 18 Uhr ', nur_text=True)     # läuft schon: nur der Hinweis ändert sich
         self.assertEqual((sicherheit.sperre(self.db)['text'], sicherheit.sperre(self.db)['seit'], sicherheit.sperre(self.db)['von']),
                          ('Update bis 18 Uhr', vorher['seit'], vorher['von']))
         self.assertEqual(sum(1 for r in sicherheit.ereignisse(self.db) if r['art'] == 'wartung_an'), 1)
@@ -205,6 +207,8 @@ class SicherheitHttpTests(unittest.TestCase):
         self.assertEqual(self.get(vorsitz, '/api/data?year=2026')[0], 503)
         self.assertEqual(self.post(self.chefin, '/api/mail-send', {'ids': []})[0] != 503, True)   # Wartung hält den Versand nicht an
         self.post(self.chefin, '/api/wartung', {'an': False})
+        self.assertEqual(self.get(vorsitz, '/api/data?year=2026')[0], 200)
+        self.assertEqual(self.post(self.chefin, '/api/wartung', {'an': True, 'nur_text': True, 'text': 'alt'})[0], 400)   # nie ein stiller Neustart
         self.assertEqual(self.get(vorsitz, '/api/data?year=2026')[0], 200)
 
     def test_sitzungen_sperren_und_verweigert(self):

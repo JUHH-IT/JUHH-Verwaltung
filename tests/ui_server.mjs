@@ -679,7 +679,8 @@ con.commit()`, join(data, 'finanzen.sqlite3')]);
     .then(() => true, () => false);
   await lp.waitForTimeout(1500);
   check(lageNotfall && await lp.locator('#lock-retry').count() === 0 && !(await lp.getAttribute('#toast', 'class') || '').includes('error')
-    && await lp.locator('.sec-page [data-tab]').count() === 1, 'Leitung: danach die Lage mit dem Notfall – kein Sperrbildschirm, keine Fehlermeldung, nur die Übersicht');
+    && await lp.locator('.sec-page [data-tab]').count() === 1 && await lp.locator('.sec-page [data-ziel="abwehr"], .sec-page [data-ziel="protokoll"]').count() === 0,
+    'Leitung: danach die Lage mit dem Notfall – kein Sperrbildschirm, keine Fehlermeldung, nur die Übersicht ohne Sprünge zu anderen Reitern');
   await lp.screenshot({ path: join(shots, 's61-notfall-leitung.png') });
   await leserContext.close();
   await sp.reload();

@@ -121,15 +121,17 @@ def notfall_aus(db, actor, geraet=''):
 
 
 def wartung(db, actor, an, text='', geraet='', nur_text=False):
-    """Wartung ein- oder ausschalten. Läuft sie schon, ändert `an` nur den Hinweis (Beginn und Auslöser bleiben); `nur_text` ändert nie
-    den Zustand – ist die Wartung inzwischen beendet, ist das ein Fehler statt eines stillen Neustarts (veralteter Dialog)."""
+    """Wartung ein- oder ausschalten bzw. mit nur_text den Hinweis einer laufenden Wartung ändern (Beginn und Auslöser bleiben).
+    Veraltete Dialoge ändern nie still den Zustand: `nur_text` ohne laufende Wartung und `an` bei schon laufender Wartung sind Fehler."""
     text = ' '.join(str(text or '').split())[:300]
     with db:
         db.execute('BEGIN IMMEDIATE')
         aktiv = _lesen(db, 'wartung')
         if nur_text and not aktiv:
             raise ValueError('Die Wartung läuft nicht mehr – der Hinweis wurde nicht gespeichert.')
-        if (an or nur_text) and aktiv:
+        if an and aktiv and not nur_text:
+            raise ValueError('Die Wartung läuft bereits – den Hinweis über „Wartung“ ändern.')
+        if nur_text and aktiv:
             if aktiv.get('text', '') == text:
                 return
             _schreiben(db, 'wartung', {**aktiv, 'text': text})

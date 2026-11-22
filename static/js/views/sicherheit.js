@@ -109,10 +109,12 @@ function lage(l, pruefung) {
 const ZIEL = { abwehr: 'Zur Abwehr', zugaenge: 'Zugänge ansehen', server: 'Ansehen', 'seite:users': 'Benutzer & Rollen' };
 const AKTION = { bedrohungsliste: ['Jetzt laden', 'data-fw-list'], dateipruefung: ['Jetzt prüfen', 'data-check'] };   // direkt hier, mit „ändern“
 
+let gesperrtAnsicht = false;   // Lesende während einer Sperre: nur die Übersicht – keine Sprünge zu anderen Reitern (gesetzt beim Zeichnen)
+
 function erreichbar(ziel) {
   if (!ziel) return false;
-  if (ziel.startsWith('seite:')) return can('verwaltung');
-  return ziel === 'server' || tabs().some(([id]) => id === ziel);
+  if (ziel.startsWith('seite:')) return can('verwaltung') && !gesperrtAnsicht;
+  return ziel === 'server' || (!gesperrtAnsicht && tabs().some(([id]) => id === ziel));
 }
 
 function zuTun(pruefung) {
@@ -165,7 +167,7 @@ function verlauf(a) {
       <div class="sec-axis" aria-hidden="true">${[0, 6, 12, 18].map((i) => html`<span style="grid-column:${i + 1} / span 5">${hours[i].stunde} Uhr</span>`)}<span class="now">jetzt</span></div>`
       : html`<p class="muted">Keine auffälligen Anfragen in den letzten 24 Stunden.</p>`}
     <p class="small sec-arten">${n(a.treffer_gesamt)} Treffer: ${n(t.falle)} Fallen · ${n(t.muster)} Angriffsmuster · ${n(t.werkzeug)} Werkzeuge · ${n(t.fehler)} Fehlerbremse.
-      ${mehrzahl(a.sperren, 'Adresse', 'Adressen')} automatisch gesperrt. <button type="button" class="link-button" data-ziel="abwehr">Zur Abwehr</button></p>
+      ${mehrzahl(a.sperren, 'Adresse', 'Adressen')} automatisch gesperrt. ${erreichbar('abwehr') ? html`<button type="button" class="link-button" data-ziel="abwehr">Zur Abwehr</button>` : ''}</p>
     ${busy.length ? html`<details class="sec-details"><summary>Als Tabelle</summary>
       ${table(['Stunde', { label: 'Treffer', className: 'num' }, { label: 'Abgewiesen', className: 'num' }, { label: 'Gesperrt', className: 'num' }], busy.map((h) => html`<tr>
         <td>${h.stunde} Uhr</td><td class="num">${n(h.treffer)}</td><td class="num">${n(h.abgewiesen)}</td><td class="num">${n(h.sperren)}</td></tr>`))}</details>` : ''}
@@ -277,7 +279,13 @@ function wartungDialog(sperre, reload) {
         : html`<button type="submit" class="btn primary">Wartung einschalten</button>`}</div></form>`);
   const form = el.querySelector('#sec-maintenance');
   const senden = (einschalten, meldung, nurText = false) => safe(async () => {
-    await api('/api/wartung', { an: einschalten, text: form.elements.text.value.trim(), nur_text: nurText });
+    try {
+      await api('/api/wartung', { an: einschalten, text: form.elements.text.value.trim(), nur_text: nurText });
+    } catch (e) {   // z. B. inzwischen beendet oder schon gestartet: Dialog zu, Seite zeigt den aktuellen Zustand
+      el.close();
+      await reload();
+      throw e;
+    }
     el.close();
     toast(meldung);
     await reload();
@@ -573,6 +581,7 @@ export function sicherheit(main) {
   return safe(async () => {
     const r = await load();
     if (id !== loads || store.page !== 'security' || !main.isConnected) return;   // inzwischen anderer Reiter oder andere Seite
+    gesperrtAnsicht = Boolean(r.gesperrt);
     const views = { uebersicht: () => uebersicht(r), abwehr: () => firewall(r.schutz), zugaenge: () => sitzungen(r.verwaltung), protokoll: () => ereignisse(r.ereignisse) };
     mount(main, html`<div class="page sec-page">${pageHead('Verwaltung', 'Sicherheit', kopf(r.lage.sperre))}${reiterLeiste(r.gesperrt)}${views[tab]()}</div>`);
     bind(main, reload, r);

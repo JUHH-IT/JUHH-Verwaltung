@@ -716,7 +716,7 @@ def serverschutz(pfad=None, jetzt=None):
 
 # ---- Konfigurationsprüfung ----
 def pruefung(db, lage, bericht, keycloak=False, https=False):
-    """Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel'}.
+    """Konfigurationsprüfung für die Übersicht: Liste aus {'id', 'titel', 'stand' ok|hinweis|kritisch, 'detail', 'ziel', 'aktion'}.
     `lage` = sicherheit.lagebild, `bericht` = serverschutz(); `ziel` = Bereich der Seite Sicherheit
     (abwehr, zugaenge, server = Karte „Server & Daten“ der Übersicht) bzw. 'seite:<Seite>'."""
     e, liste, d = einstellungen(db), liste_info(db), lage.get('dateipruefung') or {}
