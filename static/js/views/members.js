@@ -9,12 +9,13 @@ import { html, mount, raw } from '../html.js';
 import { eur, signed, date, dateTime, weekdayDate, toInput, todayIso } from '../format.js';
 import { store, refresh, kvName, go, can } from '../store.js';
 import { pageHead, icon, table, empty, dialog, overlay, safe, toast, badge, uploadProtected } from '../ui.js';
-import { kvOvFields, bindKvOv, ovById, ovLabel, ovsOf } from '../gliederung.js';
+import { kvOvFields, bindKvOv, setKvOv, ovById, ovLabel, ovsOf } from '../gliederung.js';
 import { invoiceBadge } from './invoices.js';
 import { mandateSection, bindMandateSection, activeMandate } from './sepa.js';
-import { matchMembers, sortName, addressLine } from '../member-picker.js';
+import { matchMembers, sortName, addressLine, pickMembers } from '../member-picker.js';
 import { listen, isActive, fehlt, anschriftVollstaendig, gespeichert, speichern } from '../mitglieder-listen.js';
 import { doppelteDialog } from './doppelte.js';
+import { ovAbgleichDialog } from './ov-abgleich.js';
 
 let search = '';
 let kvFilter = '';
@@ -43,10 +44,42 @@ const NOAUTO = 'autocapitalize="off" autocorrect="off" spellcheck="false"';
 export const balanceCell = (cents) => (cents < 0 ? html`<span class="over">${signed(cents)}</span>` : cents > 0 ? signed(cents) : html`<span class="muted">${eur(0)}</span>`);
 
 /** Anschrift im Mitgliedsdialog prüfen (ab 0.32): mit den amtlichen Hamburger Adressdaten auf diesem Rechner (adressen.py) – gibt es die
- * Straße, passt die PLZ? Nur ein Hinweis mit Vorschlägen; gespeichert werden kann immer (Mitglieder außerhalb Hamburgs, neue Straßen). */
-function bindAddressCheck(form) {
+ * Straße, passt die PLZ? Nur ein Hinweis mit Vorschlägen; gespeichert werden kann immer (Mitglieder außerhalb Hamburgs, neue Straßen).
+ * Ab 0.52 dazu der Ortsverband nach der Adresse (Gebiete unter Einstellungen → Gliederung): bei einem neuen Mitglied vorausgewählt, solange
+ * Kreis- und Ortsverband nicht von Hand gewählt sind; sonst als Knopf zum Übernehmen. „Ortsverband fest“ schaltet den Vorschlag ab. */
+function bindAddressCheck(form, neu = false) {
   const box = form.querySelector('[data-address-check]');
+  const ovBox = form.querySelector('[data-ov-vorschlag]');
   let round = 0;
+  let manuell = false;   // Kreis- oder Ortsverband von Hand gewählt: nichts mehr vorauswählen
+  let auto = null;       // vom Programm vorausgewählter Ortsverband – solange er gewählt ist, sagt der Hinweis das
+  let letzte = null;
+  for (const name of ['kv', 'ov_id']) form[name]?.addEventListener('change', (e) => { if (e.isTrusted) manuell = true; });
+  const zeigeOv = (r) => {
+    letzte = r;
+    if (!ovBox) return;
+    const ovs = (r?.ovs || []).map(ovById).filter(Boolean);
+    if (!r?.kv || !r.stadtteil || form.ov_fest?.checked || ['LV', '5800'].includes(form.kv.value)) return mount(ovBox, '');
+    if (!ovs.length) return mount(ovBox, html`<span class="muted">Für ${r.stadtteil} ist noch kein Ortsverband hinterlegt (Einstellungen → Gliederung).</span>`);
+    const gewaehlt = Number(form.ov_id.value);
+    if (neu && !manuell && ovs.length === 1 && (ovs[0].id !== gewaehlt || auto === gewaehlt) && setKvOv(form, ovs[0].kv, ovs[0].id)) {
+      auto = ovs[0].id;
+      return mount(ovBox, html`<span class="ok">${icon('check', 14)} Nach der Adresse (${r.stadtteil}) vorausgewählt: ${ovLabel(ovs[0])} – änderbar.</span>`);
+    }
+    if (form.kv.value === r.kv && ovs.some((o) => o.id === gewaehlt)) {
+      return mount(ovBox, html`<span class="ok">${icon('check', 14)} Ortsverband passt zur Adresse (${r.stadtteil}).</span>`);
+    }
+    mount(ovBox, html`<span class="warn">Nach der Adresse (${r.stadtteil}) gehört das Mitglied zu:</span>
+      ${ovs.map((o) => html`<button type="button" class="btn small" data-ov-uebernehmen="${o.id}">${ovLabel(o)}${o.kv !== form.kv.value ? ` (${kvName(o.kv)})` : ''} übernehmen</button> `)}`);
+    ovBox.querySelectorAll('[data-ov-uebernehmen]').forEach((b) => (b.onclick = () => {
+      const o = ovById(b.dataset.ovUebernehmen);
+      manuell = true;
+      setKvOv(form, o.kv, o.id);
+      zeigeOv(r);
+    }));
+  };
+  form.ov_id?.addEventListener('change', () => zeigeOv(letzte));
+  form.ov_fest?.addEventListener('change', () => zeigeOv(letzte));
   // Vorschlag übernehmen: nur den Straßennamen ersetzen, alles ab der Hausnummer bleibt, wie es eingegeben wurde („12 Haus 3“, „3, 2. OG“);
   // eine vorangestellte Hausnummer („7 Musterweg“) rückt nach hinten (Prüfbefund 0.32).
   const withStreet = (street, typed = '') => {
@@ -60,10 +93,11 @@ function bindAddressCheck(form) {
   const run = async () => {
     const mine = ++round;
     const street = form.street.value.trim(), zip = form.zip.value.trim(), city = form.city.value.trim(), abroad = !/^(|d|de|deu|ger|brd|deutschland|germany|bundesrepublik( deutschland)?)$/i.test(form.country.value.trim());   // wie mitglieder.DOMESTIC
-    if (!street || abroad) return mount(box, '');
+    if (!street || abroad) { zeigeOv(null); return mount(box, ''); }
     let r;
     try { r = await api('/api/adresse-pruefen', { street, zip, city }); } catch { return mount(box, ''); }   // die Prüfung darf das Speichern nie stören
     if (mine !== round || !box.isConnected) return;
+    zeigeOv(r);
     const kv = r.kv && form.kv && form.kv.value && form.kv.value !== r.kv && !['LV', '5800'].includes(form.kv.value)
       ? html` Der Wohnort liegt im Bezirk ${r.bezirk} (Kreisverband ${kvName(r.kv)}).` : '';
     const where = [r.stadtteil, r.bezirk].filter(Boolean).join(', ');
@@ -92,6 +126,36 @@ function bindAddressCheck(form) {
   if (form.street.value.trim()) safe(run);
 }
 
+/** „Geworben von“ (0.52): Name und Nummer des werbenden Mitglieds. */
+const werberText = (id) => {
+  if (!id) return 'kein Mitglied gewählt';
+  const w = store.data.members.find((x) => x.id === Number(id));
+  return w ? `${w.name} (${w.number})` : 'Mitglied nicht in der Liste';
+};
+
+/** Auswahl „Geworben von“ über die Mitgliedersuche (member-picker.js); gespeichert wird nur die Kennung. */
+function bindWerber(form, m) {
+  const input = form.geworben_von;
+  const name = form.querySelector('[data-werber-name]');
+  const pick = form.querySelector('[data-werber-pick]');
+  const clear = form.querySelector('[data-werber-clear]');
+  const text = form.geworben_text;
+  const set = (id) => {
+    input.value = id ? String(id) : '';
+    text.hidden = !!id;   // entweder ein Mitglied oder ein Text (der Server leert den Text, sobald ein Mitglied gewählt ist)
+    if (id) text.value = '';
+    name.textContent = werberText(id);
+    pick.textContent = id ? 'Ändern' : 'Auswählen';
+    clear.hidden = !id;
+  };
+  pick.onclick = () => pickMembers({ title: 'Geworben von', selected: input.value ? [{ member_id: input.value }] : [], onDone: (list) => {
+    const id = list[0]?.member_id;
+    if (m && Number(id) === m.id) return toast('Ein Mitglied kann sich nicht selbst geworben haben.', true);
+    return set(id);
+  } });
+  clear.onclick = () => set(null);
+}
+
 /** Mitglied anlegen (m = null; preset: Vorgaben, z. B. Name aus einem Klärfall) oder bearbeiten. onSaved(id) nach dem Speichern. */
 export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
   const v = m || preset || {};
@@ -117,11 +181,21 @@ export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
     <div class="formgrid">
       <label class="field">Mitgliedsnummer<input name="number" required autocomplete="off" ${raw(NOAUTO)} placeholder="z. B. A0000000001" value="${v.number || ''}"></label>
       ${kvOvFields(v.kv || '', v.ov_id)}
+      <div class="span address-check small" data-ov-vorschlag aria-live="polite"></div>
+      <label class="check span"><input type="checkbox" name="ov_fest" value="1" ${v.ov_fest ? 'checked' : ''}> Ortsverband fest – nicht nach der Adresse
+        vorschlagen (Mitgliedschaft auf Wunsch in einem anderen Gebiet)</label>
       <label class="field">Eintritt (Verein)<input name="joined" type="date" required value="${v.joined || ''}"></label>
       <label class="field">Eintritt Kreisverband<input name="kv_joined" type="date" value="${v.kv_joined || ''}"></label>
       <label class="field">Austritt<input name="left_on" type="date" value="${v.left_on || ''}"><span class="small muted">optional</span></label>
       ${text('clubs', 'Vereinigungen (Vereine)', v, { hint: 'z. B. JU,CDU' })}
       ${text('club', 'Verein', v, { hint: 'z. B. JU' })}
+      <div class="span member-werber"><span>Geworben von</span>
+        <input type="hidden" name="geworben_von" value="${v.geworben_von || ''}">
+        <span class="member-werber-wahl"><span data-werber-name>${werberText(v.geworben_von)}</span>
+          <button type="button" class="btn small" data-werber-pick>${v.geworben_von ? 'Ändern' : 'Auswählen'}</button>
+          <button type="button" class="btn small ghost" data-werber-clear ${v.geworben_von ? '' : 'hidden'}>Entfernen</button></span>
+        <input name="geworben_text" maxlength="200" autocomplete="off" value="${v.geworben_text || ''}" ${v.geworben_von ? 'hidden' : ''}
+          placeholder="oder ohne Mitglied als Text, z. B. Infostand Uni" aria-label="Geworben von (kein Mitglied)"></div>
     </div>
     <h3>Anschrift</h3>
     <div class="formgrid">
@@ -162,12 +236,13 @@ export function memberDialog(m = null, { preset = null, onSaved = null } = {}) {
   const form = el.querySelector('#member-form');
   bindKvOv(form);
   bindDues(form);
-  bindAddressCheck(form);
+  bindAddressCheck(form, !m);
+  bindWerber(form, m);
   el.querySelector('form [data-close]').onclick = () => el.close();
   form.onsubmit = (e) => {
     e.preventDefault();
     safe(async () => {
-      const flags = Object.fromEntries(['dues_free', 'guest', 'no_mail'].map((k) => [k, form[k].checked ? '1' : '0']));
+      const flags = Object.fromEntries(['dues_free', 'guest', 'no_mail', 'ov_fest'].map((k) => [k, form[k].checked ? '1' : '0']));
       const { dues_mode: mode, ...fields } = Object.fromEntries(new FormData(form));
       const data = { ...fields, ...flags, dues: mode === 'fixed' ? form.dues.value : '' };   // automatisch = kein fester Betrag
       if (mode === 'fixed' && !data.dues.trim()) throw new Error('Bitte den festen Jahresbeitrag eintragen oder „automatisch nach Alter“ wählen.');
@@ -592,7 +667,8 @@ export function members(main) {
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
   const write = can('mitglieder', 'schreiben');
   mount(main, html`<div class="page wide">
-    ${pageHead('Mitgliederverwaltung', 'Mitglieder', html`<button type="button" class="btn" data-doubles>Doppelte prüfen</button>${write ? html`
+    ${pageHead('Mitgliederverwaltung', 'Mitglieder', html`<button type="button" class="btn" data-doubles>Doppelte prüfen</button>
+      <button type="button" class="btn" data-ov-abgleich>Ortsverbände abgleichen</button>${write ? html`
       <button type="button" class="btn" data-import>${icon('upload', 16)} Liste importieren</button>
       <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>` : ''}`)}
     <section class="cards" aria-label="Mitgliederbestand">
@@ -648,6 +724,7 @@ export function members(main) {
   main.querySelector('[data-new]')?.addEventListener('click', () => memberDialog());
   main.querySelector('[data-import]')?.addEventListener('click', importMembersDialog);
   main.querySelector('[data-doubles]').onclick = () => doppelteDialog();
+  main.querySelector('[data-ov-abgleich]').onclick = () => ovAbgleichDialog();
   main.querySelector('[data-go-cases]')?.addEventListener('click', () => go('cases'));
   main.querySelectorAll('[data-liste]').forEach((b) => (b.onclick = () => { liste = b.dataset.liste; ansicht = ''; redraw(); }));
   main.querySelectorAll('[data-saved]').forEach((b) => (b.onclick = () => {

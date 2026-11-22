@@ -82,7 +82,7 @@ GET = {
                                   '/api/rpj-buchungen.csv', '/api/rpj-vorlage.csv', '/api/kv-ledger', '/api/kv.pdf', '/api/kv-detail')},
     # der Buchungsplatz braucht Haushaltstitel und RPJ-Projekte
     **{path: _r(_V, _B) for path in ('/api/haushalt-reference', '/api/rpj', '/api/rpj-offen')},
-    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account', '/api/doppelte',
+    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account', '/api/doppelte', '/api/ov-abgleich', '/api/ov-gebiete',
                                   '/api/wahlrecht', '/api/wahlrecht.pdf', '/api/wahlrecht.csv')},   # Status mit Gründen, ohne Beträge (0.37)
     '/api/beitrag-nach-alter': _r(_M, _B),
     '/api/adressen-status': _r(_M, 'einstellungen', 'verwaltung'),
@@ -110,6 +110,7 @@ POST = {
         '/api/ortsverband', '/api/ortsverband-status', '/api/ortsverband-loeschen', '/api/kv-nummern', '/api/klaerfall-klaeren',
         '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete', '/api/member-austritt', '/api/member-notiz', '/api/kein-duplikat', '/api/zusammenfuehren')},
     '/api/adresse-pruefen': _r(_M), '/api/strassen-suche': _r(_M), '/api/mitglieder-liste': _r(_M), '/api/zusammenfuehren-vorschau': _r(_M),
+    '/api/ov-gebiet': _w(_M), '/api/ov-abgleich': _w(_M),   # Ortsverband nach Adresse (0.52)
     '/api/adressen-laden': _w(_M, 'verwaltung'),
     **{path: _w(_B) for path in (
         '/api/sepa-vorschau', '/api/sepa-begleitzettel', '/api/sepa-mandat-vergessen', '/api/sepa-aufteilen', '/api/beitrag-zuordnen',

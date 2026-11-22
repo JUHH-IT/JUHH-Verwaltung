@@ -421,6 +421,12 @@ class Index:
             self._zips = {r[0] for r in self.db.execute('SELECT DISTINCT plz FROM adressen')}
         return self._zips
 
+    def stadtteile(self):
+        """Stadtteile des Bestands mit Bezirk und Kreisverband, sortiert: [{'name', 'bezirk', 'kv'}] (Gebiete der Ortsverbände, ab 0.52)."""
+        pairs = self.db.execute('SELECT DISTINCT bezirk,stadtteil FROM adressen').fetchall()
+        out = [{'name': self.names.get(s, ''), 'bezirk': self.names.get(b, ''), 'kv': KV.get(self.names.get(b, ''), '')} for b, s in pairs]
+        return sorted((x for x in out if x['name']), key=lambda x: (x['kv'], _fold(x['name'])))
+
     def _street_rows(self, ids):
         rows = self._rows.get(ids)
         if rows is None:                                 # Karte: viele Mitglieder derselben Straße

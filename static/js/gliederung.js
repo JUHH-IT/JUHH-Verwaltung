@@ -35,6 +35,16 @@ export function kvOvFields(kv, ovId) {
       <span class="small muted">Nur Ortsverbände des gewählten Kreisverbands (Einstellungen → Gliederung).</span></label>`;
 }
 
+/** Kreis- und Ortsverband setzen (Vorschlag nach der Adresse, 0.52) – ohne change-Ereignis, damit es nicht als „von Hand gewählt“ gilt. */
+export function setKvOv(form, kv, ovId) {
+  const kvSelect = form.querySelector('[data-kv-select]');
+  const ov = form.querySelector('[data-ov-select]');
+  if (!kvSelect || !ov || ![...kvSelect.options].some((o) => o.value === kv)) return false;
+  kvSelect.value = kv;
+  mount(ov, ovOptions(kv, ovId));
+  return true;
+}
+
 /** Ortsverband-Liste beim Wechsel des Kreisverbands neu füllen; ein Ortsverband des alten Kreisverbands entfällt. */
 export function bindKvOv(form) {
   const kv = form.querySelector('[data-kv-select]');

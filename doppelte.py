@@ -241,6 +241,8 @@ def zusammenfuehren(store, keep, drop, actor, buchhaltung=False):
             store.db.execute(f'UPDATE {table} SET member_id=? WHERE member_id=?', (keep, drop))
         store.db.execute('DELETE FROM dues_rates WHERE member_id=?', (drop,))   # Beitragsverlauf: der des bleibenden Mitglieds gilt
         store.db.execute('DELETE FROM mitglieder_keine_doppelten WHERE a=? OR b=?', (drop, drop))
+        store.db.execute('UPDATE members SET geworben_von=? WHERE geworben_von=?', (keep, drop))   # „geworben von“ (0.52) zeigt aufs bleibende
+        store.db.execute('UPDATE members SET geworben_von=NULL WHERE id=? AND geworben_von=?', (keep, keep))   # nie sich selbst
         store.db.execute('DELETE FROM members WHERE id=?', (drop,))
         store.db.execute('INSERT OR IGNORE INTO deleted_members(id,deleted) VALUES(?,?)', (drop, datetime.now().isoformat(timespec='seconds')))
         store.audit(actor, 'Mitglieder zusammengeführt', {'id': keep, 'number': v['bleibt']['number'],   # id: im Verlauf des bleibenden Mitglieds
