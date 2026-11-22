@@ -251,11 +251,15 @@ class ZusammenfuehrenTests(unittest.TestCase):
         self.assertEqual(doppelte.vorschau(self.s, a, b, True)['konflikte'], [])
 
     def test_wiedereintritt_kreisverband_und_beitragsfrei(self):
-        a = self.member('Erika', 'Muster', joined='2026-01-01', kv_joined='2026-01-01')
-        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2015-01-01', left_on='2018-12-31', dues_free='1', guest='1')
+        a = self.member('Erika', 'Muster', joined='2026-01-01')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2015-01-01', left_on='2018-12-31', kv_joined='2016-03-01',
+                        dues_free='1', guest='1')
         v = doppelte.vorschau(self.s, a, b)
-        self.assertNotIn('joined', v['neu'])                                               # Wiedereintritt: eigene Mitgliedschaft
+        self.assertEqual(v['neu'], {})                                                     # Wiedereintritt: nichts aus der alten Mitgliedschaft
         self.assertIn('endete vorher', v['hinweise'][0])
+        andersherum = doppelte.vorschau(self.s, b, a)                                      # die alte bleibt: ebenfalls ein Hinweis
+        self.assertIn('vermutlich ein Wiedereintritt', andersherum['hinweise'][0])
+        self.assertNotIn('joined', andersherum['neu'])
         labels = [u[0] for u in v['unterschiede']]
         self.assertIn('Beitragsfrei', labels)
         self.assertIn('Gastmitglied', labels)
@@ -264,6 +268,21 @@ class ZusammenfuehrenTests(unittest.TestCase):
         self.assertNotIn('kv_joined', doppelte.vorschau(self.s, c, d)['neu'])
         e = self.member('Ole', 'Probe', street='Dritter Weg 7')
         self.assertEqual(doppelte.vorschau(self.s, e, d)['neu'], {'kv_joined': '2021-01-01'})
+
+    def test_wiedereintritt_ohne_ortsverband_und_lueckenloser_wechsel(self):
+        import gliederung
+        with self.s.db:
+            ov, _ = gliederung.ensure(self.s.db, '5100', '1', 'Test-OV')
+        a = self.member('Erika', 'Muster', joined='2021-01-02')
+        b = self.member('Erika', 'Muster', street='Anderer Weg 5', joined='2015-01-01', left_on='2020-12-31', ov_id=ov, kv_joined='2016-03-01')
+        v = doppelte.vorschau(self.s, a, b)                                                # ein Tag Lücke: Wiedereintritt
+        self.assertEqual(v['neu'], {})
+        self.assertIn('Ortsverband und Eintritt Kreisverband bleiben', v['hinweise'][0])
+        with self.s.db:
+            self.s.db.execute("UPDATE members SET joined='2021-01-01' WHERE id=?", (a,))   # Austritt am Vortag: lückenlos
+        v = doppelte.vorschau(self.s, a, b)
+        self.assertEqual(v['neu'], {'ov_id': ov, 'kv_joined': '2016-03-01', 'joined': '2015-01-01'})
+        self.assertEqual(v['hinweise'], [])
 
 
 class DoppelteHttpTests(unittest.TestCase):
