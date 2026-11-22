@@ -54,6 +54,8 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/account-picker.js`: accountField, bindAccountPickers, bindPosten, isBalance, openPicker, postenCodes, postenComplete, postenField, setPosten, titleFor
 - `static/js/adressdaten.js`: addressCredit, addressState, addressSummary, loadAddressData, loadedText → /api/adressen-laden, /api/adressen-status
 - `static/js/api.js`: api, download, fileToBase64, onConfirm, onLocked, onUnauthorized, setCsrf → /api/login, /api/status
+- `static/js/darstellung-start.js`
+- `static/js/darstellung.js`: bindDarstellung, darstellung, darstellungDialog, darstellungWahl, setDarstellung
 - `static/js/format.js`: bookingKind, date, dateTime, eur, findIban, parseCents, plain, shortDate, signed, toInput, todayIso, weekdayDate
 - `static/js/gliederung.js`: bindKvOv, kvLabel, kvOvFields, memberKvs, ovById, ovLabel, ovsOf
 - `static/js/html.js`: esc, html, mount, raw

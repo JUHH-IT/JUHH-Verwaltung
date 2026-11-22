@@ -25,6 +25,7 @@ import { settings } from './views/settings.js';
 import { benutzer } from './views/benutzer.js';
 import { sicherheit } from './views/sicherheit.js';
 import { regelwerk } from './views/regelwerk.js';
+import { darstellungWahl, bindDarstellung, darstellungDialog } from './darstellung.js';
 
 const root = document.getElementById('root');
 
@@ -114,6 +115,7 @@ function renderShell() {
       <div class="sidebar-foot">
         <div class="user"><span class="avatar" aria-hidden="true">${(store.user || '?').slice(0, 1).toUpperCase()}</span><span class="who">${store.user}</span>
           <button type="button" class="link-button" id="logout">Abmelden</button></div>
+        <button type="button" class="link-button ds-open" id="darstellung">${icon('eye', 16)} Darstellung</button>
         <span class="where">Server · Version ${store.version}</span>
       </div>
     </aside>
@@ -138,6 +140,7 @@ function renderShell() {
     await api('/api/logout', {});
     location.href = '/';
   });
+  root.querySelector('#darstellung').onclick = () => { setMenu(false); darstellungDialog(); };
   Promise.resolve(page.view(root.querySelector('#main'))).catch((e) => toast(e.message || String(e), true));
 }
 
@@ -179,15 +182,18 @@ function passwordLogin(status, notice) {
       <details><summary class="small muted">Notzugang (Administrator)</summary>
         <form id="login-form" autocomplete="on" style="display:flex;flex-direction:column;gap:16px;margin-top:12px">
           <p class="small muted">Nur nach Freischaltung auf dem Server (<code>sudo ju-finanzen notzugang</code>) – wenn die Anmeldung mit dem JU-Konto nicht funktioniert, mit dem Passwort der Verwaltung.</p>
-          ${fields}</form></details></div>`
+          ${fields}</form></details>
+      ${darstellungWahl()}</div>`
     : html`<form class="login-card" id="login-form" autocomplete="on">
       <h1>Anmelden</h1>
       ${notice ? html`<p class="notice">${notice}</p>` : ''}
       ${status.configured ? '' : html`<p class="notice warn">Noch kein Passwort eingerichtet. Auf dem Server einmal ausführen:<br><code>sudo ju-finanzen passwort "Vorname Nachname"</code></p>`}
       ${fields}
+      ${darstellungWahl()}
     </form>`}
     <p class="small muted">Nur über Tailscale erreichbar · Abmeldung nach 2 Stunden ohne Aktivität</p>
   </div>`);
+  bindDarstellung(root);   // Darstellung schon vor der Anmeldung wählen (0.48) – gilt sofort, auch für die Seite danach
   const form = root.querySelector('#login-form');
   const error = form.querySelector('.login-error');
   if (!keycloak) (form.name.value ? form.password : form.name).focus();

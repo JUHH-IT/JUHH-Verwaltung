@@ -251,6 +251,75 @@ try {
   check(!(await mob.locator('#modal').evaluate((d) => d.open)), 'Handy: Dialog schließt');
   await phone.close();
 
+  // ---------- Darstellung „Glas“ (0.48): Wahl beim Anmelden, Laptop hell, Handy dunkel – überall ohne seitliches Scrollen ----------
+  const design = (p) => p.evaluate(() => [document.documentElement.dataset.design || 'klassisch', document.documentElement.dataset.farbe || ''].join(' '));
+  const glass = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await guard(glass);
+  const gp = await glass.newPage();
+  watch(gp, 'Glas');
+  await gp.goto(url);
+  await gp.waitForSelector('#login-form [data-darstellung]');
+  check(await design(gp) === 'klassisch ', 'Anmeldung: ohne Wahl das klassische Design');
+  await gp.click('.ds-option:has(input[value=glas])');
+  await gp.click('.ds-farben label:has(input[value=hell])');
+  check(await design(gp) === 'glas hell', 'Anmeldung: Glas hell gewählt, gilt sofort');
+  await gp.screenshot({ path: join(shots, 'g10-glas-anmeldung.png') });
+  await login(gp, 'Test Schatzmeisterin', NEU);
+  await gp.waitForSelector('.sidebar');
+  check(await design(gp) === 'glas hell', 'Glas bleibt nach der Anmeldung');
+  for (const id of PAGES) {
+    await gp.click(`[data-page=${id}]`);
+    await gp.waitForTimeout(250);
+    const wide = await gp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check(wide <= 0, `Glas Laptop ${id}: kein seitliches Scrollen (${wide})`);
+    if (['overview', 'members', 'bank', 'budgets', 'auswertung'].includes(id)) await gp.screenshot({ path: join(shots, `g1${PAGES.indexOf(id)}-glas-${id}.png`) });
+  }
+  await gp.click('#darstellung');
+  await gp.waitForSelector('#modal [data-darstellung]');
+  await gp.click('#modal .ds-farben label:has(input[value=dunkel])');
+  check(await design(gp) === 'glas dunkel', 'Darstellung: dunkel über die Seitenleiste');
+  await gp.screenshot({ path: join(shots, 'g20-glas-dunkel-darstellung.png') });
+  await gp.locator('#modal .dialog-head [data-close]').click();
+  const light = (rgb) => rgb.match(/\d+/g).slice(0, 3).every((v) => Number(v) > 190);
+  check(light(await gp.evaluate(() => getComputedStyle(document.querySelector('main h1')).color)), 'Dunkel: Überschrift hell auf dunklem Grund');
+  for (const id of ['overview', 'members', 'bank', 'budgets']) {
+    await gp.click(`[data-page=${id}]`);
+    await gp.waitForTimeout(300);
+    await gp.screenshot({ path: join(shots, `g2${['overview', 'members', 'bank', 'budgets'].indexOf(id) + 1}-glas-dunkel-${id}.png`) });
+  }
+  await gp.reload();
+  await gp.waitForSelector('.sidebar');
+  check(await design(gp) === 'glas dunkel', 'Darstellung bleibt nach dem Neuladen');
+  await gp.click('#darstellung');
+  await gp.click('#modal .ds-option:has(input[value=klassisch])');
+  check(await design(gp) === 'klassisch ' && await gp.locator('#modal .ds-farben').isHidden(), 'zurück zu Klassisch, Helligkeit dann ausgeblendet');
+  await glass.close();
+
+  const glassPhone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  await guard(glassPhone);
+  await glassPhone.addInitScript(() => { try { localStorage.setItem('ju-finanzen-darstellung', JSON.stringify({ design: 'glas', farbe: 'dunkel' })); } catch { /* abgeschotteter Rahmen */ } });
+  const gm = await glassPhone.newPage();
+  watch(gm, 'Glas Handy');
+  await gm.goto(url);
+  check(await design(gm) === 'glas dunkel', 'Handy: gespeicherte Wahl gilt schon auf der Anmeldeseite');
+  await gm.screenshot({ path: join(shots, 'g30-glas-handy-anmeldung.png') });
+  await login(gm, 'Test Schatzmeisterin', NEU);
+  await gm.waitForSelector('.topbar');
+  check(await gm.evaluate(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0), 'Glas Handy: Seitenleiste eingeklappt');
+  for (const id of PAGES) {
+    await gm.click('#menu-toggle');
+    await gm.waitForFunction(() => document.querySelector('.shell').classList.contains('menu-open'));
+    await gm.waitForTimeout(260);
+    if (id === 'overview') await gm.screenshot({ path: join(shots, 'g31-glas-handy-menue.png') });
+    await gm.click(`[data-page=${id}]`);
+    await gm.waitForTimeout(350);
+    check(!(await gm.evaluate(() => document.querySelector('.shell')?.classList.contains('menu-open'))), `Glas Handy ${id}: Menü schließt nach Auswahl`);
+    const wide = await gm.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check(wide <= 0, `Glas Handy ${id}: kein seitliches Scrollen (${wide})`);
+    if (['overview', 'members', 'bank'].includes(id)) await gm.screenshot({ path: join(shots, `g3${['overview', 'members', 'bank'].indexOf(id) + 2}-glas-handy-${id}.png`) });
+  }
+  await glassPhone.close();
+
   // ---------- Rollen und Rechte (ab 0.34) ----------
   const adminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await guard(adminContext);
