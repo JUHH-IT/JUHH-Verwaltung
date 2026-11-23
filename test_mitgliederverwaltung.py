@@ -247,6 +247,23 @@ class ListenHttpTests(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, e.headers.get('Content-Type'), None, e.read()
 
+    def test_zur_kenntnis_rechte(self):
+        """0.54: lesen mit „Mitglieder lesen“, abhaken nur mit „Mitglieder ändern“; ohne Mitgliederrecht nichts."""
+        officer = self.person('Mitglieder-Person', 'Landesmitgliederbeauftragter')
+        leitung = self.person('Leitung-Person', 'Landesgeschäftsführer')
+        admin = self.person('Admin-Person', 'Administrator')
+        status, data = self.get(officer, '/api/kenntnis')
+        self.assertEqual((status, data['an'], len(data['offen'])), (200, True, 1))
+        punkt = data['offen'][0]
+        self.assertEqual(self.get(officer, '/api/data?year=2026')[1]['kenntnis'], {'an': True, 'offen': [punkt['id']], 'punkte': 1})
+        self.assertEqual(self.get(leitung, '/api/kenntnis')[0], 200)
+        self.assertEqual(self.post(leitung, '/api/kenntnis-abhaken', {'punkte': [{'id': punkt['id']}], 'bis': data['stand']})[0], 403)
+        self.assertEqual(self.get(admin, '/api/kenntnis')[0], 403)
+        self.assertEqual(self.get(admin, '/api/data?year=2026')[1]['kenntnis'], {'an': False, 'offen': [], 'punkte': 0})
+        self.assertEqual(self.post(officer, '/api/kenntnis-abhaken', {'punkte': [{'id': 'x'}], 'bis': data['stand']})[0], 400)
+        self.assertEqual(self.post(officer, '/api/kenntnis-abhaken', {'punkte': [{'id': punkt['id']}], 'bis': data['stand']}), (200, {'mitglieder': 1}))
+        self.assertEqual(self.get(officer, '/api/kenntnis')[1]['offen'], [])
+
     def test_rechte_und_bestaetigung(self):
         officer = self.person('Mitglieder-Person', 'Landesmitgliederbeauftragter')
         member = self.get(officer, '/api/data?year=2026')[1]['members'][0]

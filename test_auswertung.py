@@ -121,6 +121,13 @@ class AuswertungTests(unittest.TestCase):
         self.assertIn('Monat 2026-06;;;;;0;0;', auswertung.csv(self.s, DAY, kv='5800').decode('utf-8-sig'))
         self.assertEqual(auswertung.report(self.s, '2026-01-01', today=DAY)['months'], [0])   # Stichtag im Januar: ein Monat
 
+    def test_stichtag_vor_erstem_eintritt(self):
+        """Stichtag vor dem ersten Eintritt der Auswahl (Prüfung #30): die Entwicklung zeigt das Jahr des Stichtags statt leer zu sein –
+        die Oberfläche greift auf den letzten Eintrag zu."""
+        r = auswertung.report(self.s, '2005-06-30', today=DAY)
+        self.assertEqual(r['development'], [{'year': 2005, 'joined': 0, 'left': 0, 'end': 0, 'until': '2005-06-30'}])
+        self.assertEqual((r['cards']['active'], r['months']), (0, [0] * 6))
+
     def test_redact_small_groups(self):
         import json
         r = auswertung.report(self.s, DAY, today=DAY)
@@ -144,6 +151,109 @@ class AuswertungTests(unittest.TestCase):
         self.assertEqual(next(x for x in lines if x.startswith('Kreisverband;Altona')).split(';')[12:17], ['1', '< 3', '< 3', '0', ''])
         self.assertEqual(next(x for x in lines if x.startswith('Alter nach Geschlecht;weiblich')).split(';')[3:5], ['< 3', ''])
         self.assertEqual(len({len(x.split(';')) for x in lines}), 1)                           # jede Zeile gleich viele Spalten
+
+    def test_vergleich_und_neue_kennzahlen(self):
+        self.s.db.execute('UPDATE members SET geworben_von=? WHERE number=?', (self.a, 'T2'))
+        r = auswertung.report(self.s, DAY, today=DAY)
+        v, c = r['vergleich'], r['cards']
+        self.assertEqual((v['stichtag'], v['active'], v['joined_year'], v['left_year']), ('2025-06-15', 4, 0, 0))   # T1, T3, T4, T5; T2 kam erst 2026
+        self.assertEqual((v['avg_age'], v['women_share'], v['with_email'], v['with_ov'], v['with_mandate'], v['complete']),
+                         (round((33 + 24 + 26 + 40) / 4, 1), None, 0.5, 0.25, 0, 0.25))
+        self.assertEqual(set(v) - set(c), {'stichtag'})                                       # dieselben Kennzahlen wie am Stichtag
+        self.assertEqual((c['complete'], c['avg_entry_age']), (0.25, round((24 + 16 + 20 + 25) / 4, 1)))   # vollständig ist nur ein Mitglied (Anschrift, E-Mail, Geburtsdatum, Ortsverband)
+        self.assertEqual([(a['label'], a['w'], a['m'], a['x'], a['share']) for a in r['women_age']], [('unter 25', 1, 0, 0, None), ('ab 25', 0, 1, 2, None)])
+        kv = {k['code']: k for k in r['kv_rows']}
+        self.assertEqual([(kv[k]['with_email'], kv[k]['with_ov'], kv[k]['with_mandate'], kv[k]['complete']) for k in ('5100', '5300')],
+                         [(0.5, 0.5, 0.0, 0.5), (1.0, 0.0, 0.0, 0.0)])   # vollständig braucht auch den Ortsverband – in 5300 hat ihn niemand
+        self.assertEqual(r['recruited'], {'joined': 1, 'count': 1, 'share': 1.0})
+        self.assertEqual(r['left_tenure'], {'total': 1, 'age_limit': 0, 'groups': [{'label': g[2], 'count': n} for g, n in zip(auswertung.LEFT_GROUPS, (0, 0, 0, 1))]})
+        self.assertEqual([(a['year'], a['count']) for a in r['age_limit_ahead']], [(2026, 1), (2027, 0), (2028, 0), (2029, 0), (2030, 0), (2031, 0)])   # T1 am 20.06.2026
+        cohort = {k['year']: k for k in r['cohorts']}
+        self.assertEqual(sorted(cohort), list(range(2020, 2027)))
+        self.assertEqual((cohort[2021], cohort[2026]), ({'year': 2021, 'joined': 1, 'kept': [None] * 4}, {'year': 2026, 'joined': 1, 'kept': []}))
+        self.assertEqual(auswertung.report(self.s, '2024-02-29', today=DAY)['vergleich']['stichtag'], '2023-02-28')   # Schalttag
+        empty = auswertung.report(self.s, DAY, kv='5800', today=DAY)                          # leere Auswahl: gleiche Form, keine Anteile
+        self.assertEqual((empty['vergleich']['active'], empty['recruited'], empty['left_tenure']['total'], {a['count'] for a in empty['age_limit_ahead']},
+                          {(k['joined'], tuple(k['kept'])) for k in empty['cohorts'] if k['year'] >= 2025}),
+                         (0, {'joined': 0, 'count': 0, 'share': None}, 0, {0}, {(0, ())}))
+
+    def test_redact_neue_schluessel(self):
+        import json
+        r = auswertung.report(self.s, DAY, today=DAY)
+        red = auswertung.redact(r, amounts=False, names=False)
+        self.assertEqual([(a['w'], a['m'], a['x'], a['share']) for a in red['women_age']], [(None, 0, 0, None), (0, None, None, None)])
+        self.assertEqual(({g['label']: g['count'] for g in red['gender']}, {g['label']: g['count'] for g in red['clubs']}),
+                         ({'männlich': None, 'weiblich': None, 'ohne Angabe': None}, {'JU': None, 'CDU': None}))
+        for key in ('vergleich', 'cohorts'):                                                   # reine Zahlen: unverändert
+            self.assertEqual(red[key], r[key], key)
+        # Bindung: unter SMALL Personen kein Wert, sonst stünde „1 Mitglied wird 2026 35“ für eine Rolle ohne Mitgliederrecht da
+        self.assertEqual(([g['count'] for g in red['left_tenure']['groups']], red['left_tenure']['age_limit'], red['left_tenure']['total']), ([0, 0, 0, None], 0, 1))
+        self.assertEqual(([a['count'] for a in red['age_limit_ahead']], red['recruited']), ([None, 0, 0, 0, 0, 0], r['recruited']))
+        self.assertEqual(auswertung.redact({**r, 'recruited': {'joined': 4, 'count': 2, 'share': 0.5}}, names=False)['recruited'], {'joined': 4, 'count': None, 'share': None})
+        self.assertEqual(tuple(auswertung.redact(r)[k] for k in ('left_tenure', 'age_limit_ahead', 'recruited')), tuple(r[k] for k in ('left_tenure', 'age_limit_ahead', 'recruited')))
+        self.assertEqual((auswertung.redact(r)['gender'], auswertung.redact(r)['women_age']), (r['gender'], r['women_age']))   # mit Mitgliederrecht alles
+        self.assertNotRegex(json.dumps({k: red[k] for k in ('vergleich', 'cohorts', 'left_tenure', 'age_limit_ahead', 'recruited', 'women_age')}, ensure_ascii=False),
+                            r'Test|T\d|example')
+
+
+class BindungTests(unittest.TestCase):
+    """Kohorten, Austritte nach Dauer, Altersgrenze und Werbung – reine Funktionen über erfundene Zeilen."""
+    TAG = auswertung._day(DAY)
+
+    @staticmethod
+    def row(joined='', left='', birth='', **more):
+        return {'joined': joined, 'left_on': left, 'birth': birth, 'geworben_von': None, 'geworben_text': '', **more}
+
+    def test_kohorten(self):
+        row = self.row
+        pool = [row('2020-05-01', '2021-04-30'),            # geht am Tag vor dem ersten Jahrestag
+                row('2020-05-01', '2021-05-01'),            # Austritt = letzter Tag: am ersten Jahrestag noch Mitglied
+                row('2020-05-01', '2024-12-31'), row('2020-05-01'),
+                row('2023-01-01'), row('2023-07-01'),       # unter 3 Eintritte: kein Anteil
+                row('2024-12-31'), row('2024-12-31', '2025-12-30'), row('2024-12-31', '2027-01-01'),
+                row('2025-01-01'), row('2025-02-01'), row('2025-03-01'),
+                row('2026-06-15'), row('2026-06-16'),       # Eintritt am Stichtag zählt, danach nicht
+                row(''), row('2019-12-31')]
+        k = {c['year']: c for c in auswertung.cohorts(pool, self.TAG)}
+        self.assertEqual(sorted(k), [2020, 2021, 2022, 2023, 2024, 2025, 2026])
+        self.assertEqual((k[2020]['joined'], k[2020]['kept']), (4, [0.75, 0.5, 0.5, 0.5, 0.25]))
+        self.assertEqual((k[2021]['joined'], k[2021]['kept'], k[2022]['kept']), (0, [None] * 4, [None] * 3))
+        self.assertEqual((k[2023]['joined'], k[2023]['kept']), (2, [None, None]))
+        self.assertEqual((k[2024]['joined'], k[2024]['kept']), (3, [0.6667]))                  # zweites Jahr erst ab 31.12.2026
+        self.assertEqual((k[2025]['joined'], k[2025]['kept'], k[2026]['joined'], k[2026]['kept']), (3, [], 1, []))
+        self.assertEqual(auswertung.cohorts(pool, auswertung._day('2026-12-31'))[4]['kept'], [0.6667, 0.6667])   # 2024 am 31.12.2026: zwei Jahre
+        leap = [row('2020-02-29', '2021-02-28'), row('2020-02-29', '2021-03-01'), row('2020-02-29')]              # Jahrestag des 29.02. ist der 01.03.
+        self.assertEqual(auswertung.cohorts(leap, self.TAG)[0]['kept'][:2], [0.6667, 0.3333])
+
+    def test_austritte_nach_dauer(self):
+        row = self.row
+        left = [row('2026-01-01', '2026-03-31'), row('2025-03-31', '2026-03-30'),             # 0 Jahre: im 1. Jahr (einen Tag vor dem Jahrestag)
+                row('2025-03-31', '2026-03-31'), row('2023-04-01', '2026-03-31'),             # 1 und 2 Jahre
+                row('2023-03-31', '2026-03-31'),                                              # 3 Jahre
+                row('2010-01-01', '2026-06-19', '1991-06-20'),                                # letzter Tag vor dem 35. Geburtstag: Altersgrenze
+                row('2010-01-01', '2026-06-19', '1991-06-21'),                                # am Tag danach noch 34
+                row('', '2026-02-01', '1980-01-01')]                                          # ohne Eintrittsdatum: nur in total
+        out = auswertung.left_by_tenure(left)
+        self.assertEqual((out['total'], [g['count'] for g in out['groups']], out['age_limit']), (8, [2, 2, 1, 2], 2))
+        self.assertEqual(auswertung.left_by_tenure([]), {'total': 0, 'age_limit': 0, 'groups': [{'label': g[2], 'count': 0} for g in auswertung.LEFT_GROUPS]})
+
+    def test_altersgrenze_vorschau(self):
+        births = ('1991-06-15', '1991-06-16', '1991-12-31', '1992-02-29', '1996-12-31', '1997-01-01', '', '1980-01-01')
+        out = auswertung.age_limit_ahead([self.row(birth=b) for b in births], self.TAG)
+        self.assertEqual([(a['year'], a['count']) for a in out], [(2026, 2), (2027, 1), (2028, 0), (2029, 0), (2030, 0), (2031, 1)])   # 15.06. schon erreicht
+
+    def test_geworben(self):
+        row = self.row
+        joined = [row(geworben_von=5), row(geworben_text=' Tante Erna '), row(geworben_text='  '), row()]
+        self.assertEqual(auswertung.recruited(joined), {'joined': 4, 'count': 2, 'share': 0.5})
+        self.assertEqual(auswertung.recruited([]), {'joined': 0, 'count': 0, 'share': None})
+
+    def test_vollstaendig(self):
+        """Dieselbe Regel wie `fehlt` in static/js/mitglieder-listen.js (Cockpit und Listen)."""
+        full = {'birth': '2000-01-01', 'email': 'a@example.org', 'street': 'Testweg 1', 'zip': '20095', 'city': 'Hamburg', 'ov_id': 3}
+        self.assertTrue(auswertung._complete(full))
+        for key in full:
+            self.assertFalse(auswertung._complete({**full, key: ''}), key)
 
 
 class AltersgruppenTests(unittest.TestCase):

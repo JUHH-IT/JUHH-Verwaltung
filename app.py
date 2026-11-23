@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.53'
+VERSION='0.54'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -642,6 +642,7 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/regelwerk': return self.send(200,__import__('regelwerk').regeln(store.config()))   # Regelwerk für alle Angemeldeten (0.43)
                 if path=='/api/doppelte': return self.send(200,{'gruppen':__import__('doppelte').gruppen(store)})   # mögliche doppelte Mitglieder (0.45)
                 if path=='/api/ov-abgleich': return self.send(200,__import__('ovabgleich').abgleich(store,DATA))   # Ortsverband nach Adresse (0.52)
+                if path=='/api/kenntnis': return self.send(200,__import__('kenntnis').liste(store))   # Änderungen an Stammdaten mit Vorher und Jetzt (0.54)
                 if path=='/api/ov-gebiete':   # Stadtteile je Ortsverband, Stadtteile der Adressdaten und Vorschlag aus den Namen (0.52)
                     import ovabgleich
                     teile,geb=ovabgleich.stadtteile(DATA),ovabgleich.gebiete(store.db)
@@ -891,6 +892,7 @@ class Handler(BaseHTTPRequestHandler):
                     saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-zusammenfuehren')
                     doppelte.zusammenfuehren(store,data.get('keep'),data.get('drop'),actor,bh);result={'backup':saved.name}
                 else: result={k:v for k,v in doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh).items() if k!='neu'}
+            elif path=='/api/kenntnis-abhaken': result=__import__('kenntnis').abhaken(store,data.get('punkte'),data.get('bis'),actor)   # 0.54
             elif path=='/api/ov-gebiet': result={'stadtteile':__import__('ovabgleich').gebiet_speichern(store,DATA,data.get('id'),data.get('stadtteile'),actor)}
             elif path=='/api/ov-abgleich':   # ausgewählte Vorschläge übernehmen – vorher sichern (viele Mitglieder auf einmal)
                 __import__('ovabgleich').auswahl(data.get('aendern',[]),data.get('fest',[]))   # ungültige oder leere Auswahl: keine Sicherung
@@ -1164,7 +1166,7 @@ def notizen_stuendlich():
     """Notizen ausgetretener Mitglieder löschen (mitglieder.notizen_bereinigen, DSGVO) – Fehler nur protokollieren."""
     try:
         store=Store(DB)
-        try: n=mitglieder.notizen_bereinigen(store)
+        try: n=mitglieder.notizen_bereinigen(store);__import__('kenntnis').bereinigen(store)   # abgehakte Änderungen nach 30 Tagen löschen (0.54)
         finally: store.db.close()
         if n: log(f'{n} Notizen ausgetretener Mitglieder gelöscht.')
     except Exception as e:

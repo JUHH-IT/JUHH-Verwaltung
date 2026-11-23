@@ -82,7 +82,7 @@ GET = {
                                   '/api/rpj-buchungen.csv', '/api/rpj-vorlage.csv', '/api/kv-ledger', '/api/kv.pdf', '/api/kv-detail')},
     # der Buchungsplatz braucht Haushaltstitel und RPJ-Projekte
     **{path: _r(_V, _B) for path in ('/api/haushalt-reference', '/api/rpj', '/api/rpj-offen')},
-    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account', '/api/doppelte', '/api/ov-abgleich', '/api/ov-gebiete', '/api/mitgliedsnummer',
+    **{path: _r(_M) for path in ('/api/karte', '/api/klaerfaelle', '/api/member-account', '/api/doppelte', '/api/ov-abgleich', '/api/ov-gebiete', '/api/mitgliedsnummer', '/api/kenntnis',
                                   '/api/wahlrecht', '/api/wahlrecht.pdf', '/api/wahlrecht.csv')},   # Status mit Gründen, ohne Beträge (0.37)
     '/api/beitrag-nach-alter': _r(_M, _B),
     '/api/adressen-status': _r(_M, 'einstellungen', 'verwaltung'),
@@ -111,6 +111,7 @@ POST = {
         '/api/klaerfall-notiz', '/api/member-update', '/api/member-delete', '/api/member-austritt', '/api/member-notiz', '/api/kein-duplikat', '/api/zusammenfuehren')},
     '/api/adresse-pruefen': _r(_M), '/api/strassen-suche': _r(_M), '/api/mitglieder-liste': _r(_M), '/api/zusammenfuehren-vorschau': _r(_M),
     '/api/ov-gebiet': _w(_M), '/api/ov-abgleich': _w(_M),   # Ortsverband nach Adresse (0.52)
+    '/api/kenntnis-abhaken': _w(_M),   # Änderungen zur Kenntnis nehmen (0.54)
     '/api/adressen-laden': _w(_M, 'verwaltung'),
     **{path: _w(_B) for path in (
         '/api/sepa-vorschau', '/api/sepa-begleitzettel', '/api/sepa-mandat-vergessen', '/api/sepa-aufteilen', '/api/beitrag-zuordnen',
@@ -135,7 +136,7 @@ OUTSIDE = ('/api/status', '/api/login', '/api/keycloak/start', '/api/keycloak/ru
 
 # Gesamtdaten: welcher Schlüssel gehört zu welchem Bereich (alles andere sehen alle Angemeldeten)
 SNAPSHOT = {
-    'members': _M, 'ovs': _M, 'cases': _M,
+    'members': _M, 'ovs': _M, 'cases': _M, 'kenntnis': _M,
     'invoices': _B, 'bank': _B, 'dues_open': _B, 'dues_open_all': _B, 'bills': _B, 'reviews_due': _B, 'mandates': _B,
     'sepa_ready': _B, 'sepa_check': _B, 'cash': _B, 'cash_overdue': _B, 'reminders_ready': _B, 'next_numbers': _B,
     'journal': _B, 'unallocated_dues': _B, 'dues_book': _B, 'audit': _B,

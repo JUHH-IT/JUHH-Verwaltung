@@ -25,6 +25,8 @@ GENDER = {'m': 'männlich', 'w': 'weiblich', 'f': 'weiblich', 'd': 'divers', 'x'
 SEXES = (('w', 'weiblich'), ('m', 'männlich'), ('x', 'divers/ohne Angabe'))
 MONTHS = ('Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez')
 BANDS = ((0, 17, 'unter 18'), (18, 24, '18–24'), (25, 200, 'ab 25'))   # Altersschwerpunkt je Ortsverband: minderjährig / Ausbildung, Studium / Beruf
+LEFT_GROUPS = ((0, 0, 'im 1. Jahr'), (1, 2, 'im 2. oder 3. Jahr'), (3, 5, 'im 4. bis 6. Jahr'), (6, 200, 'später'))   # Mitgliedsdauer beim Austritt
+COHORT_YEARS, KEPT_YEARS, AHEAD_YEARS = 7, 5, 5   # Bindung: Eintrittsjahre, Jahre danach; Altersgrenze: Vorschau in Jahren
 SMALL = 3   # Gruppen unter 3 Personen: kein Durchschnittsalter, Merkmale im PDF/CSV nur als „< 3“ (sonst erkennbar, Prüfbefund 0.29)
 
 
@@ -103,6 +105,80 @@ def _groups(values, groups):
     return [{'label': label, 'count': sum(1 for v in values if lo <= v <= hi)} for lo, hi, label in groups]
 
 
+def _part(k, n):
+    return round(k / n, 4) if n else None
+
+
+def _year_before(day):
+    """Gleicher Tag im Vorjahr (29.02. → 28.02.)."""
+    try:
+        return day.replace(year=day.year - 1)
+    except ValueError:
+        return day.replace(year=day.year - 1, day=28)
+
+
+def _complete(m):
+    """Stammdaten vollständig – dieselbe Regel wie im Cockpit und in den Listen (`fehlt` in static/js/mitglieder-listen.js):
+    Anschrift (Straße, PLZ, Ort), E-Mail, Geburtsdatum und Ortsverband sind eingetragen."""
+    return bool(m['street'] and m['zip'] and m['city'] and m['email'] and _day(m['birth']) and m['ov_id'])
+
+
+def _stand(pool, day):
+    """Die Auswahl am Tag `day`: Mitglieder, ihr Alter, Ein- und Austritte des Jahres bis zu diesem Tag."""
+    active = [m for m in pool if _active(m, day)]
+    in_year = lambda key: [m for m in pool if _day(m[key]) and _day(m[key]).year == day.year and _day(m[key]) <= day]
+    return {'active': active, 'ages': {m['id']: _years(_day(m['birth']), day) for m in active if _day(m['birth'])},
+            'joined': in_year('joined'), 'left': in_year('left_on')}
+
+
+def _cards(stand, mandates):
+    """Kennzahlen zu einem Stand (`_stand`) – dieselbe Berechnung für den Stichtag und für den Vergleich mit dem Vorjahr."""
+    active, ages, joined, left = stand['active'], stand['ages'], stand['joined'], stand['left']
+    n, split = len(active), _split(active)
+    share = lambda k: round(k / n, 4) if n else 0
+    entry = [_years(_day(m['birth']), _day(m['joined'])) for m in active if _day(m['birth'])]
+    return {'active': n, 'guests': sum(1 for m in active if m['guest']), 'dues_free': sum(1 for m in active if m['dues_free']),
+            'joined_year': len(joined), 'left_year': len(left), 'net_year': len(joined) - len(left),
+            'avg_age': _avg(ages.values()), 'median_age': _median(ages.values()), 'avg_entry_age': _avg(entry), 'no_birth': n - len(ages),
+            'women': split['w'], 'men': split['m'], 'women_share': _women(split['w'], split['m']),
+            'joined_women_share': _women(*[_split(joined)[k] for k in 'wm']),
+            'with_email': share(sum(1 for m in active if m['email'])), 'with_mandate': share(sum(1 for m in active if m['id'] in mandates)),
+            'with_ov': share(sum(1 for m in active if m['ov_id'])), 'complete': share(sum(1 for m in active if _complete(m)))}
+
+
+def cohorts(pool, day):
+    """Bindung je Eintrittsjahr (die letzten COHORT_YEARS Jahre bis zum Tag): Eintritte und in `kept` der Anteil, der 1 bis KEPT_YEARS Jahre
+    nach dem eigenen Eintritt noch Mitglied war. `kept` reicht nur so weit, wie alle Eintritte des Jahres zurückliegen (31.12. des
+    Folgejahres erreicht); unter SMALL Eintritten steht dort None statt eines Anteils. Reine Zahlen."""
+    out = []
+    for y in range(day.year - COHORT_YEARS + 1, day.year + 1):
+        mine = [(joined, _day(m['left_on'])) for m in pool for joined in [_day(m['joined'])] if joined and joined.year == y and joined <= day]
+        stay = lambda k: sum(1 for joined, left in mine if left is None or left >= _birthday(joined, y + k))
+        out.append({'year': y, 'joined': len(mine),
+                    'kept': [_part(stay(k), len(mine)) if len(mine) >= SMALL else None for k in range(1, KEPT_YEARS + 1) if date(y + k, 12, 31) <= day]})
+    return out
+
+
+def left_by_tenure(left):
+    """Austritte nach vollendeten Jahren Mitgliedschaft am Austrittstag (LEFT_GROUPS) und wie viele am Tag danach 35 oder älter waren
+    (Altersgrenze der Satzung). Reine Zahlen; Austritte ohne Eintrittsdatum stehen nur in `total`."""
+    spans = [_years(_day(m['joined']), _day(m['left_on'])) for m in left if _day(m['joined'])]
+    old = sum(1 for m in left if _day(m['birth']) and _years(_day(m['birth']), _day(m['left_on']) + timedelta(days=1)) >= AGE_LIMIT)
+    return {'total': len(left), 'groups': _groups(spans, LEFT_GROUPS), 'age_limit': old}
+
+
+def age_limit_ahead(active, day):
+    """Wie viele der Mitglieder im Rest des Jahres (nach dem Tag) und in jedem der nächsten AHEAD_YEARS Jahre 35 werden. Reine Zahlen."""
+    ends = [_birthday(born, born.year + AGE_LIMIT) for born in (_day(m['birth']) for m in active) if born]
+    return [{'year': y, 'count': sum(1 for end in ends if end.year == y and end > day)} for y in range(day.year, day.year + AHEAD_YEARS + 1)]
+
+
+def recruited(joined):
+    """Eintritte mit eingetragenem Werber (Mitglied `geworben_von` oder Freitext `geworben_text`): Anzahl und Anteil. Reine Zahlen."""
+    n = sum(1 for m in joined if m['geworben_von'] or str(m['geworben_text'] or '').strip())
+    return {'joined': len(joined), 'count': n, 'share': _part(n, len(joined))}
+
+
 def _filter(store, kv, ov):
     from core import KVS
     if kv and (kv not in dict(KVS) or kv == 'LV'):
@@ -130,33 +206,36 @@ def report(store, stichtag=None, kv=None, ov=None, today=None):
     kv, ov = _filter(store, kv, ov)
     names = dict(KVS)
     ovs = {o['id']: o for o in gliederung.ovs(store)}
-    every = store.rows('SELECT id,number,first_name,last_name,name,kv,ov_id,birth,joined,left_on,gender,clubs,email,phone,mobile,zip,city,'
-                       'guest,dues_free,no_mail,payment_method FROM members')
+    every = store.rows('SELECT id,number,first_name,last_name,name,kv,ov_id,birth,joined,left_on,gender,clubs,email,phone,mobile,street,zip,city,'
+                       'guest,dues_free,no_mail,payment_method,geworben_von,geworben_text FROM members')
 
     def selected(m):
         return (not kv or m['kv'] == kv) and (ov is None or (ov == 'none' and not m['ov_id']) or m['ov_id'] == ov)
     pool = [m for m in every if selected(m)]
-    active = [m for m in pool if _active(m, day)]
+    stand = _stand(pool, day)
+    active, ages, joined_year, left_year = stand['active'], stand['ages'], stand['joined'], stand['left']
     year = day.year
-    ages = {m['id']: _years(_day(m['birth']), day) for m in active if _day(m['birth'])}
     tenure = {m['id']: _years(_day(m['joined']), day) for m in active}
-    joined_year = [m for m in pool if _day(m['joined']) and _day(m['joined']).year == year and _day(m['joined']) <= day]
-    left_year = [m for m in pool if _day(m['left_on']) and _day(m['left_on']).year == year and _day(m['left_on']) <= day]
     mandates = {r[0] for r in store.db.execute("SELECT member_id FROM mandates WHERE status='active'")}
     n = len(active)
     share = (lambda k: round(k / n, 4) if n else 0)
     sex = {m['id']: _sex(m) for m in active}
     split = _split(active)
-    cards = {'active': n, 'guests': sum(1 for m in active if m['guest']), 'dues_free': sum(1 for m in active if m['dues_free']),
-             'joined_year': len(joined_year), 'left_year': len(left_year), 'net_year': len(joined_year) - len(left_year),
-             'avg_age': _avg(ages.values()), 'median_age': _median(ages.values()), 'no_birth': n - len(ages),
-             'women': split['w'], 'men': split['m'], 'women_share': _women(split['w'], split['m']),
-             'joined_women_share': _women(*[_split(joined_year)[k] for k in 'wm']),
-             'with_email': share(sum(1 for m in active if m['email'])), 'with_mandate': share(sum(1 for m in active if m['id'] in mandates)),
-             'with_ov': share(sum(1 for m in active if m['ov_id']))}
+    cards = _cards(stand, mandates)
+    # Vergleich: dieselben Kennzahlen am gleichen Tag des Vorjahres (Ein- und Austritte des Vorjahres bis zu diesem Tag). E-Mail, Mandat
+    # und Ortsverband kennt das Programm nur im heutigen Stand – verglichen wird also der Mitgliederkreis, nicht die damalige Datenlage.
+    before = _year_before(day)
+    earlier = _cards(_stand(pool, before), mandates)
+    vergleich = {'stichtag': before.isoformat(), **{k: earlier[k] for k in ('active', 'joined_year', 'left_year', 'women_share', 'avg_age', 'with_email',
+                                                                           'with_mandate', 'with_ov', 'complete')}}
+    women_age = []                                            # Frauenanteil unter 25 und ab 25 Jahren (nur Mitglieder mit Geburtsdatum)
+    for label, lo, hi in (('unter 25', 0, 24), ('ab 25', 25, 200)):
+        counts = _split(m for m in active if lo <= ages.get(m['id'], -1) <= hi)
+        women_age.append({'label': label, **counts, 'share': _women(counts['w'], counts['m'])})
 
     # Entwicklung: höchstens die letzten 10 Jahre bis zum Stichtag; Bestand am 31.12. bzw. am Stichtag
     first = min((_day(m['joined']).year for m in pool if _day(m['joined'])), default=year)
+    first = min(first, year)   # Stichtag vor dem ersten Eintritt der Auswahl: trotzdem das Jahr des Stichtags zeigen (sonst leere Entwicklung)
     development = []
     for y in range(max(first, year - 9), year + 1):
         end = min(date(y, 12, 31), day)
@@ -180,6 +259,9 @@ def report(store, stichtag=None, kv=None, ov=None, today=None):
         soll = sum(book[m['id']]['soll'] or 0 for m in everyone if m['id'] in book)
         paid = sum(book[m['id']]['paid'] for m in everyone if m['id'] in book)
         by_kv.append({'code': code, 'name': name, 'active': len(mine), 'share': share(len(mine)),
+                      'with_email': _part(sum(1 for m in mine if m['email']), len(mine)), 'with_ov': _part(sum(1 for m in mine if m['ov_id']), len(mine)),
+                      'with_mandate': _part(sum(1 for m in mine if m['id'] in mandates), len(mine)),
+                      'complete': _part(sum(1 for m in mine if _complete(m)), len(mine)),
                       'avg_age': _avg(kv_ages), **kv_split,
                       'women_share': _women(kv_split['w'], kv_split['m']),
                       'joined_year': joined_kv, 'left_year': left_kv, 'net_year': joined_kv - left_kv,
@@ -230,13 +312,17 @@ def report(store, stichtag=None, kv=None, ov=None, today=None):
             'gender': sorted(({'label': k, 'count': v} for k, v in genders.items()), key=lambda x: -x['count']),
             'clubs': sorted(({'label': k, 'count': v} for k, v in clubs.items()), key=lambda x: (-x['count'], x['label'])),
             'payment': sorted(({'label': k, 'count': v} for k, v in methods.items()), key=lambda x: -x['count']),
-            'lists': lists, 'kv_names': names}
+            'lists': lists, 'kv_names': names, 'vergleich': vergleich, 'women_age': women_age, 'cohorts': cohorts(pool, day),
+            'left_tenure': left_by_tenure(left_year), 'age_limit_ahead': age_limit_ahead(active, day), 'recruited': recruited(joined_year)}
 
 
 def redact(r, amounts=True, names=True):
     """Auswertung für eine Rolle (rollen.py, ab 0.34): ohne Buchhaltung keine Beitragsbeträge, ohne Mitgliederverwaltung
-    keine Listen mit Namen und in den Kreuztabellen nach Geschlecht (Alter, Kreis- und Ortsverband, Eintritte) sowie beim Alter je
-    Ortsverband keine Werte, die auf weniger als SMALL Personen beruhen (None = „< 3“). `amounts` in der Antwort sagt der Oberfläche, ob Beträge enthalten sind."""
+    keine Listen mit Namen und in den Kreuztabellen nach Geschlecht (Alter, Kreis- und Ortsverband, Eintritte, unter/ab 25), beim Alter je
+    Ortsverband, bei Geschlecht und Vereinigungen sowie bei Austritten nach Dauer, Altersgrenze der nächsten Jahre und geworbenen Eintritten
+    keine Werte, die auf weniger als SMALL Personen beruhen (None = „< 3“ – sonst verriete „2027 wird 1 Mitglied 35“ in einem kleinen
+    Ortsverband das Alter einer Person). Kohorten und der Vergleich mit dem Vorjahr bleiben; die Kohorten nennen von sich aus keinen
+    Anteil unter SMALL Eintritten. `amounts` in der Antwort sagt der Oberfläche, ob Beträge enthalten sind."""
     r = {**r, 'amounts': bool(amounts)}
     if not amounts:
         r['kv_rows'] = [{**k, 'soll': 0, 'paid': 0, 'paid_share': None, 'arrears': 0, 'arrears_count': 0} for k in r['kv_rows']]
@@ -246,6 +332,11 @@ def redact(r, amounts=True, names=True):
         veil = lambda row, keys: {**row, **{k: None for k in keys if 0 < (row[k] or 0) < SMALL}}
         r['ages'] = [veil(a, 'wm') for a in r['ages']]
         r['joined_gender'] = veil(r['joined_gender'], 'wmx')
+        r['women_age'] = [{**a, 'share': _women(a['w'], a['m'])} for a in (veil(a, 'wmx') for a in r['women_age'])]
+        r['gender'], r['clubs'] = ([veil(x, ('count',)) for x in r[key]] for key in ('gender', 'clubs'))   # wie im PDF: Merkmale einzelner Personen
+        r['age_limit_ahead'] = [veil(a, ('count',)) for a in r['age_limit_ahead']]
+        r['left_tenure'] = {**veil(r['left_tenure'], ('age_limit',)), 'groups': [veil(g, ('count',)) for g in r['left_tenure']['groups']]}
+        r['recruited'] = (lambda w: {**w, 'share': None if w['count'] is None else w['share']})(veil(r['recruited'], ('count',)))
         r['cards'] = {**r['cards'], 'joined_women_share': _women(r['joined_gender']['w'], r['joined_gender']['m'])}
         r['kv_rows'] = [{**k, 'women_share': _women(k['w'], k['m'])} for k in (veil(k, 'wmx') for k in r['kv_rows'])]
         r['ov_rows'] = [{**o, 'women_share': _women(o['w'], o['m']), 'avg_age': _age(o['active'], o['avg_age']), 'bands': _bands(n, True),

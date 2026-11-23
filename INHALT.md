@@ -21,13 +21,13 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Einstellungen ändern:** `POST /api/mail-check`, `POST /api/mail-forget`, `POST /api/mail-password` ⚠, `POST /api/mail-test`, `POST /api/settings` ⚠
 
-**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/mitgliedsnummer`, `GET /api/ov-abgleich`, `GET /api/ov-gebiete`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`, `POST /api/zusammenfuehren-vorschau`
+**Mitgliederverwaltung lesen:** `GET /api/doppelte`, `GET /api/karte`, `GET /api/kenntnis`, `GET /api/klaerfaelle`, `GET /api/member-account`, `GET /api/mitgliedsnummer`, `GET /api/ov-abgleich`, `GET /api/ov-gebiete`, `GET /api/wahlrecht.csv`, `GET /api/wahlrecht.pdf`, `GET /api/wahlrecht`, `POST /api/adresse-pruefen`, `POST /api/mitglieder-liste` ⚠, `POST /api/strassen-suche`, `POST /api/zusammenfuehren-vorschau`
 
 **Mitgliederverwaltung lesen oder Buchhaltung lesen:** `GET /api/beitrag-nach-alter`
 
 **Mitgliederverwaltung lesen oder Einstellungen lesen oder Benutzer und Rollen lesen:** `GET /api/adressen-status`
 
-**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/kein-duplikat`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-notiz`, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`, `POST /api/ov-abgleich` ⚠, `POST /api/ov-gebiet`, `POST /api/zusammenfuehren` ⚠
+**Mitgliederverwaltung ändern:** `POST /api/gliederung-import`, `POST /api/gliederung-vorschau`, `POST /api/kein-duplikat`, `POST /api/kenntnis-abhaken`, `POST /api/klaerfall-klaeren`, `POST /api/klaerfall-notiz`, `POST /api/kv-nummern`, `POST /api/member-austritt`, `POST /api/member-delete` ⚠, `POST /api/member-notiz`, `POST /api/member-update`, `POST /api/member`, `POST /api/members-import` ⚠, `POST /api/members-preview`, `POST /api/ortsverband-loeschen` ⚠, `POST /api/ortsverband-status`, `POST /api/ortsverband`, `POST /api/ov-abgleich` ⚠, `POST /api/ov-gebiet`, `POST /api/zusammenfuehren` ⚠
 
 **Mitgliederverwaltung ändern oder Benutzer und Rollen ändern:** `POST /api/adressen-laden`
 
@@ -66,7 +66,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
-- `static/js/views/auswertung.js`: auswertung → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf
+- `static/js/views/auswertung.js`: aussageBestand, aussageBindung, aussageDichte, aussageGliederung, aussageStruktur, auswertung, flaecheKm2, klassen, skala, stufe, vorn → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf, /api/karte, /api/karte-gebiete
 - `static/js/views/bank.js`: bank, bankKeys, renderLedger, useLedger → /api/kasse-datei, /api/park, /api/reverse-bank
 - `static/js/views/benutzer.js`: benutzer → /api/benutzer, /api/benutzer-abgleichen, /api/benutzer-app-zuruecksetzen, /api/benutzer-startpasswort, /api/rolle, /api/rolle-loeschen
 - `static/js/views/bills.js`: approvalBadge, billBadge, bills, paymentDialog, reviewDialog → /api/bill, /api/bill-approval-revoke, /api/bill-approve, /api/bill-cancel, /api/bill-file, /api/bill-qr.svg, /api/bill-release, /api/bill-transferred, /api/bill-transfers, /api/bill-writeoff, /api/einvoice, /api/quarter-review, /api/quarter-review.pdf, /api/refund-form.pdf
@@ -80,12 +80,13 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/invoices.js`: invoiceBadge, invoices → /api/cancel-invoice, /api/dues, /api/dues-preview, /api/invoice.pdf, /api/preview.pdf
 - `static/js/views/journal.js`: journal → /api/journal.csv
 - `static/js/views/karte.js`: karte, leaveMap → /api/karte, /api/karte-gebiete, /api/strassen-suche
+- `static/js/views/kenntnis.js`: kenntnis, wann, wasGeaendert → /api/kenntnis, /api/kenntnis-abhaken, /api/member-account
 - `static/js/views/klaerfaelle.js`: cases → /api/klaerfaelle, /api/klaerfall-klaeren, /api/klaerfall-notiz
 - `static/js/views/konten.js`: konten, saldo → /api/konten, /api/konto, /api/konto.csv
 - `static/js/views/kv.js`: bindKv, bindKvPage, bindTransfers, kvPage, kvTable, masterDialog, needsAttention, openKv, planRest, transferDialog, transferList, valuesDialog → /api/import-kv-master, /api/kv-detail, /api/kv-label, /api/kv-plan, /api/kv-transfer, /api/kv-transfer-reverse, /api/kv-values, /api/kv.pdf, /api/op-liste.pdf, /api/preview-kv-master
 - `static/js/views/mailing.js`: afterIssue, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
 - `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/mitgliedsnummer, /api/sepa-mandat-vergessen
-- `static/js/views/mitglieder-ueberblick.js`: mitgliederUeberblick → /api/doppelte, /api/regelwerk
+- `static/js/views/mitglieder-ueberblick.js`: anlaesse, mitgliederUeberblick → /api/auswertung, /api/doppelte, /api/kenntnis, /api/kenntnis-abhaken, /api/ov-abgleich, /api/regelwerk
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
 - `static/js/views/ov-abgleich.js`: ovAbgleichDialog → /api/ov-abgleich
 - `static/js/views/overview.js`: overview → /api/monatsbericht.pdf, /api/pruefpaket.zip
@@ -178,7 +179,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_kenntnis.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -238,7 +239,7 @@ Tests: test_import.py
 
 Stammdaten (Einstellungen): erlaubte Felder, Standardwerte und Prüfung an einer Stelle.
 
-Tests: test_rechnungen.py, test_regelwerk.py
+Tests: test_kenntnis.py, test_rechnungen.py, test_regelwerk.py
 
 - `unknown_placeholders(text)`
 - `clean(data, current)` – Prüft geänderte Felder; liefert {Schlüssel: Text}. current = bisherige Stammdaten (mit Standards).
@@ -282,7 +283,7 @@ Mitglieder-Stammdaten: Vorname/Nachname und Anschrift in Feldern, Prüfung, Mitg
 
 Tabellen: `deleted_members`, `dues_rates`
 
-Tests: test_doppelte.py, test_gliederung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_ovabgleich.py, test_pruefung.py, test_wahlrecht.py
+Tests: test_doppelte.py, test_gliederung.py, test_kenntnis.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_ovabgleich.py, test_pruefung.py, test_wahlrecht.py
 
 - `next_id(db)` – Nächste Mitglieds-id: nie eine schon einmal vergebene (auch nicht die eines gelöschten Mitglieds).
 - `insert(db, v)` – Mitglied mit geprüften Werten (values) anlegen; liefert die id.
@@ -349,7 +350,7 @@ Gliederung: Kreisverbände (mit Nummer der CDU-Mitgliederverwaltung) und Ortsver
 
 Tabellen: `ortsverbaende`
 
-Tests: test_auswertung.py, test_doppelte.py, test_gliederung.py, test_opliste.py, test_ovabgleich.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_doppelte.py, test_gliederung.py, test_kenntnis.py, test_opliste.py, test_ovabgleich.py, test_wahlrecht.py
 
 - `digits(text)`
 - `init(db)` – Tabelle der Ortsverbände und Nummer der Mitgliederverwaltung je Kreisverband (additiv).
@@ -390,6 +391,22 @@ Tests: test_ovabgleich.py
 - `abgleich(store, data_dir, today=…)` – Alle aktiven Mitglieder mit dem Ortsverband nach ihrer Adresse vergleichen.
 - `auswahl(aenderungen, fest)` – Eingabe der Übernahme prüfen (vor der Sicherung): [{id, ov, ov_alt, kv_alt}] und [id]. ov_alt/kv_alt = Stand, den die Person
 - `uebernehmen(store, data_dir, aenderungen, fest, actor, today=…)` – Ausgewählte Vorschläge übernehmen – der Kreisverband folgt dem Ortsverband – und Mitglieder als „Ortsverband fest“ markieren.
+
+### kenntnis.py
+
+Kenntnisnahme von Änderungen an den Mitglieder-Stammdaten (ab 0.54, REGELN Nr. 35, Wunsch Lennert Gust 22.11.2026).
+
+Tabellen: `mitglied_aenderungen`
+
+Tests: test_kenntnis.py
+
+- `init(db)` – Tabelle und Auslöser (additiv). Nach `mitglieder.init` aufrufen – die Auslöser nennen alle Spalten der Stammdaten.
+- `an(db)` – Ist die Kenntnisnahme eingeschaltet (Einstellung `kenntnis`, Vorgabe an)?
+- `zuordnen(db, actor, action, detail=…)` – Frisch festgehaltene Änderungen dieser Verbindung der Person und dem Vorgang zuordnen – ruft `Store.audit` bei jedem Eintrag.
+- `kurz(db)` – Für die Gesamtdaten: eingeschaltet?, Kennungen der Mitglieder mit offener Änderung (Liste „Änderung offen“, Lage im Cockpit) und
+- `liste(store, today=…)` – Offene und in den letzten `FRIST` Tagen abgehakte Änderungen je Mitglied; `stand` = letzte gesehene Zeile (für `abhaken`).
+- `abhaken(store, punkte, bis, actor)` – Offene Punkte zur Kenntnis nehmen – je Mitglied genau den gezeigten Ausschnitt (einzeln geändert oder ein Sammelpunkt) und nur
+- `bereinigen(store, today=…)` – Abgehakte Zeilen nach `FRIST` Tagen löschen; offene Zeilen ohne Unterschied (hin und zurück geändert) löschen; ist die
 
 ### klaerfaelle.py
 
@@ -480,6 +497,10 @@ Auswertung der Mitgliederdaten (Wunsch Lennert Gust 10.11.2026: „ein Punkt Aus
 
 Tests: test_auswertung.py
 
+- `cohorts(pool, day)` – Bindung je Eintrittsjahr (die letzten COHORT_YEARS Jahre bis zum Tag): Eintritte und in `kept` der Anteil, der 1 bis KEPT_YEARS Jahre
+- `left_by_tenure(left)` – Austritte nach vollendeten Jahren Mitgliedschaft am Austrittstag (LEFT_GROUPS) und wie viele am Tag danach 35 oder älter waren
+- `age_limit_ahead(active, day)` – Wie viele der Mitglieder im Rest des Jahres (nach dem Tag) und in jedem der nächsten AHEAD_YEARS Jahre 35 werden. Reine Zahlen.
+- `recruited(joined)` – Eintritte mit eingetragenem Werber (Mitglied `geworben_von` oder Freitext `geworben_text`): Anzahl und Anteil. Reine Zahlen.
 - `report(store, stichtag=…, kv=…, ov=…, today=…)` – Auswertung zum Stichtag (JJJJ-MM-TT); kv: Kostenstelle, ov: id oder 'none' (ohne Ortsverband).
 - `redact(r, amounts=…, names=…)` – Auswertung für eine Rolle (rollen.py, ab 0.34): ohne Buchhaltung keine Beitragsbeträge, ohne Mitgliederverwaltung
 - `pdf(store, stichtag=…, kv=…, ov=…, amounts=…)` – Mitgliederstatistik als PDF – nur Zahlen, keine Namen (für Vorstand und Gremien); `amounts=False`: ohne Beitragsbeträge.
@@ -1027,7 +1048,7 @@ Rollen und Rechte im Serverbetrieb (ab 0.34).
 
 Tabellen: `roles`, `user_roles`
 
-Tests: test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py
+Tests: test_kenntnis.py, test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py
 
 - `required(method, path)` – Nötiges Recht für eine Adresse; unbekannte Adressen verlangen „Verwaltung schreiben“.
 - `allowed(rights, need)`

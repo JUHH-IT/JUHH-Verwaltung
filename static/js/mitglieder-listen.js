@@ -17,11 +17,14 @@ export function listen(year = store.year, today = todayIso()) {
   const y = String(year);
   const wahl = store.data.members.some((m) => m.wahl);
   const monthEnd = `${today.slice(0, 7)}-31`;
+  const offen = new Set(store.data.kenntnis?.offen || []);   // ab 0.54: Kennungen mit offener Änderung (kenntnis.py)
   return [
     { id: 'aktiv', label: 'Alle aktiven', test: (m) => isActive(m, today) },
     { id: 'neu', label: `Neu ${year}`, test: (m) => (m.joined || '').startsWith(y), hint: `Eintritte seit 01.01.${year}` },
     { id: 'ohne-mail', label: 'Ohne E-Mail', test: (m) => isActive(m, today) && !m.email, hint: 'Für Einladungen und Rechnungen per E-Mail' },
+    { id: 'aenderung-offen', label: 'Änderung offen', test: (m) => offen.has(m.id), hint: 'Geändert und noch nicht zur Kenntnis genommen' },
     { id: 'anschrift', label: 'Anschrift prüfen', test: (m) => isActive(m, today) && !anschriftVollstaendig(m), hint: 'Straße, PLZ oder Ort fehlen' },
+    { id: 'ohne-ov', label: 'Ohne Ortsverband', test: (m) => isActive(m, today) && !m.ov_id, hint: 'Kein Ortsverband eingetragen' },
     { id: 'werden-35', label: `Werden ${year} 35`, test: (m) => isActive(m, today) && birthYear(m) === year - 35, hint: 'Altersgrenze nach Satzung § 2 Abs. 1 Nr. 4' },
     { id: 'iban-ohne-mandat', label: 'IBAN ohne Mandat', test: (m) => isActive(m, today) && m.hat_iban && (!m.sepa_mandat || m.iban_abweichend),
       hint: 'Bankdaten liegen vor, ein gültiges SEPA-Mandat für dieses Konto fehlt (auch Kontowechsel) – auswählen und „SEPA-Mandate“ drucken' },
