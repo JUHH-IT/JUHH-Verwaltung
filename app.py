@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.55'
+VERSION='0.59'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.

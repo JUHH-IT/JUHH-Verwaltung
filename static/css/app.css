@@ -359,13 +359,10 @@ html.compact .nav button { min-height: 44px; font-size: 15px; }
 html.compact .main { padding: 24px 24px 56px; }
 html.compact .worklist .detail { top: 72px; scroll-margin-top: 64px; }
 
-/* Mitglieder: Listen und Auswahl (0.43) */
-.ml-tabs { flex-wrap: wrap; column-gap: 24px; }
-@media (max-width: 640px) { .ml-tabs { flex-wrap: nowrap; } }
-.ml-save { flex: none; background: none; border: 1px dashed var(--teal-100); border-radius: 999px; color: var(--teal-ink); font-size: 13px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
-.ml-pick { width: 40px; }
-.ml-check { width: 18px; height: 18px; accent-color: var(--teal); margin: 0; }
-tr.is-picked td { background: var(--teal-50); }
+/* Mitglieder: Auswahl (0.43); die Liste selbst steht ab 0.59 auf einem Blatt (siehe „Mitgliederliste als Blatt“ am Ende) */
+.ml-pick { width: 34px; }
+.ml-check { display: block; width: 18px; height: 18px; accent-color: var(--navy); margin: 0; }
+tr.is-picked td { background: var(--navy-50); }
 .ml-bar { position: sticky; bottom: 12px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; background: var(--navy); color: #fff; border-radius: var(--radius-lg); padding: 12px 16px; box-shadow: var(--shadow-float); }
 .ml-bar > .small { color: #d5e2f1; }
 .ml-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
@@ -621,40 +618,7 @@ details.notice summary { cursor: pointer; font-weight: 500; }
 .sepa-batch table { table-layout: fixed; width: 100%; }
 .sepa-batch td { white-space: normal; overflow-wrap: anywhere; }
 
-/* ---------- 0.31: Start (Aufgaben je Bereich), Klärfälle, Schalter ---------- */
-.task-section { display: flex; flex-direction: column; gap: 12px; }
-.task-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.task-title h2 { margin: 0; }
-.task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
-.task-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
-@media (max-width: 900px) {   /* eine Spalte in der Reihenfolge des Dokuments – so stimmen Anzeige und Tastaturfolge überein */
-  .task-grid { grid-template-columns: minmax(0, 1fr); }
-  .task-col { display: contents; }
-}
-.task-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow); overflow: hidden; }
-.task-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; }
-.task-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--line-2); color: var(--ink-2); }
-.task-icon.mv { background: var(--teal-50); color: var(--teal-ink); }
-.task-icon.bh { background: var(--navy-50); color: var(--navy); }
-.task-icon.vb { background: var(--orange-50); color: var(--orange-ink); }
-.task-row {
-  display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 12px 16px 12px 20px; border: 0; border-top: 1px solid var(--line-2);
-  background: none; color: var(--ink); font-size: 14px; text-align: left; cursor: pointer; transition: background-color 150ms var(--ease);
-}
-.task-row:hover { background: var(--surface-2); }
-.task-row > svg { flex: none; color: var(--muted); }
-.task-text { flex: 1; min-width: 0; }
-.task-text strong { display: block; font-weight: 600; font-size: 15px; }
-.task-text .sub { color: var(--muted); font-size: 13px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-.task-count { flex: none; font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--line-2); color: var(--ink-2); white-space: nowrap; }
-.task-count.n { font-size: 22px; padding: 0; background: none; color: var(--ink); font-variant-numeric: tabular-nums; }
-.task-count.warn { background: var(--orange-50); color: var(--orange-ink); }
-.task-count.danger { background: var(--danger-50); color: var(--danger); }
-.task-count.ok { background: var(--teal-50); color: var(--teal-ink); }
-.task-count.n.warn, .task-count.n.danger, .task-count.n.ok { background: none; }
-.task-count.n.warn { color: var(--orange-ink); }
-.task-count.n.danger { color: var(--danger); }
-.task-none { display: flex; align-items: center; gap: 8px; margin: 0; padding: 14px 20px; border-top: 1px solid var(--line-2); color: var(--teal-ink); font-size: 14px; }
+/* ---------- 0.31: Klärfälle, Schalter (Start: siehe „Start als Blatt“ am Ende) ---------- */
 button.card.card-link { font: inherit; text-align: left; cursor: pointer; }
 button.card.card-link:hover { border-color: var(--field); background: var(--surface-2); }
 .case-split { align-items: stretch; }
@@ -687,8 +651,6 @@ tr.case-current > td { background: var(--navy-50); }
 .case-state { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .case-state .small { white-space: nowrap; }
 .case-split table td:first-child { width: 1%; }
-.task-title h2 { font-size: 20px; }
-.task-head h3 { font-size: 17px; }
 
 /* ---------- Karte (ab 0.32) ---------- */
 :root {
@@ -1135,6 +1097,9 @@ td.aw-ton span { position: relative; color: var(--ink); }
 .blatt-reihe { display: flex; flex-wrap: wrap; }
 .blatt-reihe > .blatt-teil { flex: 13 1 440px; }
 .blatt-reihe > .blatt-teil.schmal { flex: 8 1 320px; border-left: 1px solid var(--line); }
+.blatt-stapel { flex: 8 1 320px; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); }   /* schmale Spalte mit mehreren Abschnitten */
+.blatt-stapel > * + * { border-top: 1px solid var(--line); }
+.blatt-stapel.allein { border-left: 0; }
 .blatt-kopf { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; padding-bottom: 12px; }
 .blatt-kopf h2, .blatt-kopf h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
 .blatt-kopf .small { color: var(--muted); }
@@ -1164,13 +1129,21 @@ td.aw-ton span { position: relative; color: var(--ink); }
 .punkt { flex: none; width: 7px; height: 7px; border-radius: 99px; background: var(--orange); }
 @media (max-width: 900px) {
   .blatt-teil { padding: 22px 18px 20px; }
-  .blatt-reihe > .blatt-teil.schmal { border-left: 0; border-top: 1px solid var(--line); }
+  .blatt-reihe > .blatt-teil.schmal, .blatt-stapel { border-left: 0; border-top: 1px solid var(--line); }
   .kz-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kz, .kz:first-child { padding: 16px 18px; border-left: 0; border-top: 1px solid var(--line); }
   .kz:nth-child(-n+2) { border-top: 0; }
   .kz:nth-child(even) { border-left: 1px solid var(--line); }
   .blatt-aussage, .blatt-aussage.gross { font-size: 22px; }
 }
+
+/* Liste als Tabelle im Blatt (0.59): nur Haarlinien, Kopf klein und ruhig, zweite Zeile je Zelle über .sub */
+table.blatt-tab th, table.blatt-tab td { padding: 9px 0 9px 20px; border-bottom: 0; border-top: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
+table.blatt-tab th:first-child, table.blatt-tab td:first-child { padding-left: 0; }
+table.blatt-tab thead th { padding-top: 0; padding-bottom: 8px; border-top: 0; font-size: 13px; font-weight: 400; color: var(--muted); vertical-align: bottom; }
+table.blatt-tab td strong { font-weight: 600; color: var(--ink); }
+table.blatt-tab tr.clickable:hover strong { color: var(--navy); }
+table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }   /* Schatten zeichnet der Browser an Tabellenzeilen nicht */
 
 /* ---------- Zur Kenntnis (0.54, views/kenntnis.js) ---------- */
 .kn-einleitung { margin: -8px 0 0; max-width: 680px; color: var(--ink-2); }
@@ -1217,15 +1190,15 @@ td.aw-ton span { position: relative; color: var(--ink); }
 }
 
 /* ---------- Cockpit der Mitgliederverwaltung (0.54, views/mitglieder-ueberblick.js) ---------- */
-.ck-page .meta { display: block; font-size: 13px; color: var(--muted); font-weight: 400; }
-.ck-page .blatt strong { font-weight: 600; }
+.ck-page .meta, .task-page .meta { display: block; font-size: 13px; color: var(--muted); font-weight: 400; }
+.ck-page .blatt strong, .task-page .blatt strong, .ml-page .blatt strong { font-weight: 600; }
 .ck-lage { flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 40px; padding-top: 32px; padding-bottom: 28px; }
 .ck-lage > div { flex: 1 1 420px; min-width: 0; }
 .ck-offen { font-size: 13px; font-weight: 600; color: var(--orange-ink); }
 .ck-kenntnis > div { grid-template-columns: minmax(0, 200px) minmax(0, 1fr) auto; gap: 20px; min-height: 68px; }
 .ck-name { display: grid; grid-template-columns: 7px minmax(0, 1fr); gap: 10px; align-items: baseline; background: none; border: 0; padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; min-width: 0; }
 .ck-name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ck-name:hover strong, .ck-vorrat button:hover strong, .ck-kvs button:hover strong { color: var(--navy); }
+.ck-name:hover strong, .ck-vorrat button:hover strong, .ck-kvs button:hover strong, .task-row:hover strong { color: var(--navy); }
 .ck-was { display: flex; flex-direction: column; min-width: 0; font-size: 14px; color: var(--ink-2); }
 .ck-was > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ck-wert { display: flex; align-items: center; gap: 8px; font-size: 13px; }
@@ -1238,7 +1211,7 @@ td.aw-ton span { position: relative; color: var(--ink); }
 .ck-tag { font-size: 13px; color: var(--muted); white-space: nowrap; }
 .ck-vorrat { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 18px 40px; }
 .ck-vorrat h3 { margin: 0; padding-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
-.ck-vorrat button, .ck-kvs button { width: 100%; background: none; border: 0; border-top: 1px solid var(--line); padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.ck-vorrat button, .ck-kvs button, .task-row { width: 100%; background: none; border: 0; border-top: 1px solid var(--line); padding: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 .ck-vorrat button { grid-template-columns: minmax(0, 1fr) auto 14px; gap: 12px; min-height: 52px; }
 .ck-vorrat button > span:first-child { min-width: 0; }
 .ck-vorrat button strong { display: block; font-size: 14px; }
@@ -1290,3 +1263,53 @@ td.aw-ton span { position: relative; color: var(--ink); }
   .ck-kenntnis .ck-was { grid-column: 1; grid-row: 2; padding-left: 17px; }
   .ck-kenntnis > div > :last-child { grid-column: 2; grid-row: 1 / span 2; }
 }
+
+/* ---------- Start als Blatt (0.59, views/overview.js): Lage, Haushalt, Aufgaben je Bereich, Termine, Verwaltung ---------- */
+.task-lage { padding-top: 32px; padding-bottom: 28px; }
+.task-bereich + .task-bereich { margin-top: 24px; }
+.task-bereich h3 { margin: 0; padding-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.task-bereich > p { margin: 0; padding: 14px 0 4px; border-top: 1px solid var(--line); font-size: 14px; }
+.task-page .kz > .strich { flex: none; width: 100%; max-width: 168px; margin: 6px 0 4px; }
+.zeilen > .task-row { grid-template-columns: minmax(0, 1fr) auto 14px; min-height: 56px; padding: 8px 0; }
+.task-row strong { display: block; font-size: 14px; }
+.task-row > svg { color: var(--muted); }
+.task-count { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.task-count.n { font-size: 17px; font-weight: 600; color: var(--ink); }
+.task-count.n .zahl { min-width: 26px; text-align: right; }
+.task-count.warn:not(.n), .task-count.danger { font-weight: 600; color: var(--orange-ink); }
+.task-count.danger { color: var(--danger); }
+.task-count.danger .punkt { background: var(--danger); }
+.task-termine li { display: block; }
+.task-termine .task-row { display: grid; grid-template-columns: 76px 11px minmax(0, 1fr); gap: 14px; border-top: 0; }
+.task-termine .task-row > span:last-child { padding-bottom: 18px; min-width: 0; }
+.task-termine li:last-child .task-row > span:last-child { padding-bottom: 0; }
+@media (max-width: 640px) { .task-page .kz .wert { font-size: 20px; } }   /* Beträge sind breiter als die Zahlen des Cockpits */
+
+/* ---------- Mitgliederliste als Blatt (0.59, views/members.js): Suche und Listen, darunter die Tabelle mit ihrer Aussage ---------- */
+.ml-wahl { gap: 18px; padding-bottom: 20px; }
+.ml-listen { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 24px; align-items: baseline; }
+.ml-listen > span { font-size: 13px; color: var(--muted); white-space: nowrap; }
+.ml-listen > div { display: flex; flex-wrap: wrap; gap: 0 22px; min-width: 0; }
+.ml-listen [role="tab"] { flex: none; background: none; border: 0; border-bottom: 2px solid transparent; padding: 7px 0 5px; font: inherit; font-size: 14px; color: var(--ink-2); white-space: nowrap; cursor: pointer; }
+.ml-listen [role="tab"]:hover { color: var(--navy); }
+.ml-listen [aria-selected="true"] { color: var(--navy); font-weight: 600; border-bottom-color: var(--navy); }
+.ml-listen .n { margin-left: 6px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ml-listen .blatt-link { padding: 8px 0 6px; white-space: nowrap; }
+.ml-hinweis { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 14px; color: var(--ink-2); }
+.ml-hinweis .punkt { position: relative; top: -1px; }
+.ml-kopf { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; padding-bottom: 18px; }
+.ml-kopf p { margin: 6px 0 0; max-width: 720px; }
+.ml-tabelle .blatt-fuss { margin-top: 0; }
+.ml-tabelle td:nth-child(2) .sub { font-variant-numeric: tabular-nums; }
+.ml-tabelle td:nth-child(2) .sub > span { white-space: nowrap; }   /* Nummer und Zusatz brechen nur zwischen den Angaben um */
+.ml-stand { color: var(--ink-2); }
+.ml-stand.warn { font-weight: 500; color: var(--orange-ink); }
+.ml-fehlt { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--orange-ink); white-space: nowrap; }
+@media (max-width: 640px) {
+  .ml-listen { grid-template-columns: minmax(0, 1fr); }
+  .ml-listen > span { padding-top: 8px; }
+  .ml-listen > div { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .ml-listen > div::-webkit-scrollbar { display: none; }
+  .ml-listen [role="tab"], .ml-listen .blatt-link { padding: 11px 0 9px; }
+}
+@media (max-width: 900px) { .ml-tabelle table { min-width: 940px; } }   /* schmale Bildschirme: die Tabelle rollt seitlich, die Zeilen bleiben zweizeilig */
