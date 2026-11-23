@@ -20,7 +20,7 @@ BEREICHE = (
     ('Mitgliederverwaltung', 'mitglieder mitgliederlisten doppelte gliederung ovabgleich kenntnis klaerfaelle wahlrecht karte adressen auswertung'),
     ('Mitgliedsbeiträge', 'beitraege mitgliederkonto opliste sepadatei lastschrift'),
     ('Buchhaltung', 'bankimport uebernahme workflow umsatzakte kasse verbindlichkeiten erstattung erechnung freigabe berichte'),
-    ('Rechnungen und Versand', 'rechnung_pdf pdfschrift versand geheimnis'),
+    ('Rechnungen und Versand', 'rechnung_pdf zugferd pdfschrift versand geheimnis'),
     ('Verband', 'haushalt kvbudget kvabgleich rpj'),
     ('Serverbetrieb und Sicherheit', 'zugang rollen sicherheit schutz keycloak verwaltung'),
     ('Sicherung und Pflege', 'sicherung bereinigung'),

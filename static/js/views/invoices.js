@@ -5,7 +5,7 @@ import { eur, date } from '../format.js';
 import { store, refresh } from '../store.js';
 import { pageHead, icon, table, empty, badge, dialog, confirmAction, safe, mailPreview } from '../ui.js';
 import { createDialog } from './invoice-create.js';
-import { sendDialog, mailBadge, printLink, afterIssue } from './mailing.js';
+import { sendDialog, mailBadge, printLink, afterIssue, erechnungHinweis } from './mailing.js';
 import { sepaDialog } from './sepa.js';
 
 let filter = 'all';
@@ -36,6 +36,7 @@ async function duesDialog(year = store.year) {
       <div class="toolbar"><label class="field" style="flex-direction:row;align-items:center;gap:10px">Beitragsjahr
         <select id="dues-year">${[store.year - 1, store.year, store.year + 1].map((y) => html`<option ${y === year ? 'selected' : ''}>${y}</option>`)}</select></label>
         <span class="small muted">Staffel und Zahlungsziel aus den Stammdaten; individuelle Beiträge am Mitglied haben Vorrang.</span></div>
+      ${erechnungHinweis('dues')}
       ${rows.length ? table(['', 'Mitglied', { label: 'Beitrag', className: 'num' }, 'Fällig', 'Prüfung', 'Vorschau'], rows.map((r) => html`<tr>
         <td><input class="dues-check" type="checkbox" value="${r.id}" ${chosen.has(r.id) ? 'checked' : ''} ${ready(r) ? '' : 'disabled'} aria-label="${r.name} auswählen"></td>
         <td>${r.name}<span class="sub">${r.number} · ${r.email || 'keine E-Mail'}</span></td>

@@ -35,6 +35,7 @@ def exclusive(fn):
 
 
 def covers(text, font=SANS):
-    """True, wenn die Schrift alle Zeichen des Textes darstellen kann (Leerraum ausgenommen)."""
+    """True, wenn die Schrift jedes Zeichen des Textes darstellen kann. Ausgenommen sind nur Leerzeichen und geschütztes
+    Leerzeichen: anderer Leerraum (Tabulator, U+3000 …) stünde als Kästchen in der PDF. Glyphe 0 ist das Kästchen selbst (U+FFFF)."""
     glyphs = pdfmetrics.getFont(font).face.charToGlyph
-    return all(ord(c) in glyphs for c in str(text) if not c.isspace())
+    return all(glyphs.get(ord(c)) for c in str(text) if c not in ' \xa0')

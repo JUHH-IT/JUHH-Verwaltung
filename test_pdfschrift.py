@@ -15,6 +15,11 @@ class FontTests(unittest.TestCase):
         self.assertTrue(pdfschrift.covers(NAMES))
         self.assertFalse(pdfschrift.covers('漢字'))                                   # bewusst nicht abgedeckt
 
+    def test_leerraum_ohne_glyphe_und_das_kaestchen_selbst_gelten_nicht_als_abgedeckt(self):
+        self.assertTrue(pdfschrift.covers('Erika Muster\xa0GmbH'))                    # Leerzeichen und geschütztes Leerzeichen
+        for zeichen in '\t\n\u3000\u2028\u205f\u1680\x0b\x0c\x1c\x1f\x85\uffff\x01':   # stünden als Kästchen in der PDF (U+FFFF ist Glyphe 0)
+            self.assertFalse(pdfschrift.covers(f'Erika{zeichen}Muster'), hex(ord(zeichen)))
+
     def test_invoice_embeds_font(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

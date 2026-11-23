@@ -764,8 +764,9 @@ def _audit_entries(store, year, data_dir, notes):
 
     mailings = store.rows('SELECT m.*,i.number FROM mailings m JOIN invoices i ON i.id=m.invoice_id WHERE substr(m.time,1,4)=? ORDER BY m.id', (y,))
     yield f'E-Mail-Protokoll-{y}.csv', _csv([[m['number'], 'Erinnerung' if m['kind'] == 'reminder' else 'Rechnung', m['time'], m['recipient'], m['subject'],
-                                              m['status'], m['error']] for m in mailings],
-                                            ['Rechnung', 'Art', 'Zeit', 'Empfänger', 'Betreff', 'Status', 'Fehler'])
+                                              m['status'], m['error'], '' if m['erechnung'] is None else 'nein: ' + m['erechnung'] if m['erechnung'] else 'ja']
+                                             for m in mailings],
+                                            ['Rechnung', 'Art', 'Zeit', 'Empfänger', 'Betreff', 'Status', 'Fehler', 'E-Rechnung'])
 
     # Lastschriften nur als Liste mit gekürzter IBAN – keine hochladbare Datei im Paket (Festschreibung aus 0.15)
     batches = [b for b in lastschrift.batches(store) if b['created'][:4] == y]

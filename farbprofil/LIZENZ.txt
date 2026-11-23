@@ -1,0 +1,9 @@
+sRGB-v2-micro.icc – sRGB-Farbprofil (ICC v2, 456 Byte) für PDF/A-3 (OutputIntent der E-Rechnung, zugferd.py)
+
+Herkunft:  Compact ICC Profiles von Clinton Ingram
+           https://github.com/saucecontrol/Compact-ICC-Profiles  (Datei profiles/sRGB-v2-micro.icc, unverändert)
+Abruf:     23.11.2026
+SHA-256:   0a8a33aea66a6f154a5642ebe168ef287e73265d9f7b51c42a45e6eedbacda7a
+Lizenz:    CC0 1.0 Universal (Public Domain Dedication) – https://creativecommons.org/publicdomain/zero/1.0/
+           „All profiles in this collection are released to the public domain under the Creative Commons CC0 license.
+           They are free from restrictions on distribution and use to the extent allowed by law.“ (readme des Projekts)

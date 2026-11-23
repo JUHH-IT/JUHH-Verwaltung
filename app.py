@@ -16,6 +16,7 @@ import sicherheit
 import schutz
 import uebernahme
 import rechnung_pdf
+import zugferd
 import versand
 import verbindlichkeiten
 import umsatzakte
@@ -178,6 +179,7 @@ def log_error(where):
     kind,_,tb=sys.exc_info()
     frames=[f'{Path(f.filename).name}:{f.lineno}' for f in traceback.extract_tb(tb)[-4:]]
     log(f'Interner Fehler bei {where}: {kind.__name__ if kind else "?"} ({" > ".join(frames)})')
+zugferd.melden=log_error   # scheitert die E-Rechnung, geht die bisherige PDF hinaus – die Ursache steht dann hier im Protokoll
 
 STATIC=ROOT/'static'
 STATIC_TYPES={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'}
@@ -251,13 +253,20 @@ def preview_invoice(store,query,actor):
         inv['email']=r['email'];return inv
     raise ValueError('Keine Rechnung angegeben.')
 
+def anhang_art(inv):
+    """Zusatz zur Zeile „Anhang“ der E-Mail-Vorschau: ob die PDF einer festgeschriebenen Rechnung eine E-Rechnung ist, sonst der Grund
+    (nur bei eingeschaltetem Schalter; Entwürfe und Beispiele sind noch keine Rechnung)."""
+    if inv.get('preview') or not inv.get('erechnung'): return ''
+    grund=zugferd.grund(inv)
+    return f' – normale PDF ohne E-Rechnung: {grund}' if grund else ' – E-Rechnung (ZUGFeRD)'
+
 def mail_preview_page(cfg,inv):
     """HTML-Seite für die Vorschau im Programm: Kopfangaben und die E-Mail, wie sie verschickt wird."""
     subject,body=versand.texts(cfg,inv)
     page=versand.html_body(cfg,inv,body)
     meta=''.join(f'<tr><td style="color:#5b6b7f;padding:2px 12px 2px 0">{k}</td><td>{html_escape(v)}</td></tr>' for k,v in (
         ('Von',f"{cfg.get('mail_from_name','')} <{cfg.get('mail_from') or 'Absender fehlt'}>"),('An',f"{inv['recipient']} <{inv.get('email') or 'keine E-Mail-Adresse'}>"),
-        ('Betreff',subject),('Anhang',rechnung_pdf.filename(inv))))
+        ('Betreff',subject),('Anhang',rechnung_pdf.filename(inv)+anhang_art(inv))))
     head=f'<div style="font:13px Helvetica,Arial,sans-serif;background:#fff;padding:12px 16px;border-bottom:1px solid #d5dde8"><table>{meta}</table></div>'
     return page.replace('<body style="margin:0;padding:0;background:#f4f6f9">','<body style="margin:0;padding:0;background:#f4f6f9">'+head,1)
 
@@ -557,13 +566,14 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/haushalt.pdf':
                     year=int(query['year'][0]);return self.send(200,haushalt.pdf_report(store,year),'application/pdf',inline=f'Haushalt-{year}.pdf')
                 if path=='/api/invoice.pdf':
-                    inv=rechnung_pdf.invoice_data(store,int(query['id'][0]));return self.send(200,rechnung_pdf.render([inv]),'application/pdf',inline=rechnung_pdf.filename(inv))
+                    inv=rechnung_pdf.invoice_data(store,int(query['id'][0]));inv['paid']=versand.paid_amount(store,inv['id'])   # wie Versand und Vorschau: offener Betrag
+                    return self.send(200,zugferd.pdf(inv)[0],'application/pdf',inline=rechnung_pdf.filename(inv))   # ab 0.59 als E-Rechnung, wenn die Rechnung vollständig ist
                 if path=='/api/invoices.pdf':
                     ids=[int(x) for x in query['ids'][0].split(',') if x.strip()]
                     if not 0<len(ids)<=2000: raise ValueError('Bitte 1 bis 2000 Rechnungen auswählen.')
                     return self.send(200,rechnung_pdf.render([rechnung_pdf.invoice_data(store,i) for i in ids]),'application/pdf',inline='Rechnungen.pdf')
                 if path=='/api/preview.pdf':
-                    inv=preview_invoice(store,query,self.session()['actor']);return self.send(200,rechnung_pdf.render([inv]),'application/pdf',inline=rechnung_pdf.filename(inv))
+                    inv=preview_invoice(store,query,self.session()['actor']);return self.send(200,zugferd.pdf(inv)[0],'application/pdf',inline=rechnung_pdf.filename(inv))
                 if path=='/api/mail-preview':
                     inv=preview_invoice(store,query,self.session()['actor']);return self.send(200,mail_preview_page(store.config(),inv),'text/html; charset=utf-8',frame=True)
                 if path=='/api/rpj': return self.send(200,rpj.year_view(store,int(query['year'][0])))
