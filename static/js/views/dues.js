@@ -49,8 +49,8 @@ export function dues(main) {
 
   const assign = (item, members) => safe(async () => {
     await api('/api/beitrag-zuordnen', { entry_id: item.id, members: membersPayload(members, true) });
-    toast(members.some((m) => m.case) ? 'Zugeordnet – der unklare Teil liegt als Klärfall bei der Mitgliederverwaltung.' : 'Beitrag zugeordnet.');
     await refresh();
+    toast(members.some((m) => m.case) ? 'Zugeordnet – der unklare Teil liegt als Klärfall bei der Mitgliederverwaltung.' : 'Beitrag zugeordnet.');
   });
 
   async function load() {
@@ -92,8 +92,8 @@ export function dues(main) {
       e.target.disabled = true;
       try {
         const result = await api('/api/beitraege-vorschlaege', { year: scope ? Number(scope) : null });
-        toast(`${result.count} Zahlungen nach Vorschlag zugeordnet – einzeln prüfbar unter „Auch zugeordnete … zeigen“.`);
         await refresh();
+        toast(`${result.count} Zahlungen nach Vorschlag zugeordnet – einzeln prüfbar unter „Auch zugeordnete … zeigen“.`);
       } finally { e.target.disabled = false; }
     }));
     box.querySelector('[data-report-all]')?.addEventListener('click', () => confirmAction('Als Klärfälle melden',
@@ -110,8 +110,8 @@ export function dues(main) {
       btn.disabled = true;
       try {
         await api('/api/klaerfall-melden', { entry_id: items[Number(btn.dataset.report)].id });
-        toast('Als Klärfall an die Mitgliederverwaltung gemeldet.');
         await refresh();
+        toast('Als Klärfall an die Mitgliederverwaltung gemeldet.');
       } finally { btn.disabled = false; }
     })));
     box.querySelectorAll('[data-pick]').forEach((btn) => (btn.onclick = () => {

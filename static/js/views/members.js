@@ -384,6 +384,8 @@ export function account(id, { back = null, tab = null } = {}) {
             <button type="button" class="btn" data-leave>${m.left_on ? 'Austritt ändern' : 'Austritt eintragen'}</button>
             <button type="button" class="btn ghost" data-delete>Löschen</button>` : ''}</div></header>
       ${wahlHint(m, a)}
+      ${(store.data.kenntnis?.offen || []).includes(m.id) ? html`<p class="notice" data-kenntnis-hinweis>Eine Änderung an diesem Mitglied wartet auf Kenntnisnahme.
+        <button type="button" class="link" data-kenntnis>Vorher und Jetzt ansehen</button></p>` : ''}
       <div class="tabs" role="tablist" aria-label="Mitgliederakte">${tabs.map(([k, label]) => html`<button type="button" role="tab" data-tab="${k}" aria-selected="${k === tab}">${label}</button>`)}</div>
       <div data-tab-body></div></div>`);
     const body = box.querySelector('[data-tab-body]');
@@ -422,6 +424,7 @@ export function account(id, { back = null, tab = null } = {}) {
     };
     mount(body, show[tab]());
     box.querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => { tab = b.dataset.tab; draw(a); }));
+    box.querySelector('[data-kenntnis]')?.addEventListener('click', () => { el.close(); go('kenntnis'); });
     box.querySelector('[data-edit]')?.addEventListener('click', () => memberDialog(f));
     box.querySelector('[data-delete]')?.addEventListener('click', () => deleteMember(m, () => el.close()));
     box.querySelector('[data-leave]')?.addEventListener('click', () => leaveDialog(m, a, () => reopen()));

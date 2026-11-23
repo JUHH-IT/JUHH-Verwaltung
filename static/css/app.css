@@ -973,7 +973,7 @@ button.map-kv:hover { background: var(--surface-2); }
 .aw-saeulen .aw-wert { font-size: 11.5px; line-height: 1.2; color: var(--ink-2); }
 .aw-achse { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
 .aw-saeulen .jetzt .aw-wert, .aw-saeulen .jetzt .aw-achse { font-weight: 600; color: var(--ink); }
-.aw-saeulen .leer .aw-achse { opacity: 0.6; }
+/* Monate nach dem Stichtag: die Beschriftung bleibt lesbar (Kontrast), leer ist die Säule */
 @container (max-width: 460px) {   /* schmal: ’26 statt 2026, an der Linie nur Anfang, Ende und Ausschläge beschriftet */
   .aw-cc { font-size: 0; }
   .aw-cc::after { content: "’"; font-size: 11px; }
@@ -1173,6 +1173,9 @@ td.aw-ton span { position: relative; color: var(--ink); }
 }
 
 /* ---------- Zur Kenntnis (0.54, views/kenntnis.js) ---------- */
+/* Einstellungen: Angaben von der Kenntnisnahme ausnehmen (0.55) */
+.kn-ohne summary { cursor: pointer; font-weight: 600; }
+.kn-ohne .kv-chips { margin-top: 10px; }
 .kn-einleitung { margin: -8px 0 0; max-width: 680px; color: var(--ink-2); }
 .kn-reihe > .kn-liste { flex: 8 1 340px; padding-top: 16px; padding-bottom: 16px; border-right: 1px solid var(--line); }
 .kn-reihe > .kn-detail { flex: 13 1 440px; gap: 18px; align-self: flex-start; position: sticky; top: 12px; }

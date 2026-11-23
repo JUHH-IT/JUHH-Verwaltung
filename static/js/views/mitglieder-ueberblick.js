@@ -230,8 +230,8 @@ function draw(main, extra) {
   main.querySelectorAll('[data-kenntnis]').forEach((b) => (b.onclick = () => go('kenntnis')));
   main.querySelectorAll('[data-ab]').forEach((b) => (b.onclick = () => safe(async () => {
     await api('/api/kenntnis-abhaken', { punkte: [{ id: Number(b.dataset.ab), sammel: null }], bis: k.stand });
-    toast('Zur Kenntnis genommen.');
     await refresh();
+    toast('Zur Kenntnis genommen.');
   })));
   main.querySelectorAll('[data-list]').forEach((b) => (b.onclick = () => openList(b.dataset.list)));
   main.querySelectorAll('[data-tun]').forEach((b) => (b.onclick = () => ({ abgleich: ovAbgleichDialog, doppelte: doppelteDialog, klaerfaelle: () => go('cases') })[b.dataset.tun]()));

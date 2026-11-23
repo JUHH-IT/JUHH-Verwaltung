@@ -105,7 +105,7 @@ class RollenTests(unittest.TestCase):
         self.assertEqual(set(nothing), set(snapshot))
         real = self.store.snapshot(2026)                                               # jeder Schlüssel der echten Gesamtdaten ist eingeordnet oder bewusst frei
         free = set(real) - set(rollen.SNAPSHOT)
-        self.assertEqual(free, {'kv', 'accounts', 'invoice_accounts', 'settings', 'year', 'data_start', 'wahl'})   # wahl: nur die Stichtage (0.37)
+        self.assertEqual(free, {'kv', 'accounts', 'invoice_accounts', 'settings', 'year', 'data_start', 'wahl', 'kenntnis_felder'})   # wahl: nur die Stichtage (0.37); kenntnis_felder: nur Beschriftungen (0.55)
 
     def test_roles_can_be_changed_but_one_admin_remains(self):
         zugang.set_password(self.db, 'Erste', PASSWORT, create=True)
