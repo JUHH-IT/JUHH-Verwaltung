@@ -36,6 +36,7 @@ function schalter(s) {
   const on = s.kv_share_auto === 'yes', from = s.kv_share_auto_from || String(now + 1);
   const open = store.data.dues_open_all, waiting = store.data.cases?.unassigned || 0;
   const wahl = store.data.wahl;   // Stichtage der Wahlberechtigung mit Vorschlag (wahlrecht.py)
+  const ausgenommen = new Set((s.kenntnis_ohne || '').split(',').filter(Boolean));   // Zur Kenntnis: nicht festgehaltene Angaben (0.55)
   return html`<form data-save class="panel switch-list">
     <div class="switch-row">
       <div class="switch-text"><h2>Beitragsanteil der Kreisverbände automatisch aus den Mitgliedsbeiträgen</h2>
@@ -68,7 +69,7 @@ function schalter(s) {
       <div class="switch-text"><h2>Rechnungen als E-Rechnung versenden (ZUGFeRD)</h2>
         <p class="muted"><strong>An:</strong> Jede Rechnung, die per E-Mail hinausgeht oder einzeln geöffnet wird, ist eine E-Rechnung: die gewohnte PDF,
           in der zusätzlich die Rechnungsdaten zum Einlesen stecken (ZUGFeRD, Profil EN 16931) – eine Datei, kein zweiter Anhang. Fehlt eine Angabe,
-          geht die bisherige PDF hinaus. <strong>Aus:</strong> immer die bisherige PDF. Zahlungserinnerungen, Vorschauen, das Sammel-PDF zum Drucken und
+          geht die bisherige PDF hinaus. <strong>Aus (Vorgabe):</strong> immer die bisherige PDF. Zahlungserinnerungen, Vorschauen, das Sammel-PDF zum Drucken und
           stornierte Rechnungen bleiben immer normale PDF.</p>
         ${s.erechnung !== 'yes' ? '' : erechnungFehlt().length ? html`<p class="notice warn" data-erechnung-stand>${erechnungFehlt().join(' ')} Eintragen unter „Verein &amp; Bank“ → E-Rechnung.</p>`
           : html`<p class="small" data-erechnung-stand>Die Angaben sind vollständig: Beitragsrechnungen und Rechnungen gehen als E-Rechnung hinaus.</p>`}</div>
@@ -90,6 +91,16 @@ function schalter(s) {
           <strong>Aus:</strong> Jede Änderung wird abgehakt, auch die eigene.</p></div>
       <label class="switch"><input type="checkbox" name="kenntnis_eigene" role="switch" aria-label="Eigene Änderungen der Mitgliederverwaltung gelten als gesehen" ${s.kenntnis_eigene === 'yes' ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
         <span class="switch-label" data-switch-label>${s.kenntnis_eigene === 'yes' ? 'An' : 'Aus'}</span></label>
+    </div>
+    <div class="switch-row">
+      <div class="switch-text"><h2>Zur Kenntnis: Umfang und Höchstfrist</h2>
+        <p class="muted">Eine ausgenommene Angabe hält das Programm nicht mehr fest; was davon schon festgehalten ist, wird beim Speichern gelöscht.
+          Mit einer Höchstfrist löscht das Programm Änderungen, die so lange niemand abgehakt hat – das steht dann mit der Anzahl im Protokoll.</p>
+        <label class="field inline">Nie abgehakte Änderungen<select name="kenntnis_hoechstfrist">${[['0', 'bleiben, bis jemand abhakt'], ['90', 'nach 90 Tagen löschen'],
+          ['180', 'nach 180 Tagen löschen'], ['365', 'nach einem Jahr löschen']].map(([v, t]) => html`<option value="${v}" ${(s.kenntnis_hoechstfrist || '0') === v ? 'selected' : ''}>${t}</option>`)}</select></label>
+        <details class="kn-ohne"><summary>Angaben ausnehmen <span class="muted" data-ohne-zahl>${ausgenommen.size ? `(${ausgenommen.size} ausgenommen)` : '(keine ausgenommen)'}</span></summary>
+          <div class="kv-chips" role="group" aria-label="Angaben, die nicht festgehalten werden">${(store.data.kenntnis_felder || []).map(([k, label]) => html`
+            <label class="check"><input type="checkbox" data-ohne value="${k}" ${ausgenommen.has(k) ? 'checked' : ''}> ${label}</label>`)}</div></details></div>
     </div>
     <div class="switch-row">
       <div class="switch-text"><h2>Karte: Hintergrund von OpenStreetMap laden</h2>
@@ -415,6 +426,7 @@ function zugang() {
 function collect(form) {
   const data = Object.fromEntries(new FormData(form));
   for (const name of ['invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene', 'erechnung']) if (form.elements[name]) data[name] = form.elements[name].checked ? 'yes' : 'no';
+  if (form.querySelector('[data-ohne]')) data.kenntnis_ohne = [...form.querySelectorAll('[data-ohne]:checked')].map((b) => b.value).join(',');
   if (data.kv_share_auto === 'no') delete data.kv_share_auto_from;   // Schalter aus: kein Jahr speichern, das noch niemand entschieden hat
   return data;
 }
@@ -452,6 +464,11 @@ export async function settings(main) {
     input.addEventListener('input', show);
     show();
   });
+  const ohneZahl = main.querySelector('[data-ohne-zahl]');   // Zur Kenntnis: Zahl der ausgenommenen Angaben läuft mit
+  main.querySelectorAll('[data-ohne]').forEach((box) => box.addEventListener('change', () => {
+    const n = main.querySelectorAll('[data-ohne]:checked').length;
+    ohneZahl.textContent = n ? `(${n} ausgenommen)` : '(keine ausgenommen)';
+  }));
   main.querySelectorAll('.switch input').forEach((box) => box.addEventListener('change', () => {
     box.closest('.switch').querySelector('[data-switch-label]').textContent = box.checked ? 'An' : 'Aus';
   }));

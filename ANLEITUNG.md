@@ -309,6 +309,7 @@ Der Ortsverband richtet sich nach dem Stadtteil der Anschrift. Dafür braucht je
   - „Abgehakt“ zeigt, was in den letzten 30 Tagen erledigt wurde und von wem. Danach löscht das Programm die alten Werte.
   - Beträge (Jahresbeitrag) und die Notiz werden nie festgehalten.
   - Die Liste „Änderung offen“ in der Mitgliederliste zeigt dieselben Mitglieder.
+- **Ab 0.56:** Wer wann abgehakt hat, steht im **Verlauf** des Mitglieds („Änderung zur Kenntnis genommen“). Die Akte zeigt einen Hinweis, solange eine Änderung offen ist. Unter Einstellungen → Schalter → „Zur Kenntnis: Umfang und Höchstfrist“ lassen sich einzelne Angaben **ausnehmen** (z. B. Telefon; sie werden dann nicht mehr festgehalten) und eine **Höchstfrist** wählen, nach der nie abgehakte Änderungen gelöscht werden (Vorgabe: sie bleiben, bis jemand abhakt).
 - **Einstellen** (Einstellungen → Schalter): „Änderungen an Mitgliedern zur Kenntnis nehmen“ schaltet das Ganze aus – dann hält das Programm nichts fest und löscht innerhalb einer Stunde, was schon festgehalten war. „Eigene Änderungen der Mitgliederverwaltung gelten als gesehen“: jede Änderung durch eine Person mit dem Recht „Mitglieder ändern“ ist sofort abgehakt. Weil nur diese Personen Mitglieder ändern können, bleibt dann nichts offen; „Abgehakt“ zeigt weiter 30 Tage lang, wer was geändert hat.
 
 ### Mitgliederstatus und Wahlberechtigung (ab 0.37)
@@ -428,7 +429,7 @@ Es gibt zwei Arten, beide mit **automatisch fortlaufenden Nummern** je Kalenderj
 
 Jede Rechnung, die per E-Mail hinausgeht oder einzeln geöffnet wird, ist eine **E-Rechnung im Format ZUGFeRD** (auch Factur-X, Profil EN 16931): Es bleibt **eine PDF** – sie sieht aus wie bisher, enthält aber zusätzlich die Rechnungsdaten in einer Form, die Buchhaltungsprogramme einlesen können. Es gibt keinen zweiten Anhang.
 
-- **Einschalten:** Einstellungen → Schalter → „Rechnungen als E-Rechnung versenden (ZUGFeRD)“. Vorgabe: an. Darunter steht, ob die Angaben vollständig sind oder was noch fehlt.
+- **Einschalten:** Einstellungen → Schalter → „Rechnungen als E-Rechnung versenden (ZUGFeRD)“. Vorgabe: aus – erst einschalten, wenn die Umsatzsteuer-Einordnung (unten) bestätigt ist. Darunter steht, ob die Angaben vollständig sind oder was noch fehlt.
 - **Angaben** (Einstellungen → Verein & Bank → E-Rechnung): **Steuernummer** und/oder **USt-IdNr.** und die **Umsatzsteuer normaler Rechnungen** – „nicht steuerbar“ oder „steuerbefreit“ (z. B. Kleinunternehmer); bitte nur nach fachlicher Bestätigung wählen. Die Begründung in den Rechnungsdaten ist der Steuerhinweis. **Beitragsrechnungen** gelten immer als nicht steuerbar; für sie genügt die Steuernummer oder die Gläubiger-ID der SEPA-Lastschrift. Für „steuerbefreit“ braucht es Steuernummer oder USt-IdNr.
 - **Fehlt etwas, geht die bisherige PDF hinaus** – der Versand scheitert daran nie. Der Versanddialog nennt vorher, was fehlt; nach dem Versand steht dort „Als normale PDF ohne E-Rechnung versendet“ mit Anzahl und Grund. Einzelne Rechnungen bleiben normale PDF, wenn die Anschrift des Empfängers nicht mit Postleitzahl und Ort endet (z. B. Ausland) oder Zeichen enthält, die die PDF-Schrift nicht kennt.
 - **Immer normale PDF:** Zahlungserinnerungen, Vorschauen, das Sammel-PDF zum Drucken, stornierte Rechnungen und Rechnungen ohne Betrag.

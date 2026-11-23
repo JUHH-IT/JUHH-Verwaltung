@@ -121,8 +121,8 @@ export function karte(main) {
       try {
         const state = await loadAddressData((s) => { const p = body.querySelector('[data-load-state]'); if (p && alive()) p.textContent = addressSummary(s); }, alive, { start: !running });
         if (!alive()) return;
-        toast(loadedText(state));
         await refresh();        // Start und Einstellungen kennen den neuen Stand; zeichnet diese Seite neu
+        toast(loadedText(state));
       } catch (error) {
         if (alive()) reload();   // zeigt die Fehlermeldung des Abrufs
         throw error;

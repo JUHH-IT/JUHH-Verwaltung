@@ -81,8 +81,8 @@ function draw(main, d) {
   const abhaken = (punkte, text) => safe(async () => {
     const r = await api('/api/kenntnis-abhaken', { punkte: punkte.map(punkt), bis: d.stand });
     sicht.key = null;
-    toast(r.mitglieder ? text : 'Diese Änderungen waren schon abgehakt.');
     await refresh();
+    toast(r.mitglieder ? text : 'Diese Änderungen waren schon abgehakt.');
   });
   main.querySelectorAll('[data-ansicht]').forEach((b) => (b.onclick = () => { sicht.ansicht = b.dataset.ansicht; sicht.key = null; draw(main, d); }));
   main.querySelectorAll('[data-key]').forEach((b) => (b.onclick = () => {

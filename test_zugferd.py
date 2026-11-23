@@ -63,7 +63,7 @@ class Fall(Base):
 
     def setUp(self):
         super().setUp()
-        self.s.save_settings({'creditor_id': GLAEUBIGER}, 'Test')
+        self.s.save_settings({'creditor_id': GLAEUBIGER, 'erechnung': 'yes'}, 'Test')   # Vorgabe ist aus: Lennert schaltet ein, wenn die Umsatzsteuer-Einordnung bestätigt ist
 
     def beitrag(self, **member):
         iid = self.s.issue_dues(2026, [self.member(**member)], 'Test')[0]
@@ -191,7 +191,7 @@ class InhaltTests(Fall):
         self.s.save_settings({'tax_number': ' 22/123/45678 ', 'vat_id': 'de 123456789', 'tax_category': 'E', 'erechnung': 'no'}, 'Test')
         cfg = self.s.config()
         self.assertEqual([cfg[k] for k in ('tax_number', 'vat_id', 'tax_category', 'erechnung')], ['22/123/45678', 'DE123456789', 'E', 'no'])
-        self.assertEqual(stammdaten.DEFAULTS['erechnung'], 'yes')
+        self.assertEqual(stammdaten.DEFAULTS['erechnung'], 'no')   # erst nach bewusstem Einschalten gehen E-Rechnungen hinaus
 
     def test_stand_nennt_was_fehlt(self):
         self.assertEqual(self.s.snapshot(2026)['erechnung'], {'an': True, 'dues': [], 'normal': ['Umsatzsteuer normaler Rechnungen (nicht steuerbar oder steuerbefreit)']})

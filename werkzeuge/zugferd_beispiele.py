@@ -28,7 +28,7 @@ def beispiele(ordner):
     namen = []
     with tempfile.TemporaryDirectory() as tmp:
         s = Store(Path(tmp) / 'beispiele.db')
-        s.save_settings({'issuer': 'Junge Union Beispielstadt', 'issuer_address': 'Landesgeschäftsstelle\nBeispielweg 7\n20000 Hamburg', 'iban': IBAN,
+        s.save_settings({'erechnung': 'yes', 'issuer': 'Junge Union Beispielstadt', 'issuer_address': 'Landesgeschäftsstelle\nBeispielweg 7\n20000 Hamburg', 'iban': IBAN,
                          'bic': 'COBADEFFXXX', 'bank_name': 'Beispielbank', 'age_basis': 'jan1', 'invoice_ready': 'yes',
                          'tax_note': 'Kein Ausweis von Umsatzsteuer (erfundener Hinweis).', 'contact_email': 'kasse@example.org',
                          'creditor_id': 'DE98ZZZ09999999999', 'tax_number': '22/123/45678', 'vat_id': 'DE123456789'}, 'Beispiel')

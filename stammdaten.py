@@ -38,7 +38,7 @@ DEFAULTS = {
     'tax_note': '', 'invoice_ready': 'no',
     # E-Rechnung (ab 0.58, zugferd.py): Schalter; Steuernummer und/oder USt-IdNr. des Ausstellers; Umsatzsteuer normaler
     # Rechnungen: O = nicht steuerbar, E = steuerbefreit, leer = noch nicht entschieden (Beitragsrechnungen sind immer O)
-    'erechnung': 'yes', 'tax_number': '', 'vat_id': '', 'tax_category': '',
+    'erechnung': 'no', 'tax_number': '', 'vat_id': '', 'tax_category': '',
     # Buchhaltung: Konto für Eingangsrechnungen (fachlich zu bestätigen, Standard 1600)
     'liability_account': '1600', 'liability_name': 'Verbindlichkeiten (Eingangsrechnungen)',
     # SEPA-Lastschrift: Gläubiger-ID (Bundesbank), Präfix der Mandatsreferenz, Vorabankündigung in Tagen
@@ -51,6 +51,7 @@ DEFAULTS = {
     'kv_share_auto': 'no', 'kv_share_auto_from': '',
     # Karte (ab 0.32): Kartenhintergrund von OpenStreetMap laden (es gehen nur Kartenausschnitte ins Netz, keine Mitgliederdaten)
     'map_tiles': 'yes',
+    'kenntnis_ohne': '', 'kenntnis_hoechstfrist': '0',   # ab 0.55: davon ausgenommene Angaben (Feldnamen mit Komma); Höchstfrist in Tagen für nie Abgehaktes (0 = keine)
     'kenntnis': 'yes', 'kenntnis_eigene': 'no',   # ab 0.54: Änderungen an Stammdaten zur Kenntnis nehmen; eigene Änderungen der Mitgliederverwaltung gelten als gesehen
     # Wahlberechtigung (ab 0.37, Satzung § 37, wahlrecht.py): auswerten ab diesem Jahr (2026 wird nicht ausgewertet, Entscheidung
     # Lennert Gust 19.11.2026); Stichtage der nächsten turnusmäßigen Wahlen (JJJJ-MM-TT, leer = Vorschlag des Programms)
@@ -244,6 +245,17 @@ def clean(data, current):
             out[key] = v
         elif key in ('invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene', 'erechnung'):
             out[key] = 'yes' if v in ('yes', 'true', 'on', '1') else 'no'
+        elif key == 'kenntnis_ohne':   # Angaben, die nicht zur Kenntnis genommen werden (Feldnamen mit Komma)
+            import kenntnis
+            felder = {f for f in v.split(',') if f}
+            if felder - set(kenntnis.FELDER):
+                raise ValueError('Zur Kenntnis: unbekannte Angabe.')
+            out[key] = ','.join(f for f in kenntnis.FELDER if f in felder)
+        elif key == 'kenntnis_hoechstfrist':
+            import kenntnis
+            if v not in kenntnis.HOECHSTFRISTEN:
+                raise ValueError('Zur Kenntnis: Höchstfrist bitte aus der Liste wählen.')
+            out[key] = v
         elif key == 'kv_share_auto_from':
             if v and not re.fullmatch(r'20\d\d', v):
                 raise ValueError('Beitragsanteil automatisch: bitte das Haushaltsjahr wählen, ab dem der Schalter gilt.')
