@@ -216,7 +216,7 @@ class HttpTests(unittest.TestCase):
         self.assertIn(f'K-{y}-0001',request(f'/api/kasse.csv?year={y}').read().decode('utf-8-sig'))
         request('/api/kasse-ungueltig',{'id':k['id'],'reason':'Testfall'},csrf)
         self.assertEqual(json.load(request(f'/api/data?year={y}'))['cash']['kassen'][0]['balance'],10000)
-        # 0.57: weitere Kasse (PayPal) über HTTP – eigenes Konto, eigene Belegnummern, eigenes Kassenbuch (kasse=Kennung)
+        # 0.59: weitere Kasse (PayPal) über HTTP – eigenes Konto, eigene Belegnummern, eigenes Kassenbuch (kasse=Kennung)
         konto=json.load(request(f'/api/data?year={y}'))['cash']['next_account']
         pp=json.load(request('/api/kasse-neu',{'name':'PayPal','account':konto,'prefix':'pp','day':start,'amount':'40'},csrf))['id']
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/kasse-neu',{'name':'Zweite','account':konto,'prefix':'ZW','day':start,'amount':'0'},csrf)
@@ -234,7 +234,7 @@ class HttpTests(unittest.TestCase):
         self.assertTrue(request(f'/api/kasse.pdf?year={y}&kasse={pp}').read().startswith(b'%PDF'))
         with self.assertRaises(urllib.error.HTTPError) as cm: request(f'/api/kasse?year={y}&kasse=99')
         self.assertEqual(cm.exception.code,400)
-        # K1 (Prüfung 0.57): von außen zählt nur die Kennung einer vorhandenen Kasse – Objekt, Liste, unbekannte Zahl, Text: „Kasse nicht gefunden“, nichts geschrieben
+        # K1 (Prüfung 0.59): von außen zählt nur die Kennung einer vorhandenen Kasse – Objekt, Liste, unbekannte Zahl, Text: „Kasse nicht gefunden“, nichts geschrieben
         def stand():
             db=sqlite3.connect(app.DB)
             try: return ([db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in ('journals','entries','bank','kassen')],db.execute("SELECT value FROM settings WHERE key='cash_start'").fetchall(),

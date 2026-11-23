@@ -612,10 +612,10 @@ vor dem ersten Start einer neuen Version. Startet die neue Version nicht, schalt
 
 Zur vorherigen Version zurück: `sudo /opt/ju-finanzen/current/server/install.sh --zurueck`
 
-**Achtung ab 0.57 (mehrere Kassen):** Wurde unter 0.57 oder neuer eine weitere Kasse eingerichtet (z. B. PayPal), nie mit
-`--zurueck` auf eine Version unter 0.57 gehen. Ältere Versionen kennen die Kasse eines Belegs nicht: Sie zeigen die Belege
+**Achtung ab 0.59 (mehrere Kassen):** Wurde unter 0.59 oder neuer eine weitere Kasse eingerichtet (z. B. PayPal), nie mit
+`--zurueck` auf eine Version unter 0.59 gehen. Ältere Versionen kennen die Kasse eines Belegs nicht: Sie zeigen die Belege
 aller Kassen in der Bargeldkasse und buchen sie auf 1400 – Bestand und Kassenbuch der Bargeldkasse wären falsch. Stattdessen
-die Sicherung von vor dem Update zurückspielen (`Sicherungen/Vor Änderungen/…vor-version-0.57…`, mit
+die Sicherung von vor dem Update zurückspielen (`Sicherungen/Vor Änderungen/…vor-version-0.59…`, mit
 `sudo ju-finanzen uebernehmen DATEI --ersetzen`) und dann die ältere Version starten – alles, was seit dem Update erfasst
 wurde, fehlt danach. Das Skript prüft das nicht selbst. Ohne weitere Kasse ist `--zurueck` wie bisher möglich
 (REGELN Nr. 37 j).

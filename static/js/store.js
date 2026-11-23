@@ -22,7 +22,7 @@ export const store = {
   household: null,   // /api/haushalt: Gesamthaushalt Plan/Ist
   workflow: null,    // /api/workflow: KV-Budgets, Parkkonto, Lernbeispiele
   bank: { filter: 'open', search: '', selected: null },
-  cash: { filter: 'open', search: '', selected: null, kasse: gemerkteKasse() },   // Kasse (Kassenbelege, ab 0.25); kasse: gewählte Kasse (ab 0.57, null = erste eingerichtete)
+  cash: { filter: 'open', search: '', selected: null, kasse: gemerkteKasse() },   // Kasse (Kassenbelege, ab 0.25); kasse: gewählte Kasse (ab 0.59, null = erste eingerichtete)
   budgets: { mode: 'household', onlyDeviations: false, kvSearch: '', kvAttention: false, kvSelected: null, kvKey: null, kvData: null },
   journal: { limit: 300, search: '' },
   konten: { search: '', onlyUsed: false, selected: null, kv: '', list: null, listKey: null, sheet: null, sheetKey: null, error: '' },
@@ -89,7 +89,7 @@ export function setKasse(id) {
   store.cash.kasse = id;
   try { localStorage.setItem(KASSE_KEY, String(id)); } catch { /* Speicher blockiert: gilt nur für diese Seite */ }
 }
-/** Gewählte Kasse der Seite Kasse (ab 0.57 mehrere: Bargeld, PayPal …) – ohne Wahl oder wenn es die gemerkte nicht (mehr) gibt,
+/** Gewählte Kasse der Seite Kasse (ab 0.59 mehrere: Bargeld, PayPal …) – ohne Wahl oder wenn es die gemerkte nicht (mehr) gibt,
  *  die erste eingerichtete (Bargeldkasse zuerst). */
 export function currentKasse() {
   const all = store.data?.cash?.kassen || [];

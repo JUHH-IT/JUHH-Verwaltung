@@ -1,6 +1,6 @@
 // Kasse (ab 0.25, Wunsch Lennert Gust 08.11.2026): Kassenbelege erfassen und im selben Buchungsplatz wie den Kontoauszug verbuchen
 // (views/bank.js), Kassenbuch mit Bestand, Anfangsbestand, Geldtransit Bank ↔ Kasse über 2380. Verbindlich prüft der Server (kasse.py).
-// Ab 0.57 mehrere Kassen (Bargeld, PayPal …): Umschalter, „Weitere Kasse einrichten“; alles gilt für die gewählte Kasse (currentKasse).
+// Ab 0.59 mehrere Kassen (Bargeld, PayPal …): Umschalter, „Weitere Kasse einrichten“; alles gilt für die gewählte Kasse (currentKasse).
 import { api, fileToBase64, download } from '../api.js';
 import { html, mount } from '../html.js';
 import { eur, signed, date, toInput, todayIso } from '../format.js';
@@ -65,7 +65,7 @@ function openingDialog() {
   };
 }
 
-/** Weitere Kasse einrichten (ab 0.57), z. B. PayPal: eigenes Bestandskonto, eigene Belegnummern, eigenes Kassenbuch. */
+/** Weitere Kasse einrichten (ab 0.59), z. B. PayPal: eigenes Bestandskonto, eigene Belegnummern, eigenes Kassenbuch. */
 function addDialog() {
   const first = `${store.year}-01-01`;
   const el = dialog('Weitere Kasse einrichten', html`<form id="cash-add" style="display:flex;flex-direction:column;gap:14px">

@@ -17,7 +17,7 @@ Lernbeispiele – nur das Gegenkonto ist die Kasse 1400 statt der Bank 1420. Jou
 - Kassenbelege werden nie gelöscht: ein offener Beleg lässt sich mit Grund für ungültig erklären (state 'void'), ein verbuchter
   wird wie ein Bankumsatz storniert.
 
-Mehrere Kassen (ab 0.57, Wunsch Lennert Gust 23.11.2026: „Wir haben hier z. B. auch ein PayPal-Konto. Das sollten wir ja wie eine
+Mehrere Kassen (ab 0.59, Wunsch Lennert Gust 23.11.2026: „Wir haben hier z. B. auch ein PayPal-Konto. Das sollten wir ja wie eine
 Kasse pflegen“): Alles oben gilt je Kasse. Die Bargeldkasse ist fest (`BAR`: Kennung 0, Konto 1400, Kürzel K, Beginn wie seit 0.25
 in der Einstellung `cash_start`) – bestehende Daten laufen ohne Umstellung weiter. Jede weitere Kasse (`add`, z. B. PayPal) steht in
 der Tabelle `kassen` mit eigenem Bestandskonto 1401–1499 (wird dabei im Kontenrahmen angelegt), eigenem Belegkürzel (`PP-JJJJ-nnnn`)
@@ -62,7 +62,7 @@ def init(db):
         if col not in cols:
             db.execute(f'ALTER TABLE bank ADD COLUMN {col} TEXT')
             changed = True
-    if 'kasse' not in cols:      # additiv (0.57): welche Kasse – 0 = Bargeldkasse, sonst kassen.id
+    if 'kasse' not in cols:      # additiv (0.59): welche Kasse – 0 = Bargeldkasse, sonst kassen.id
         db.execute('ALTER TABLE bank ADD COLUMN kasse INTEGER NOT NULL DEFAULT 0')
         changed = True
     db.execute('CREATE INDEX IF NOT EXISTS bank_ledger ON bank(ledger,booked)')

@@ -1220,7 +1220,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   const cashPdf = await page.evaluate(async () => (await fetch(document.querySelector('a[href^="/api/kasse.pdf"]').href)).headers.get('content-type'));
   check(cashPdf === 'application/pdf', 'Kassenbuch als PDF');
 
-  // Weitere Kasse (0.57): PayPal einrichten, Beleg erfassen und verbuchen, Umbuchung auf die Bank, eigenes Kassenbuch, zurück zur Bargeldkasse
+  // Weitere Kasse (0.59): PayPal einrichten, Beleg erfassen und verbuchen, Umbuchung auf die Bank, eigenes Kassenbuch, zurück zur Bargeldkasse
   check(await page.locator('main [data-kasse]').count() === 0, 'Eine Kasse: kein Umschalter');
   await page.click('[data-add-kasse]');
   check(await page.inputValue('#cash-add input[name=account]') === '1430', 'Weitere Kasse: freies Konto vorgeschlagen');
@@ -2015,7 +2015,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await login();
   check(true, 'Abmelden und Anmelden');
 
-  // 6 bisherige + doppelte OV-Nummer + vorhandenes Konto für eine weitere Kasse (0.57) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
+  // 6 bisherige + doppelte OV-Nummer + vorhandenes Konto für eine weitere Kasse (0.59) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
   const expected = 8 + (existsSync(lockedPath) ? 2 : 0);
   check(rejected === expected, `Nur die ${expected} absichtlich falschen Eingaben abgelehnt (${rejected})`);
   check(errors.length === 0, 'Keine Fehler in der Browser-Konsole' + (errors.length ? ': ' + errors.join(' | ') : ''));

@@ -215,7 +215,7 @@ class CashTests(Base):
 
 
 class MehrereKassenTests(Base):
-    """Ab 0.57: weitere Kassen (PayPal) neben der Bargeldkasse – eigenes Konto, eigene Belegnummern, eigener Bestand."""
+    """Ab 0.59: weitere Kassen (PayPal) neben der Bargeldkasse – eigenes Konto, eigene Belegnummern, eigener Bestand."""
 
     def paypal(self, amount='50', **more):
         return kasse.add(self.s, {'name': 'PayPal', 'account': '1430', 'prefix': 'PP', 'day': START, 'amount': amount, **more}, 'Test')
@@ -237,7 +237,7 @@ class MehrereKassenTests(Base):
         self.s.db.execute('ALTER TABLE bank DROP COLUMN kasse')
         self.s.db.commit()
         self.s.db.close()
-        self.s = Store(Path(self.tmp.name) / 't.db')                                 # Öffnen mit 0.57 ergänzt nur
+        self.s = Store(Path(self.tmp.name) / 't.db')                                 # Öffnen mit 0.59 ergänzt nur
         self.assertEqual((self.s.rows('SELECT id,booked,amount,bank_ref,ledger,state FROM bank'), self.s.rows('SELECT * FROM settings'),
                           self.s.rows('SELECT source FROM journals ORDER BY id')), before)
         self.assertEqual(self.s.rows('SELECT kasse FROM bank'), [{'kasse': 0}])
@@ -441,7 +441,7 @@ class MehrereKassenTests(Base):
         self.assertEqual(rollen.SNAPSHOT['cash'], 'buchhaltung')                      # ohne Buchhaltung: gleiche Form, kein Inhalt
         self.assertEqual(rollen.blank(kasse.summary(self.s)), {'kassen': [], 'open': 0, 'next_account': '', 'transit': {'saldo': 0, 'bank': []}})
 
-    # Befunde der unabhängigen Prüfung von 0.57: nur Kennungen von außen (K1), Geldtransit zugeordnet statt saldiert (W1),
+    # Befunde der unabhängigen Prüfung von 0.59: nur Kennungen von außen (K1), Geldtransit zugeordnet statt saldiert (W1),
     # Kontonummer, Namen und Dateinamen (H1–H3)
 
     def offen(self, until=None):
