@@ -36,7 +36,7 @@ DEFAULTS = {
     'issuer': '', 'issuer_address': '', 'iban': '', 'bic': '', 'bank_name': '',
     'contact_email': '', 'contact_phone': '', 'website': '',
     'tax_note': '', 'invoice_ready': 'no',
-    # E-Rechnung (ab 0.58, zugferd.py): Schalter; Steuernummer und/oder USt-IdNr. des Ausstellers; Umsatzsteuer normaler
+    # E-Rechnung (ab 0.59, zugferd.py): Schalter; Steuernummer und/oder USt-IdNr. des Ausstellers; Umsatzsteuer normaler
     # Rechnungen: O = nicht steuerbar, E = steuerbefreit, leer = noch nicht entschieden (Beitragsrechnungen sind immer O)
     'erechnung': 'no', 'tax_number': '', 'vat_id': '', 'tax_category': '',
     # Buchhaltung: Konto für Eingangsrechnungen (fachlich zu bestätigen, Standard 1600)
@@ -109,7 +109,7 @@ DEFAULTS = {
     'pdf_normal_text': 'wir stellen dir folgende Leistungen in Rechnung:',
 }
 
-# Angaben für die E-Rechnung – mit jeder Rechnung festgeschrieben, auch leer (zugferd.py liest nur dieses Abbild; fehlen die Schlüssel, ist die Rechnung von vor 0.58)
+# Angaben für die E-Rechnung – mit jeder Rechnung festgeschrieben, auch leer (zugferd.py liest nur dieses Abbild; fehlen die Schlüssel, ist die Rechnung von vor 0.59)
 ERECHNUNG = ('tax_number', 'vat_id', 'tax_category', 'creditor_id')
 TEXT_KEYS = {'issuer', 'issuer_address', 'bank_name', 'liability_name', 'chair_name', 'treasurer_name', 'contact_phone', 'website', 'tax_note', 'mail_from_name',
              'tpl_dues_subject', 'tpl_dues_body', 'tpl_normal_subject', 'tpl_normal_body',

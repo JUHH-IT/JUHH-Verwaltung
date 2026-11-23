@@ -41,7 +41,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.58'
+VERSION='0.59'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -561,7 +561,7 @@ class Handler(BaseHTTPRequestHandler):
                     year=int(query['year'][0]);return self.send(200,haushalt.pdf_report(store,year),'application/pdf',inline=f'Haushalt-{year}.pdf')
                 if path=='/api/invoice.pdf':
                     inv=rechnung_pdf.invoice_data(store,int(query['id'][0]));inv['paid']=versand.paid_amount(store,inv['id'])   # wie Versand und Vorschau: offener Betrag
-                    return self.send(200,zugferd.pdf(inv)[0],'application/pdf',inline=rechnung_pdf.filename(inv))   # ab 0.58 als E-Rechnung, wenn die Rechnung vollständig ist
+                    return self.send(200,zugferd.pdf(inv)[0],'application/pdf',inline=rechnung_pdf.filename(inv))   # ab 0.59 als E-Rechnung, wenn die Rechnung vollständig ist
                 if path=='/api/invoices.pdf':
                     ids=[int(x) for x in query['ids'][0].split(',') if x.strip()]
                     if not 0<len(ids)<=2000: raise ValueError('Bitte 1 bis 2000 Rechnungen auswählen.')

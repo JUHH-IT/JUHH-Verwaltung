@@ -70,7 +70,7 @@ class Store:
             # Art der Nachricht: Rechnung oder Zahlungserinnerung
             self.db.execute("ALTER TABLE mailings ADD COLUMN kind TEXT NOT NULL DEFAULT 'invoice' CHECK(kind IN ('invoice','reminder'))");self.db.commit()
         if 'erechnung' not in cols('mailings'):
-            # ab 0.58: leer ('') = die Rechnung ging als E-Rechnung hinaus, sonst der Grund für die normale PDF; NULL = nicht erfasst (vor 0.58, Erinnerung, keine PDF erstellt)
+            # ab 0.59: leer ('') = die Rechnung ging als E-Rechnung hinaus, sonst der Grund für die normale PDF; NULL = nicht erfasst (vor 0.59, Erinnerung, keine PDF erstellt)
             self.db.execute('ALTER TABLE mailings ADD COLUMN erechnung TEXT');self.db.commit()
         import gliederung
         gliederung.init(self.db)   # Ortsverbände und Nummer der Mitgliederverwaltung je Kreisverband (0.27)
@@ -305,7 +305,7 @@ class Store:
     @staticmethod
     def snapshot_for(kind,cfg,member_number=None):
         """Angaben, die mit der Rechnung festgeschrieben werden (spätere Stammdatenänderungen ändern alte Rechnungen nicht)."""
-        keys=('issuer','issuer_address','iban','bic','bank_name','contact_email','contact_phone','website','mail_from_name')+stammdaten.ERECHNUNG   # ab 0.58 auch die Angaben für die E-Rechnung
+        keys=('issuer','issuer_address','iban','bic','bank_name','contact_email','contact_phone','website','mail_from_name')+stammdaten.ERECHNUNG   # ab 0.59 auch die Angaben für die E-Rechnung
         return {**{k:cfg.get(k,'') for k in keys},
                 'tax_note':cfg.get('tax_note','') if kind=='normal' else 'Mitgliedsbeitrag gemäß Satzung der Jungen Union Hamburg.',
                 'pdf_text':cfg['pdf_dues_text' if kind=='dues' else 'pdf_normal_text'],

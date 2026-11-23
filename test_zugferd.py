@@ -387,7 +387,7 @@ class FestschreibungTests(Fall):
 
     def test_rechnungen_von_vor_der_einfuehrung_bleiben_normale_pdf(self):
         self.s.save_settings({'tax_category': 'O', 'tax_number': '11/111/11111'}, 'Test')
-        alt = {k: None for k in stammdaten.ERECHNUNG}                                           # Abbild wie vor 0.58: die vier Angaben gibt es nicht
+        alt = {k: None for k in stammdaten.ERECHNUNG}                                           # Abbild wie vor 0.59: die vier Angaben gibt es nicht
         ids = [self.aendern(i, **alt)['id'] for i in (self.beitrag()['id'], self.rechnung()['id'])]
         for spaeter in ({}, {'tax_category': 'E'}, {'creditor_id': '', 'tax_number': '99/999/99999'}):
             self.s.save_settings(spaeter, 'Test')
@@ -683,7 +683,7 @@ class HttpTests(unittest.TestCase):
         self.assertIn('Bereits bezahlt: 10,00 €', sichtbar(datei))
         self.assertEqual(sichtbar(request(f'/api/preview.pdf?id={iid}').read()), sichtbar(datei))
 
-        store = Store(app.DB)                                                                    # Rechnung von vor 0.58: bleibt normale PDF, die Vorschau sagt warum
+        store = Store(app.DB)                                                                    # Rechnung von vor 0.59: bleibt normale PDF, die Vorschau sagt warum
         try:
             snap = {k: v for k, v in json.loads(store.db.execute('SELECT snapshot FROM invoices WHERE id=?', (iid,)).fetchone()[0]).items() if k not in stammdaten.ERECHNUNG}
             with store.db:

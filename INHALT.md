@@ -857,7 +857,7 @@ Tests: test_core.py, test_lastschrift.py, test_mahnung.py, test_pdfschrift.py, t
 
 ### zugferd.py
 
-Ausgangsrechnungen als E-Rechnung: ZUGFeRD/Factur-X, Profil EN 16931 (COMFORT) – ab 0.58, REGELN Nr. 38.
+Ausgangsrechnungen als E-Rechnung: ZUGFeRD/Factur-X, Profil EN 16931 (COMFORT) – ab 0.59, REGELN Nr. 38.
 
 Tests: test_zugferd.py
 

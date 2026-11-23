@@ -303,7 +303,7 @@ def _payment_box(inv, width):
     if inv.get('paid'):
         facts += [('Rechnungsbetrag', euro(inv['total'])), ('Bereits bezahlt', euro(inv['paid']))]
     facts += [('Offener Betrag' if inv.get('paid') else 'Betrag', euro(due)), ('Verwendungszweck', inv['number'])]
-    # bezahlt (ab 0.58 zeigt auch der Download den Zahlungsstand): keine Aufforderung über 0,00 €
+    # bezahlt (ab 0.59 zeigt auch der Download den Zahlungsstand): keine Aufforderung über 0,00 €
     text = ('Diese Rechnung ist bezahlt. Es ist keine Zahlung mehr erforderlich.' if due <= 0 else
             f"Bitte überweise <b>{escape(euro(due))}</b> bis zum <b>{escape(german_date(deadline))}</b> "
             f"und gib als Verwendungszweck <b>{escape(inv['number'])}</b> an.")

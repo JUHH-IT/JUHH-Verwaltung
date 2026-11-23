@@ -1,11 +1,11 @@
-"""Ausgangsrechnungen als E-Rechnung: ZUGFeRD/Factur-X, Profil EN 16931 (COMFORT) – ab 0.58, REGELN Nr. 38.
+"""Ausgangsrechnungen als E-Rechnung: ZUGFeRD/Factur-X, Profil EN 16931 (COMFORT) – ab 0.59, REGELN Nr. 38.
 
 Eine Datei: die gewohnte Rechnungs-PDF als PDF/A-3b mit den Rechnungsdaten als eingebettete `factur-x.xml`
 (UN/CEFACT Cross Industry Invoice). Gilt für festgeschriebene, nicht stornierte Beitrags- und Ausgangsrechnungen mit Betrag –
 einzeln per E-Mail oder als Download. Vorschauen, Sammel-PDF, Zahlungserinnerungen und stornierte Rechnungen bleiben normale PDF.
 
 Eine Rechnungsnummer hat einen Inhalt: Die Rechnungsdaten kommen nur aus der Rechnung und ihrem festgeschriebenen Abbild
-(`snapshot`), nie aus den heutigen Einstellungen. Fehlte bei der Ausstellung eine Pflichtangabe oder stammt die Rechnung von vor 0.58,
+(`snapshot`), nie aus den heutigen Einstellungen. Fehlte bei der Ausstellung eine Pflichtangabe oder stammt die Rechnung von vor 0.59,
 bleibt sie für immer eine normale PDF; der Schalter entscheidet nur, ob eine vollständige Rechnung als E-Rechnung hinausgeht.
 Wie auf der PDF folgen nur Zahlungsstand und Zahlungsweg dem heutigen Stand (bereits bezahlt, entfallene Lastschrift).
 Geht die bisherige PDF hinaus, nennt `pdf` den Grund – nie eine ungültige E-Rechnung, nie ein Fehler.
