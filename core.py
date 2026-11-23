@@ -454,6 +454,15 @@ class Store:
         h=hashlib.sha256(raw).hexdigest()
         if self.db.execute('SELECT 1 FROM imports WHERE hash=?',(h,)).fetchone(): raise ValueError('Diese Datei wurde bereits importiert.')
         out=[]; local=set(); local_refs=set(); start=self.data_start(); before=0
+        # ab 0.55 (ein Umsatz war nach dem Import doppelt): dieselbe Zahlung aus einem zweiten Abruf weicht oft nur in Leerzeichen, Schreibweise oder
+        # um einen Tag ab – der exakte Fingerabdruck erkennt das nicht. Ähnlich = gleicher Betrag, höchstens 3 Tage auseinander und gleicher
+        # Verwendungszweck (ohne Leer- und Satzzeichen, mindestens 8 Zeichen), oder gleicher Tag und gleicher Name. Abgewählt, nicht gesperrt.
+        kern=lambda t: __import__('re').sub(r'[^0-9a-zäöüß]','',str(t or '').casefold())
+        tage=lambda a,b: abs((date.fromisoformat(a)-date.fromisoformat(b)).days)
+        def aehnlich(booked,amount,name,ref,andere):
+            return any(tage(booked,b)<=3 and ((len(kern(ref))>=8 and kern(ref)==kern(r)) or (b==booked and kern(name) and kern(name)==kern(n))) for b,n,r in andere)
+        # zwei Zeilen mit je eigener, verschiedener Bankreferenz sind laut Bank zwei Umsätze – dann keine Ähnlichkeitswarnung
+        gesehen=[]   # Zeilen dieser Datei: (Tag, Betrag, Name, Zweck, Bankreferenz)
         for parsed in parse_statement(raw,filename):
             item={'row_no':parsed['row_no'],'selected':True,'warning':'','error':None}
             if parsed.get('error'):
@@ -466,10 +475,12 @@ class Store:
             matches=self.db.execute("SELECT COUNT(*) FROM bank WHERE fingerprint=? AND ledger='bank'",(fp,)).fetchone()[0]
             if duplicate: item.update(selected=False,warning='Bankreferenz bereits vorhanden',duplicate=True)
             elif matches or fp in local: item.update(selected=False,warning='Ähnlicher Umsatz vorhanden – echte zweite Zahlung ausdrücklich auswählen')
+            elif aehnlich(booked,amount,name,ref,[(b['booked'],b['name'],b['reference']) for b in self.db.execute("SELECT booked,name,reference,bank_ref FROM bank WHERE ledger='bank' AND amount=? AND ABS(julianday(booked)-julianday(?))<=3",(amount,booked)) if not (bid and b['bank_ref'])]+[(b,n,r) for b,a,n,r,x in gesehen if a==amount and not (bid and x)]):
+                item.update(selected=False,warning='Sehr ähnlicher Umsatz vorhanden (gleicher Betrag, gleicher Name oder Zweck, höchstens 3 Tage auseinander) – nur auswählen, wenn es wirklich eine zweite Zahlung ist')
             elif self.db.execute("SELECT 1 FROM bank WHERE import_hash IS NULL AND source LIKE '% · Umsatz %' AND amount=? AND ABS(julianday(booked)-julianday(?))<=5",(amount,booked)).fetchone():
                 item.update(selected=False,warning='Möglicherweise schon aus der Excel-Übernahme vorhanden – nur auswählen, wenn es ein weiterer Umsatz ist')
             item.update(booked=booked,amount=amount,name=name,reference=ref,bank_ref=bid,fingerprint=fp)
-            local.add(fp)
+            local.add(fp); gesehen.append((booked,amount,name,ref,bid))
             if bid: local_refs.add(bid)
             out.append(item)
         return {'hash':h,'filename':filename,'rows':out,'before_start':before,'data_start':start}

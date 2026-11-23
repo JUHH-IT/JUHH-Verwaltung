@@ -204,6 +204,8 @@ Unter **Kontoauszüge → Kontoauszug importieren** den **Excel-Export der Bank 
 - Liefert die Bank keine Namensspalte, wird der Zahlungspartner aus dem Verwendungszweck abgeleitet (Text zwischen Buchungsart und IBAN). Der vollständige Originaltext bleibt erhalten.
 - Beträge in EUR; Einnahmen positiv, Ausgaben negativ. Andere Währungen werden abgelehnt.
 - Dieselbe Datei wird nicht zweimal übernommen. Umsätze aus überlappenden Exporten werden als „Ähnlicher Umsatz vorhanden“ markiert und sind abgewählt. Zwei wirklich gleiche Zahlungen am selben Tag ausdrücklich auswählen.
+- **Ab 0.55** erkennt die Vorschau auch Umsätze, die nur fast gleich sind: gleicher Betrag, höchstens 3 Tage auseinander und derselbe Verwendungszweck (Schreibweise, Leer- und Satzzeichen egal) oder am selben Tag derselbe Name. Solche Zeilen sind abgewählt und als „Sehr ähnlicher Umsatz vorhanden“ markiert; über der Vorschau steht, wie viele es sind. Nur ankreuzen, wenn es wirklich eine weitere Zahlung ist.
+- **Doch ein Umsatz doppelt?** Im Buchungsplatz den doppelten Umsatz wählen (er muss offen sein – einen verbuchten zuerst mit „Zuordnung stornieren“ öffnen) und **Umsatz ungültig** drücken, Grund z. B. „doppelt importiert“. Er zählt dann nirgends mehr, bleibt aber unter „Alle“ mit dem Grund sichtbar. Gelöscht wird nichts. **Wieder gültig** nimmt das zurück.
 - Nur ein Bankkonto. Originaldateien liegen unter `Daten/Importe`.
 
 ## Vorkontierte Excel-Masterdatei übernehmen

@@ -17,7 +17,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Buchhaltung lesen:** `GET /api/abgleich`, `GET /api/beitraege-offen`, `GET /api/bill-file`, `GET /api/bill-qr.svg`, `GET /api/bill-transfers`, `GET /api/donations`, `GET /api/dues-preview`, `GET /api/invoice.pdf`, `GET /api/invoices.pdf`, `GET /api/journal.csv`, `GET /api/kasse-datei`, `GET /api/kasse.csv`, `GET /api/kasse.pdf`, `GET /api/kasse`, `GET /api/konten`, `GET /api/konto.csv`, `GET /api/konto`, `GET /api/mail-preview`, `GET /api/mail-status`, `GET /api/mandate.pdf`, `GET /api/matches`, `GET /api/member-account.pdf`, `GET /api/member-dues`, `GET /api/mitgliederkonten.csv`, `GET /api/monatsbericht.pdf`, `GET /api/op-liste.csv`, `GET /api/op-liste.pdf`, `GET /api/op-liste`, `GET /api/op-listen.zip` ⚠, `GET /api/preview.pdf`, `GET /api/pruefpaket.zip` ⚠, `GET /api/quarter-review.pdf`, `GET /api/quarter-review`, `GET /api/refund-form.pdf`, `GET /api/reminders`, `GET /api/sepa`, `GET /api/suggestions`
 
-**Buchhaltung ändern:** `GET /api/sepa.xml` ⚠, `POST /api/abgleich`, `POST /api/beitraege-vorschlaege`, `POST /api/beitrag-zuordnen`, `POST /api/bill-approval-revoke`, `POST /api/bill-approve`, `POST /api/bill-cancel`, `POST /api/bill-release`, `POST /api/bill-transferred`, `POST /api/bill-writeoff`, `POST /api/bill`, `POST /api/book`, `POST /api/cancel-invoice`, `POST /api/debit-notice`, `POST /api/dues`, `POST /api/einvoice`, `POST /api/forget`, `POST /api/import-bank`, `POST /api/import-master`, `POST /api/invoice`, `POST /api/kasse-anfang`, `POST /api/kasse-beleg`, `POST /api/kasse-ungueltig`, `POST /api/klaerfall-melden`, `POST /api/mail-cancel`, `POST /api/mail-send`, `POST /api/mandate-revoke`, `POST /api/mandate`, `POST /api/member-target`, `POST /api/park`, `POST /api/preview-bank`, `POST /api/preview-master`, `POST /api/quarter-review`, `POST /api/reverse-bank`, `POST /api/sepa-aufteilen`, `POST /api/sepa-batch-status`, `POST /api/sepa-batch`, `POST /api/sepa-begleitzettel`, `POST /api/sepa-debit-reject`, `POST /api/sepa-debit-remove`, `POST /api/sepa-mandat-vergessen` ⚠, `POST /api/sepa-vorschau`, `POST /api/series-preview`, `POST /api/series`
+**Buchhaltung ändern:** `GET /api/sepa.xml` ⚠, `POST /api/abgleich`, `POST /api/beitraege-vorschlaege`, `POST /api/beitrag-zuordnen`, `POST /api/bill-approval-revoke`, `POST /api/bill-approve`, `POST /api/bill-cancel`, `POST /api/bill-release`, `POST /api/bill-transferred`, `POST /api/bill-writeoff`, `POST /api/bill`, `POST /api/book`, `POST /api/cancel-invoice`, `POST /api/debit-notice`, `POST /api/dues`, `POST /api/einvoice`, `POST /api/forget`, `POST /api/import-bank`, `POST /api/import-master`, `POST /api/invoice`, `POST /api/kasse-anfang`, `POST /api/kasse-beleg`, `POST /api/kasse-ungueltig`, `POST /api/klaerfall-melden`, `POST /api/mail-cancel`, `POST /api/mail-send`, `POST /api/mandate-revoke`, `POST /api/mandate`, `POST /api/member-target`, `POST /api/park`, `POST /api/preview-bank`, `POST /api/preview-master`, `POST /api/quarter-review`, `POST /api/reverse-bank`, `POST /api/sepa-aufteilen`, `POST /api/sepa-batch-status`, `POST /api/sepa-batch`, `POST /api/sepa-begleitzettel`, `POST /api/sepa-debit-reject`, `POST /api/sepa-debit-remove`, `POST /api/sepa-mandat-vergessen` ⚠, `POST /api/sepa-vorschau`, `POST /api/series-preview`, `POST /api/series`, `POST /api/umsatz-gueltig`, `POST /api/umsatz-ungueltig`
 
 **Einstellungen ändern:** `POST /api/mail-check`, `POST /api/mail-forget`, `POST /api/mail-password` ⚠, `POST /api/mail-test`, `POST /api/settings` ⚠
 
@@ -67,7 +67,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
 - `static/js/views/auswertung.js`: aussageBestand, aussageBindung, aussageDichte, aussageGliederung, aussageStruktur, auswertung, flaecheKm2, klassen, skala, stufe, vorn → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf, /api/karte, /api/karte-gebiete
-- `static/js/views/bank.js`: bank, bankKeys, renderLedger, useLedger → /api/kasse-datei, /api/park, /api/reverse-bank
+- `static/js/views/bank.js`: bank, bankKeys, renderLedger, useLedger → /api/kasse-datei, /api/park, /api/reverse-bank, /api/umsatz-gueltig, /api/umsatz-ungueltig
 - `static/js/views/benutzer.js`: benutzer → /api/benutzer, /api/benutzer-abgleichen, /api/benutzer-app-zuruecksetzen, /api/benutzer-startpasswort, /api/rolle, /api/rolle-loeschen
 - `static/js/views/bills.js`: approvalBadge, billBadge, bills, paymentDialog, reviewDialog → /api/bill, /api/bill-approval-revoke, /api/bill-approve, /api/bill-cancel, /api/bill-file, /api/bill-qr.svg, /api/bill-release, /api/bill-transferred, /api/bill-transfers, /api/bill-writeoff, /api/einvoice, /api/quarter-review, /api/quarter-review.pdf, /api/refund-form.pdf
 - `static/js/views/booking.js`: bookingEditor → /api/book, /api/matches, /api/suggestions
@@ -179,7 +179,7 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_kenntnis.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_kenntnis.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_umsatz_ungueltig.py, test_verbindlichkeiten.py, test_wahlrecht.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
@@ -679,7 +679,7 @@ Local, opt-in booking examples and auditable suspense-account transfers.
 
 Tabellen: `booking_examples`
 
-Tests: test_beitraege.py, test_import.py, test_kasse.py, test_kvbudget.py, test_storno.py
+Tests: test_beitraege.py, test_import.py, test_kasse.py, test_kvbudget.py, test_storno.py, test_umsatz_ungueltig.py
 
 - `init(db)`
 - `normalized(value)` – Verwendungszweck ohne wechselnde Teile: Wörter mit Ziffern (Daten, Referenzen, IBAN) werden zu #.
@@ -687,6 +687,8 @@ Tests: test_beitraege.py, test_import.py, test_kasse.py, test_kvbudget.py, test_
 - `remember(store, b, parts, actor)`
 - `suggest(store, bid)`
 - `park(store, bid, reason, actor)`
+- `ungueltig(store, bid, reason, actor)` – Offenen Kontoumsatz mit Grund für ungültig erklären (ab 0.55, Wunsch Lennert Gust 23.11.2026: ein Umsatz war nach dem Import
+- `gueltig(store, bid, actor)` – Einen für ungültig erklärten Kontoumsatz wieder öffnen (Irrtum) – dieselbe Datei lässt sich nicht noch einmal importieren.
 - `forget(store, bid, actor)`
 - `details(store, year)`
 
@@ -694,7 +696,7 @@ Tests: test_beitraege.py, test_import.py, test_kasse.py, test_kvbudget.py, test_
 
 Kassenbuch (Bargeld) – Kassenbelege werden wie Bankumsätze verbucht.
 
-Tests: test_kasse.py, test_klaerfaelle.py, test_rpj.py
+Tests: test_kasse.py, test_klaerfaelle.py, test_rpj.py, test_umsatz_ungueltig.py
 
 - `init(db)`
 - `ledger_account(b)` – Gegenkonto eines Umsatzes: Kasse für Kassenbelege, sonst Bank.
@@ -807,7 +809,7 @@ Tests: test_berichte.py, test_erstattung.py, test_freigabe.py
 
 Berichte: Monatsbericht für den Landesvorstand (PDF) und Kassenprüfer-Paket (ZIP, Satzung § 19 Abs. 2).
 
-Tests: test_beitraege.py, test_berichte.py, test_erechnung.py, test_kasse.py, test_mitgliederkonto.py, test_rpj.py
+Tests: test_beitraege.py, test_berichte.py, test_erechnung.py, test_kasse.py, test_mitgliederkonto.py, test_rpj.py, test_umsatz_ungueltig.py
 
 - `balance(store, account, until=…)` – Saldo Soll − Haben eines Kontos bis einschließlich until (Buchungsdatum).
 - `report_day(month=…, data_start=…, today=…)` – Stichtag des Monatsberichts: Monatsende des Monats JJJJ-MM, im laufenden Monat heute; ohne Monat heute.
@@ -1048,7 +1050,7 @@ Rollen und Rechte im Serverbetrieb (ab 0.34).
 
 Tabellen: `roles`, `user_roles`
 
-Tests: test_kenntnis.py, test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py
+Tests: test_kenntnis.py, test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py, test_umsatz_ungueltig.py
 
 - `required(method, path)` – Nötiges Recht für eine Adresse; unbekannte Adressen verlangen „Verwaltung schreiben“.
 - `allowed(rights, need)`

@@ -451,6 +451,32 @@ try {
   check(await items(4), 'Arbeitsliste zeigt 4 offene Umsätze');
   await shot('01-buchungsplatz');
 
+  // 0.55: dieselbe Zahlung aus einem zweiten Abruf (andere Schreibweise) – abgewählt und markiert; trotzdem importiert, lässt sie sich für ungültig erklären
+  writeFileSync(join(base, 'auszug-zweiter-abruf.csv'), 'Datum;Betrag;Name;Verwendungszweck\n06.06.2026;-12,50;Bürobedarf Zweitabruf;Drucker-Patronen\n');
+  await page.click('[data-import]');
+  await page.setInputFiles('#bank-file', join(base, 'auszug-zweiter-abruf.csv'));
+  await page.waitForSelector('#import-preview [data-aehnlich]');
+  check(await page.locator('#import-preview .import-check:checked').count() === 0 && await page.locator('#confirm-import').isDisabled()
+    && (await page.locator('#import-preview .badge.warn').textContent()).includes('Sehr ähnlicher Umsatz'), 'Import: sehr ähnlicher Umsatz ist abgewählt und markiert');
+  await page.check('#import-preview .import-check');
+  await page.click('#confirm-import');
+  check((await toast()).includes('1 Umsätze importiert') && await items(5), 'Import: ausdrücklich gewählt wird er übernommen');
+  await page.click('.bank-item:has-text("Bürobedarf Zweitabruf")');
+  await page.click('main [data-void]');
+  await page.waitForSelector('#bank-void');
+  await page.click('#bank-void button[type=submit]');
+  check((await toast()).includes('ungültig') && await items(4), 'Doppelter Kontoumsatz für ungültig erklärt – nicht mehr offen');
+  await page.click('[data-filter=all]');
+  await page.click('.bank-item:has-text("Bürobedarf Zweitabruf")');
+  check((await page.locator('main .detail .notice').first().textContent()).includes('doppelt importiert') && await page.locator('main #editor').count() === 0, 'Ungültiger Umsatz bleibt unter „Alle“ mit Grund sichtbar, ohne Kontierung');
+  await page.click('main [data-unvoid]');
+  await page.click('#modal [data-ok]');
+  check((await toast()).includes('wieder offen') && await items(5), 'Ungültig zurückgenommen – wieder offen');
+  await page.click('.bank-item:has-text("Bürobedarf Zweitabruf")');
+  await page.click('main [data-void]');
+  await page.click('#bank-void button[type=submit]');
+  check((await toast()).includes('ungültig') && await items(4), 'Erneut ungültig – die Arbeitsliste zeigt wieder 4 offene Umsätze');
+
   // 1) Rechnung erkannt → übernehmen und verbuchen
   check(await page.locator('.suggestion:has-text("Rechnung erkannt")').count() === 1, 'Rechnung im Zweck erkannt');
   await page.click('#book-submit');
