@@ -22,6 +22,7 @@ import geheimnis
 import lastschrift
 import rechnung_pdf
 import stammdaten
+import zugferd
 from formate import email_address, euro, german_date, iban_pretty
 
 STATES = ('idle', 'running', 'done', 'cancelled', 'aborted')
@@ -290,7 +291,7 @@ def sample_invoice(cfg, kind):
 def send_test(cfg, inv):
     """Schickt die Nachricht zu einer Rechnung als Test an die eigene Absenderadresse."""
     try:
-        msg = message(cfg, inv, rechnung_pdf.render([inv]), cfg['mail_from'], test=True)
+        msg = message(cfg, inv, zugferd.pdf(inv)[0], cfg['mail_from'], test=True)   # wie im Versand: E-Rechnung, wenn möglich
         send_one(cfg, msg)
     except Exception as e:
         raise ValueError(friendly(e))
@@ -303,6 +304,7 @@ def status():
     with _job_lock:
         job = dict(_job)
         job['errors'] = list(_job.get('errors', []))
+        job['einfach'] = dict(_job.get('einfach', {}))
         return job
 
 
@@ -450,7 +452,7 @@ def start(db_path, ids, actor, resend=False, kind='invoice'):
             raise ValueError('Es läuft bereits ein Versand.')
         _cancel.clear()
         _job.clear()
-        _job.update(state='running', kind=kind, total=len(items), done=0, sent=0, failed=0, unknown=0, current='', errors=[],
+        _job.update(state='running', kind=kind, total=len(items), done=0, sent=0, failed=0, unknown=0, current='', errors=[], einfach={},
                     skipped=skipped, started=datetime.now().isoformat(timespec='seconds'), finished=None, actor=actor)
         _thread = threading.Thread(target=_run, args=(db_path, items, cfg, password, actor, kind, resend), daemon=True)
         _thread.start()
@@ -499,7 +501,7 @@ def _run(db_path, items, cfg, password, actor, kind='invoice', resend=False):
                 break
             with _job_lock:
                 _job['current'] = f"{item['number']} an {item['to']}"
-            subject, outcome, error, msgid, stop = item['number'], 'failed', None, None, False
+            subject, outcome, error, msgid, stop, einfach = item['number'], 'failed', None, None, False, None
             try:
                 reason = _recheck(store, item, kind, resend)
             except Exception:
@@ -514,7 +516,9 @@ def _run(db_path, items, cfg, password, actor, kind='invoice', resend=False):
                 inv['email'], inv['paid'] = item['to'], item['paid']
                 if kind == 'reminder':
                     inv['reminder'] = reminder_terms(cfg, item['level'])
-                msg = message(cfg, inv, rechnung_pdf.render([inv]), item['to'])  # Rechnung mit offenem Betrag und Frist
+                # Rechnung mit offenem Betrag und Frist – als E-Rechnung, sonst die bisherige PDF mit Grund; Erinnerungen bleiben normale PDF
+                datei, einfach = (rechnung_pdf.render([inv]), None) if kind == 'reminder' else zugferd.pdf(inv)
+                msg = message(cfg, inv, datei, item['to'])
                 subject, msgid = msg['Subject'], msg['Message-ID']
             except Exception as e:  # Fehler beim Erstellen betreffen nur diese Rechnung
                 error = friendly(e)
@@ -539,6 +543,8 @@ def _run(db_path, items, cfg, password, actor, kind='invoice', resend=False):
                 _job[{'sent': 'sent', 'unknown': 'unknown'}.get(outcome, 'failed')] += 1
                 if error:
                     _job['errors'].append({'id': item['id'], 'number': item['number'], 'to': item['to'], 'error': error})
+                if einfach and outcome == 'sent' and cfg.get('erechnung') == 'yes':   # ungewollt ohne E-Rechnung versendet: Grund → Anzahl
+                    _job['einfach'][einfach] = _job['einfach'].get(einfach, 0) + 1
                 if not logged:
                     _job['errors'].append({'id': item['id'], 'number': item['number'], 'to': item['to'],
                                            'error': f"Ergebnis ({'versendet' if outcome == 'sent' else outcome}) konnte nicht protokolliert werden – nicht erneut senden, erst prüfen."})

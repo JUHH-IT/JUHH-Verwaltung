@@ -84,7 +84,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/klaerfaelle.js`: cases → /api/klaerfaelle, /api/klaerfall-klaeren, /api/klaerfall-notiz
 - `static/js/views/konten.js`: konten, saldo → /api/konten, /api/konto, /api/konto.csv
 - `static/js/views/kv.js`: bindKv, bindKvPage, bindTransfers, kvPage, kvTable, masterDialog, needsAttention, openKv, planRest, transferDialog, transferList, valuesDialog → /api/import-kv-master, /api/kv-detail, /api/kv-label, /api/kv-plan, /api/kv-transfer, /api/kv-transfer-reverse, /api/kv-values, /api/kv.pdf, /api/op-liste.pdf, /api/preview-kv-master
-- `static/js/views/mailing.js`: afterIssue, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
+- `static/js/views/mailing.js`: afterIssue, erechnungFehlt, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
 - `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/mitgliedsnummer, /api/sepa-mandat-vergessen
 - `static/js/views/mitglieder-ueberblick.js`: anlaesse, mitgliederUeberblick → /api/auswertung, /api/doppelte, /api/kenntnis, /api/kenntnis-abhaken, /api/ov-abgleich, /api/regelwerk
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
@@ -239,7 +239,7 @@ Tests: test_import.py
 
 Stammdaten (Einstellungen): erlaubte Felder, Standardwerte und Prüfung an einer Stelle.
 
-Tests: test_kenntnis.py, test_rechnungen.py, test_regelwerk.py
+Tests: test_kenntnis.py, test_rechnungen.py, test_regelwerk.py, test_zugferd.py
 
 - `unknown_placeholders(text)`
 - `clean(data, current)` – Prüft geänderte Felder; liefert {Schlüssel: Text}. current = bisherige Stammdaten (mit Standards).
@@ -771,7 +771,7 @@ Tests: test_erstattung.py
 
 E-Rechnungen einlesen: XRechnung (UBL oder CII als XML) und ZUGFeRD/Factur-X (PDF mit eingebetteter CII-XML).
 
-Tests: test_erechnung.py
+Tests: test_erechnung.py, test_zugferd.py
 
 - `extract(raw)` – XML der E-Rechnung aus einer XML- oder PDF-Datei (bytes).
 - `parse(xml)` – Angaben aus der XML (CII oder UBL). Wirft ValueError mit verständlichem Grund.
@@ -829,7 +829,7 @@ Tests: test_beitraege.py, test_berichte.py, test_erechnung.py, test_kasse.py, te
 
 Rechnungs-PDF (A4, Briefaufbau nach DIN 5008 Form B) – einzeln, als Sammel-PDF oder als Vorschau.
 
-Tests: test_core.py, test_lastschrift.py, test_mahnung.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py
+Tests: test_core.py, test_lastschrift.py, test_mahnung.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_zugferd.py
 
 - `invoice_data(store, iid)` – Festgeschriebene Rechnung aus der Datenbank.
 - `debit_of(inv)` – Vorabankündigung der Lastschrift, solange sie gilt (lastschrift.info: nicht zurückgegeben, Mandat gültig, Datum nicht
@@ -851,6 +851,22 @@ Tests: test_core.py, test_lastschrift.py, test_mahnung.py, test_pdfschrift.py, t
 - `render(invoices)` – Eine oder mehrere Rechnungen (dicts) als ein PDF; jede beginnt auf einer neuen Seite.
 - `filename(inv)`
 
+### zugferd.py
+
+Ausgangsrechnungen als E-Rechnung: ZUGFeRD/Factur-X, Profil EN 16931 (COMFORT) – ab 0.58, REGELN Nr. 38.
+
+Tests: test_zugferd.py
+
+- `angaben(cfg, snap)` – Angaben für die E-Rechnung: festgeschriebener Wert der Rechnung, sonst der heutige aus den Einstellungen
+- `anschrift(text)` – Freitext-Anschrift → {'zeilen': [höchstens 3], 'plz', 'ort'}; None, wenn die letzte Zeile nicht „PLZ Ort“ (Deutschland) ist.
+- `kategorie(kind, e)` – Umsatzsteuer-Kategorie der Rechnung: Beitrag immer O, sonst laut Einstellung ('' = noch nicht entschieden).
+- `luecken(kind, e, issuer_address)` – Was dem Aussteller für E-Rechnungen dieser Art fehlt (Texte für die Oberfläche; leer = vollständig).
+- `stand(cfg)` – Stand für Einstellungen und Versanddialog: Schalter und was je Rechnungsart noch fehlt.
+- `fehlt(inv)` – Grund, warum diese Rechnung als normale PDF hinausgeht – None, wenn sie eine gültige E-Rechnung wird.
+- `xml(inv)` – Rechnungsdaten als Cross Industry Invoice (EN 16931). Nur aufrufen, wenn `fehlt(inv)` None ist.
+- `einbetten(pdf, xml_bytes, titel, autor)` – Rechnungs-PDF (reportlab) → PDF/A-3b mit eingebetteter Rechnungs-XML: XMP mit Factur-X-Schema, Farbprofil (OutputIntent),
+- `pdf(inv)` – Rechnungs-PDF für Versand und Download: (E-Rechnung, None) oder (bisherige PDF, Grund). Scheitert nie an der E-Rechnung.
+
 ### pdfschrift.py
 
 Schrift für alle PDF-Dateien: Liberation Sans (SIL OFL 1.1, Laufweite wie Helvetica/Arial).
@@ -864,7 +880,7 @@ Tests: test_pdfschrift.py
 
 E-Mail-Versand von Rechnungen über SMTP (z. B. Strato) – Nachricht, Verbindung, Versandauftrag.
 
-Tests: test_lastschrift.py, test_mahnung.py, test_rechnungen.py
+Tests: test_lastschrift.py, test_mahnung.py, test_rechnungen.py, test_zugferd.py
 
 - `texts(cfg, inv, test=…)` – Betreff und Text aus der Vorlage für die Rechnungsart (oder die Zahlungserinnerung, wenn inv['reminder']).
 - `html_body(cfg, inv, body)` – Schlichte HTML-Fassung (Inline-Stile, ohne externe Bilder oder Skripte).
@@ -901,7 +917,7 @@ Tests: test_lastschrift.py, test_mahnung.py, test_rechnungen.py
 
 Passwort für den E-Mail-Versand: auf dem Server in einer Datei, sonst nur im Arbeitsspeicher.
 
-Tests: test_mahnung.py, test_rechnungen.py, test_server.py
+Tests: test_mahnung.py, test_rechnungen.py, test_server.py, test_zugferd.py
 
 - Klasse `FileStore` – Ablage auf dem Server: eine JSON-Datei {Konto: Passwort} mit Rechten 0600 im eigenen Ordner.
   - `FileStore.get_password(service, account)`

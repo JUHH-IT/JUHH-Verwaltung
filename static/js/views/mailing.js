@@ -26,6 +26,13 @@ export function reminderBadge(i) {
   return i.reminders ? badge(`${i.reminders}× erinnert, zuletzt ${shortDate(i.reminded_at.slice(0, 10))}`, 'warn') : '';
 }
 
+/** E-Rechnung (zugferd.py): je Rechnungsart ein Satz, was noch fehlt – leer, wenn alles vollständig oder der Schalter aus ist. */
+export function erechnungFehlt(kinds = ['dues', 'normal']) {
+  const e = store.data.erechnung || {};
+  if (!e.an) return [];
+  return kinds.filter((k) => e[k]?.length).map((k) => `${k === 'dues' ? 'Beitragsrechnungen' : 'Rechnungen'} gehen noch als normale PDF hinaus – es fehlt: ${e[k].join('; ')}.`);
+}
+
 /** Sammel-PDF zum Drucken (z. B. für Mitglieder ohne E-Mail). */
 export const printLink = (ids, label = 'PDF zum Drucken') => html`<a class="btn" href="/api/invoices.pdf?ids=${ids.join(',')}" target="_blank" rel="noopener">${icon('print', 16)} ${label}</a>`;
 
@@ -58,8 +65,11 @@ export async function sendDialog(preselect = null) {
     const mailable = selected.filter((i) => !i.pilot && i.total > i.paid && i.mail_to && (resend || (!i.sent_at && i.last_status !== 'unknown')));
     const already = selected.filter((i) => i.sent_at || i.last_status === 'unknown').length;
     const missing = [!cfg.mail_from || !cfg.smtp_user ? 'Absenderadresse und Benutzername' : '', !status.password ? 'Passwort' : ''].filter(Boolean);
+    const ohneE = erechnungFehlt([...new Set(selected.map((i) => (i.kind === 'dues' ? 'dues' : 'normal')))]);
     const el = dialog('Rechnungen per E-Mail versenden', html`
       ${missing.length ? html`<p class="notice warn">Für den Versand fehlt in den Stammdaten: ${missing.join(' und ')}.
+        <button type="button" class="link" data-settings>Zu den Einstellungen</button></p>` : ''}
+      ${ohneE.length ? html`<p class="notice warn" data-erechnung>E-Rechnung (ZUGFeRD): ${ohneE.join(' ')}
         <button type="button" class="link" data-settings>Zu den Einstellungen</button></p>` : ''}
       <div class="toolbar"><div class="segmented" role="group" aria-label="Anzeige">
         ${preselect ? html`<button type="button" data-view="chosen" aria-pressed="${view === 'chosen'}">Neu erstellt</button>` : ''}
@@ -85,8 +95,7 @@ export async function sendDialog(preselect = null) {
     const again = el.querySelector('[data-resend]');
     if (again) again.onchange = () => { resend = again.checked; render(); };
     el.querySelectorAll('[data-look]').forEach((b) => (b.onclick = () => mailPreview('id=' + b.dataset.look, 'Vorschau ' + issued.find((i) => i.id === Number(b.dataset.look)).number)));
-    const toSettings = el.querySelector('[data-settings]');
-    if (toSettings) toSettings.onclick = () => { el.close(); go('settings'); };
+    el.querySelectorAll('[data-settings]').forEach((b) => (b.onclick = () => { el.close(); go('settings'); }));
     el.querySelector('[data-test]').onclick = (e) => safe(async () => {
       e.target.disabled = true;
       try {
@@ -185,6 +194,7 @@ async function progress() {
     ${running && job.current ? html`<p class="small muted">Gerade: ${job.current}</p>` : ''}
     ${job.state === 'aborted' ? html`<p class="notice warn">Der Versand wurde nach einem Verbindungs- oder Anmeldefehler gestoppt. Bitte die Stammdaten prüfen und die übrigen Rechnungen erneut senden.</p>` : ''}
     ${job.errors?.length ? table(['Rechnung', 'Empfänger', 'Fehler'], job.errors.map((e) => html`<tr><td>${e.number}</td><td>${e.to}</td><td>${e.error}</td></tr>`)) : ''}
+    ${Object.keys(job.einfach || {}).length ? html`<p class="small muted" data-einfach>Als normale PDF ohne E-Rechnung versendet: ${Object.entries(job.einfach).map(([grund, n], i) => html`${i ? ' · ' : ''}${n} × ${grund}`)}</p>` : ''}
     ${!running && job.skipped?.length ? html`<p class="small muted">Übersprungen: ${job.skipped.map((s, i) => html`${i ? ', ' : ''}${s.number} (${s.reason})`)}</p>` : ''}
     <div class="form-actions">${running ? html`<button type="button" class="btn warn" data-cancel>Versand abbrechen</button>` : ''}
       <button type="button" class="btn ${running ? 'ghost' : 'primary'}" data-done>${running ? 'Im Hintergrund weiterlaufen lassen' : 'Fertig'}</button></div>`);

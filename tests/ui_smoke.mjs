@@ -152,6 +152,19 @@ try {
   await page.check('input[name=invoice_ready]');
   await page.click('form[data-save] button[type=submit]');
   check((await toast()).includes('gespeichert'), 'Stammdaten speichern');
+  // 0.58: Angaben für die E-Rechnung – die Steuernummer wird geprüft; die Umsatzsteuer normaler Rechnungen bleibt hier unentschieden
+  await page.fill('input[name=tax_number]', '123');
+  await page.click('form[data-save] button[type=submit]');
+  check((await toast()).includes('Steuernummer') && await page.locator('select[name=tax_category]').count() === 1, 'E-Rechnung: ungültige Steuernummer wird abgelehnt');
+  await page.fill('input[name=tax_number]', '');
+  await page.click('form[data-save] button[type=submit]');
+  await toast();
+  await page.click('[data-tab=schalter]');
+  check(await page.locator('.switch input[name=erechnung]').isChecked()
+    && /^Rechnungen gehen noch als normale PDF hinaus – es fehlt: Umsatzsteuer/.test((await page.locator('[data-erechnung-stand]').textContent()).trim()),
+    'E-Rechnung: Schalter ist an und nennt, was für normale Rechnungen fehlt (Beiträge sind vollständig)');
+  await shot('02c-erechnung-schalter');
+  await page.click('[data-tab=verein]');
   check(await page.inputValue('input[name=liability_account]') === '1600', 'Verbindlichkeitenkonto vorbelegt (1600)');
   await page.fill('input[name=liability_name]', 'Probe');
   await page.fill('input[name=liability_account]', '1600');
@@ -309,6 +322,10 @@ try {
   await shot('16-versand-fertig');
   await page.click('#modal [data-done]');
   check(mails().length === 2 && mails()[1].includes('erika@example.org') && mails()[1].includes(dueNumber + '.pdf'), 'E-Mail mit PDF beim Empfänger');
+  // 0.58: Die Beitragsrechnung ist eine E-Rechnung (ZUGFeRD) – eine PDF, in der die Rechnungsdaten stecken
+  const duePdf = await (await page.request.get(`http://127.0.0.1:${port}${await page.locator(`main tbody tr:has-text("${dueNumber}") a:has-text("PDF")`).getAttribute('href')}`)).body();
+  check(duePdf.subarray(0, 8).toString() === '%PDF-1.7' && duePdf.includes('/AFRelationship /Alternative') && duePdf.includes('<ram:ID>' + dueNumber + '</ram:ID>') && duePdf.includes('/GTS_PDFA1'),
+    'E-Rechnung: Beitragsrechnung als PDF/A-3 mit eingebetteter factur-x.xml');
 
   // Rechnung für mehrere Empfänger (Mitglied + Gast) mit Vorschau
   await page.click('[data-normal]');
@@ -348,9 +365,12 @@ try {
   await page.click('main [data-send-picked]');
   await page.waitForSelector('#modal [data-go]');
   check((await page.locator('#modal .bulkbar strong').textContent()).includes('1 per E-Mail'), 'Ohne E-Mail nur Druck');
+  check((await page.locator('#modal [data-erechnung]').textContent()).includes('Rechnungen gehen noch als normale PDF hinaus – es fehlt: Umsatzsteuer'), 'E-Rechnung: Versanddialog nennt vorher, was fehlt');
   await page.click('#modal [data-go]');
   await page.click('#modal [data-start]');
   await page.waitForFunction(() => (document.querySelector('#modal h2')?.textContent || '').includes('abgeschlossen'), null, { timeout: 15000 });
+  check(/Als normale PDF ohne E-Rechnung versendet: 1 × In den Einstellungen fehlt: Umsatzsteuer/.test(await page.locator('#modal [data-einfach]').textContent()), 'E-Rechnung: nach dem Versand stehen Anzahl und Grund der normalen PDF');
+  await shot('18b-versand-ohne-erechnung');
   await page.click('#modal [data-done]');
   check(mails().length === 3, 'Zweite Rechnung versendet, keine Doppelversendung');
 
@@ -1918,8 +1938,8 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await login();
   check(true, 'Abmelden und Anmelden');
 
-  // 6 bisherige + doppelte OV-Nummer + geschützte Datei (Kennwort fehlt, Kennwort falsch)
-  const expected = 7 + (existsSync(lockedPath) ? 2 : 0);
+  // 6 bisherige + doppelte OV-Nummer + ungültige Steuernummer (0.58) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
+  const expected = 8 + (existsSync(lockedPath) ? 2 : 0);
   check(rejected === expected, `Nur die ${expected} absichtlich falschen Eingaben abgelehnt (${rejected})`);
   check(errors.length === 0, 'Keine Fehler in der Browser-Konsole' + (errors.length ? ': ' + errors.join(' | ') : ''));
 } catch (e) {

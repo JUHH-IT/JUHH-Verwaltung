@@ -19,6 +19,7 @@ from reportlab.platypus import (BaseDocTemplate, Flowable, Frame, KeepTogether, 
 
 import lastschrift
 import stammdaten
+import zugferd
 from pdfschrift import SANS, SANS_BOLD, exclusive
 from formate import euro, german_date, iban_compact, iban_valid, iban_pretty
 
@@ -57,6 +58,7 @@ def invoice_data(store, iid):
     debit = lastschrift.info(store, data)
     data['debit_active'] = bool(debit and debit['active'])
     data['pay_by'] = debit.get('pay_by') if debit else None
+    data['erechnung'] = zugferd.angaben(store.config(), data['snap'])   # nur festgeschriebene Rechnungen werden E-Rechnungen (zugferd.pdf)
     return data
 
 
