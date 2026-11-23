@@ -174,8 +174,58 @@ class AbhakenTests(Basis):
         self.aendern(mid, 'Bernd', city='Kiel', street='Geheimweg 9')
         kenntnis.abhaken(self.s, [{'id': mid}], kenntnis.liste(self.s)['stand'], 'Lena')
         row = self.s.db.execute("SELECT detail FROM audit WHERE action='Änderungen zur Kenntnis genommen' ORDER BY id DESC").fetchone()
-        self.assertEqual(row[0], '{"mitglieder": 1, "angaben": 2}')
+        self.assertEqual(row[0], '{"mitglieder": 1, "angaben": 2, "ids": [%d]}' % mid)   # Anzahlen und Kennungen, nie Werte
         self.assertNotIn('Geheimweg', ' '.join(r[0] for r in self.s.db.execute('SELECT detail FROM audit')))
+
+    def test_abhaken_steht_im_verlauf_des_mitglieds(self):
+        """0.55: wer wann zur Kenntnis genommen hat, steht dauerhaft im Verlauf des Mitglieds – auch nach dem Löschen der Zeilen."""
+        mid, anderes = self.member(), self.member()
+        self.gesehen()
+        self.aendern(mid, 'Bernd', city='Kiel')
+        kenntnis.abhaken(self.s, [{'id': mid}], kenntnis.liste(self.s)['stand'], 'Lena')
+        kenntnis.bereinigen(self.s, date.today() + timedelta(days=kenntnis.FRIST + 1))
+        erster = mitglieder.verlauf(self.s, mid)[0]
+        self.assertEqual((erster['actor'], erster['text']), ('Lena', 'Änderung zur Kenntnis genommen'))
+        self.assertNotIn('Lena', [v['actor'] for v in mitglieder.verlauf(self.s, anderes)])
+
+    def test_ausgenommene_angaben(self):
+        """0.55: `kenntnis_ohne` – die Angabe wird nicht mehr festgehalten, schon Festgehaltenes ist nach dem Speichern weg."""
+        mid = self.member()
+        self.gesehen()
+        self.aendern(mid, 'Bernd', phone='040 1', city='Kiel')
+        self.assertEqual([f['feld'] for f in kenntnis.liste(self.s)['offen'][0]['felder']], ['city', 'phone'])
+        self.s.save_settings({'kenntnis_ohne': 'phone,mobile'}, 'Lena')
+        self.assertEqual(self.s.config()['kenntnis_ohne'], 'phone,mobile')
+        self.assertEqual([f['feld'] for f in kenntnis.liste(self.s)['offen'][0]['felder']], ['city'])
+        self.aendern(mid, 'Bernd', phone='040 2', mobile='0170 1', street='Neuer Weg 3')
+        self.assertEqual([f['feld'] for f in kenntnis.liste(self.s)['offen'][0]['felder']], ['city', 'street'])
+        self.assertEqual(self.s.db.execute("SELECT COUNT(*) FROM mitglied_aenderungen WHERE feld IN ('phone','mobile')").fetchone()[0], 0)
+        self.s.save_settings({'kenntnis_ohne': ''}, 'Lena')
+        self.aendern(mid, 'Bernd', phone='040 3')
+        self.assertIn('phone', [f['feld'] for f in kenntnis.liste(self.s)['offen'][0]['felder']])
+        for falsch in ('dues', 'gibtsnicht', 'phone;DROP'):
+            with self.assertRaises(ValueError, msg=falsch):
+                self.s.save_settings({'kenntnis_ohne': falsch}, 'Lena')
+
+    def test_hoechstfrist(self):
+        """0.55: ohne Höchstfrist (Vorgabe) bleibt Offenes liegen; mit Höchstfrist löscht die Bereinigung ältere offene Zeilen und
+        schreibt das mit der Anzahl ins Protokoll."""
+        mid = self.member()
+        self.gesehen()
+        self.aendern(mid, 'Bernd', city='Kiel')
+        in_100 = date.today() + timedelta(days=100)
+        self.assertEqual(stammdaten.DEFAULTS['kenntnis_hoechstfrist'], '0')
+        kenntnis.bereinigen(self.s, in_100)
+        self.assertEqual(len(kenntnis.liste(self.s)['offen']), 1)
+        self.s.save_settings({'kenntnis_hoechstfrist': '90'}, 'Lena')       # speichert und bereinigt mit dem heutigen Tag: noch nichts zu alt
+        self.assertEqual(len(kenntnis.liste(self.s)['offen']), 1)
+        kenntnis.bereinigen(self.s, in_100)
+        self.assertEqual(kenntnis.liste(self.s)['offen'], [])
+        row = self.s.db.execute("SELECT actor,detail FROM audit WHERE action='Nicht abgehakte Änderungen nach Höchstfrist gelöscht'").fetchone()
+        self.assertEqual(tuple(row), ('Programm', '{"angaben": 1, "tage": 90}'))
+        for falsch in ('30', '-1', 'x', ''):
+            with self.assertRaises(ValueError, msg=falsch):
+                self.s.save_settings({'kenntnis_hoechstfrist': falsch}, 'Lena')
 
     def test_ungueltige_auswahl(self):
         P = lambda *ids: [{'id': i} for i in ids]

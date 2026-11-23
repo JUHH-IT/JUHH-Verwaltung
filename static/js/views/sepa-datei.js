@@ -181,8 +181,8 @@ export function sepaFileDialog() {
           const parts = [r.members && `${r.members} Mitglieder auf 8100`, r.invoices && `${r.invoices} Rechnungen`, r.external && `${r.external} außerhalb der Mitgliederliste`,
             r.cases && `${r.cases} als Klärfall an die Mitgliederverwaltung`].filter(Boolean);
           state[bi].done = `${r.count} Zahlungen ${r.mode === 'book' ? 'verbucht' : 'zugeordnet'} (${parts.join(', ')})${r.learned ? ` · ${r.learned} Mandatsreferenzen gemerkt` : ''}. Sicherung: ${r.backup}${r.warning ? ` · ${r.warning}` : ''}`;
-          toast(r.warning || 'Sammelbuchung aufgeteilt.', !!r.warning);
           await refresh();
+          toast(r.warning || 'Sammelbuchung aufgeteilt.', !!r.warning);
           render();
         } finally { btn.disabled = false; }
       })));

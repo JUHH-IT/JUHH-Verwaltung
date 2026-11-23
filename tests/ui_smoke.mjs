@@ -889,8 +889,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   const mitglied = page.locator('main [data-ab]').first();
   if (await mitglied.count()) {
     await mitglied.click();
-    check(await page.waitForFunction((n) => fetch('/api/kenntnis').then((r) => r.json()).then((d) => d.offen.length === n - 1), kVorher, { timeout: 5000 }).then(() => true, () => false),
-      'Cockpit: Änderung abgehakt');
+    check((await toast()).includes('Zur Kenntnis genommen') && await kOffen() === kVorher - 1, 'Cockpit: Änderung abgehakt');   // Meldung abwarten: sie kommt nach dem Neuladen
   }
   await page.click('[data-page=kenntnis]');
   await page.waitForSelector('.kn-page .kn-zeile');
@@ -913,6 +912,10 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('#modal form button[type=submit]');
   check((await toast()).length > 0, 'Mitglied geändert (Ort)');
   await page.keyboard.press('Escape');
+  await page.click(`main [data-member="${geaendert.id}"]`);
+  check(await page.waitForSelector('#modal [data-kenntnis-hinweis]', { timeout: 6000 }).then(() => true, () => false), 'Akte: Hinweis „Änderung wartet auf Kenntnisnahme“');
+  await page.click('#modal [data-kenntnis]');
+  await page.waitForSelector('.kn-page');
   await page.click('[data-page=kenntnis]');
   await page.waitForSelector('.kn-page .kn-zeile');
   const zeile = page.locator('.kn-page .kn-zeile', { hasText: geaendert.name }).first();
@@ -922,11 +925,17 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await shot('49c-zur-kenntnis-vorher-jetzt');
   const kJetzt = await kOffen();
   await page.locator('.kn-page .kn-detail [data-ab]').click();
-  check(await page.waitForFunction((n) => fetch('/api/kenntnis').then((r) => r.json()).then((d) => d.offen.length === n - 1), kJetzt, { timeout: 5000 }).then(() => true, () => false),
-    'Zur Kenntnis: abgehakt');
+  await toast();   // die Meldung kommt nach dem Neuladen: die Seite zeigt jetzt den neuen Stand
+  check(await kOffen() === kJetzt - 1, 'Zur Kenntnis: abgehakt');
   await page.waitForSelector('.kn-page [data-ansicht=abgehakt]');
   await page.click('.kn-page [data-ansicht=abgehakt]');
   check(await page.locator('.kn-page .kn-zeile').count() >= 1 && (await page.locator('.kn-page .kn-status').textContent()).includes('Abgehakt von'), 'Zur Kenntnis: Ansicht „Abgehakt“');
+  await page.click('.kn-page [data-akte]');
+  await page.waitForSelector('#modal .akte-head');
+  await page.click('#modal [data-tab=verlauf]');
+  check(await page.waitForFunction(() => (document.querySelector('#modal [data-tab-body]')?.textContent || '').includes('Änderung zur Kenntnis genommen'), null, { timeout: 6000 }).then(() => true, () => false),
+    'Akte: Abhaken steht im Verlauf des Mitglieds');
+  await page.keyboard.press('Escape');
   await page.click('.kn-page [data-ansicht=offen]');
   await page.click('[data-page=mv-overview]');
   await page.waitForSelector('.mu-page .ck-wochen');
@@ -1695,8 +1704,13 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.waitForFunction(() => /Adressen in/.test(document.querySelector('main [data-address-state]')?.textContent || ''), null, { timeout: 6000 }).catch(() => {});
   check(/\d+ Adressen in \d+ Straßen/.test(await page.locator('main [data-address-state]').textContent()), 'Einstellungen zeigen den Stand der Adressdaten');
   await page.uncheck('main .switch input[name=map_tiles]');
+  await page.selectOption('main select[name=kenntnis_hoechstfrist]', '180');   // 0.55: Höchstfrist und ausgenommene Angaben
+  await page.click('main .kn-ohne summary');
+  await page.check('main .kn-ohne input[value=phone_work]');
   await page.click('main form[data-save] button[type=submit]');
   await toast();
+  const kEin = await page.evaluate(() => fetch('/api/data?year=' + new Date().getFullYear()).then((r) => r.json()).then((d) => [d.settings.kenntnis_hoechstfrist, d.settings.kenntnis_ohne]));
+  check(kEin[0] === '180' && kEin[1] === 'phone_work' && (await page.locator('main [data-ohne-zahl]').textContent()).includes('1 ausgenommen'), `Einstellungen: Höchstfrist und ausgenommene Angabe gespeichert (${kEin} / ${await page.locator('main [data-ohne-zahl]').textContent()})`);
   const before = tiles.length;
   await page.click('[data-page=map]');
   await page.waitForSelector('main .map-canvas.map-plain');

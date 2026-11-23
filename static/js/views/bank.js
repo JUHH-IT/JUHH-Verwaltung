@@ -138,8 +138,8 @@ function parkForm(b, box) {
     e.preventDefault();
     safe(async () => {
       await api('/api/park', { id: b.id, reason: e.target.reason.value });
-      toast('Auf Parkkonto 1370 gebucht – bleibt als Klärungsfall sichtbar.');
       await afterChange(b);
+      toast('Auf Parkkonto 1370 gebucht – bleibt als Klärungsfall sichtbar.');
     });
   };
 }
