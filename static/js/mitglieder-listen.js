@@ -12,7 +12,8 @@ export const anschriftVollstaendig = (m) => !!(m.street && m.zip && m.city);
 /** Was in den Stammdaten fehlt (ohne Kontaktdaten, die erst die Akte lädt). */
 export const fehlt = (m) => [!anschriftVollstaendig(m) && 'Anschrift', !m.email && 'E-Mail', !m.birth && 'Geburtsdatum', !m.ov_id && 'Ortsverband'].filter(Boolean);
 
-/** Feste Listen: id, Bezeichnung, Prüfung, Hinweis für den Überblick. year = gewähltes Haushaltsjahr. */
+/** Feste Listen: id, Bezeichnung, Prüfung, Hinweis für den Überblick. year = gewähltes Haushaltsjahr.
+ * arbeit: Arbeitsliste (etwas ist zu prüfen oder zu pflegen) – die Mitgliederliste zeigt sie in einer eigenen Reihe unter dem Bestand. */
 export function listen(year = store.year, today = todayIso()) {
   const y = String(year);
   const wahl = store.data.members.some((m) => m.wahl);
@@ -21,17 +22,17 @@ export function listen(year = store.year, today = todayIso()) {
   return [
     { id: 'aktiv', label: 'Alle aktiven', test: (m) => isActive(m, today) },
     { id: 'neu', label: `Neu ${year}`, test: (m) => (m.joined || '').startsWith(y), hint: `Eintritte seit 01.01.${year}` },
-    { id: 'ohne-mail', label: 'Ohne E-Mail', test: (m) => isActive(m, today) && !m.email, hint: 'Für Einladungen und Rechnungen per E-Mail' },
-    { id: 'aenderung-offen', label: 'Änderung offen', test: (m) => offen.has(m.id), hint: 'Geändert und noch nicht zur Kenntnis genommen' },
-    { id: 'anschrift', label: 'Anschrift prüfen', test: (m) => isActive(m, today) && !anschriftVollstaendig(m), hint: 'Straße, PLZ oder Ort fehlen' },
-    { id: 'ohne-ov', label: 'Ohne Ortsverband', test: (m) => isActive(m, today) && !m.ov_id, hint: 'Kein Ortsverband eingetragen' },
-    { id: 'werden-35', label: `Werden ${year} 35`, test: (m) => isActive(m, today) && birthYear(m) === year - 35, hint: 'Altersgrenze nach Satzung § 2 Abs. 1 Nr. 4' },
-    { id: 'iban-ohne-mandat', label: 'IBAN ohne Mandat', test: (m) => isActive(m, today) && m.hat_iban && (!m.sepa_mandat || m.iban_abweichend),
+    { id: 'ohne-mail', arbeit: true, label: 'Ohne E-Mail', test: (m) => isActive(m, today) && !m.email, hint: 'Für Einladungen und Rechnungen per E-Mail' },
+    { id: 'aenderung-offen', arbeit: true, label: 'Änderung offen', test: (m) => offen.has(m.id), hint: 'Geändert und noch nicht zur Kenntnis genommen' },
+    { id: 'anschrift', arbeit: true, label: 'Anschrift prüfen', test: (m) => isActive(m, today) && !anschriftVollstaendig(m), hint: 'Straße, PLZ oder Ort fehlen' },
+    { id: 'ohne-ov', arbeit: true, label: 'Ohne Ortsverband', test: (m) => isActive(m, today) && !m.ov_id, hint: 'Kein Ortsverband eingetragen' },
+    { id: 'werden-35', arbeit: true, label: `Werden ${year} 35`, test: (m) => isActive(m, today) && birthYear(m) === year - 35, hint: 'Altersgrenze nach Satzung § 2 Abs. 1 Nr. 4' },
+    { id: 'iban-ohne-mandat', arbeit: true, label: 'IBAN ohne Mandat', test: (m) => isActive(m, today) && m.hat_iban && (!m.sepa_mandat || m.iban_abweichend),
       hint: 'Bankdaten liegen vor, ein gültiges SEPA-Mandat für dieses Konto fehlt (auch Kontowechsel) – auswählen und „SEPA-Mandate“ drucken' },
-    { id: 'beitrag-offen', label: 'Beitrag offen', test: (m) => isActive(m, today) && (m.dues_open_years || []).length > 0, hint: 'Fällige Beiträge nicht eingegangen' },
+    { id: 'beitrag-offen', arbeit: true, label: 'Beitrag offen', test: (m) => isActive(m, today) && (m.dues_open_years || []).length > 0, hint: 'Fällige Beiträge nicht eingegangen' },
     ...(wahl ? [{ id: 'wahlberechtigt', label: 'Wahlberechtigt', test: (m) => isActive(m, today) && m.wahl?.status === 'wahlberechtigt' },
-      { id: 'nicht-wahlberechtigt', label: 'Nicht wahlberechtigt', test: (m) => isActive(m, today) && m.wahl?.status === 'nicht', hint: 'Grund steht in der Liste' }] : []),
-    { id: 'austritt-bald', label: 'Austritt angekündigt', test: (m) => !!m.left_on && m.left_on > today, hint: 'Austritt mit künftigem Datum eingetragen',
+      { id: 'nicht-wahlberechtigt', arbeit: true, label: 'Nicht wahlberechtigt', test: (m) => isActive(m, today) && m.wahl?.status === 'nicht', hint: 'Grund steht in der Liste' }] : []),
+    { id: 'austritt-bald', arbeit: true, label: 'Austritt angekündigt', test: (m) => !!m.left_on && m.left_on > today, hint: 'Austritt mit künftigem Datum eingetragen',
       soon: (m) => m.left_on <= monthEnd },
     { id: 'ausgetreten', label: 'Ausgetreten', test: (m) => !isActive(m, today) },
     { id: 'alle', label: 'Alle', test: () => true },

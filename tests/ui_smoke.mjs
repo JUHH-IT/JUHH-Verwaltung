@@ -114,9 +114,9 @@ try {
   };
   await login();
   check(await page.locator('h1').textContent() === 'Start' && await page.locator('main h2#tasks-title').textContent() === 'Aufgaben', 'Einrichtung und Start (Aufgaben je Bereich)');
-  check(await page.evaluate(() => { const k = document.querySelector('main .cards'), t = document.querySelector('main .task-grid'); return k && t && k.getBoundingClientRect().bottom <= t.getBoundingClientRect().top; }),
+  check(await page.evaluate(() => { const k = document.querySelector('main .blatt .kz-band'), t = document.querySelector('main .blatt #tasks-title'); return k && t && k.getBoundingClientRect().bottom <= t.getBoundingClientRect().top; }),
     'Start: Kennzahlen stehen über den Aufgaben');
-  check(await page.locator('.task-card').count() === 4 && (await page.locator('.nav-group').allTextContents()).join('|') === 'Mitgliederverwaltung|Buchhaltung|Verband|Verwaltung',
+  check(await page.locator('main [data-bereich]').count() === 4 && (await page.locator('.nav-group').allTextContents()).join('|') === 'Mitgliederverwaltung|Buchhaltung|Verband|Verwaltung',
     'Navigation nach Bereichen');
   const version = readFileSync(join(repo, 'app.py'), 'utf8').match(/^VERSION='([^']+)'/m)[1];
   check((await page.locator('.sidebar-foot').textContent()).includes(`Version ${version}`), 'Version in der Seitenleiste');
@@ -735,7 +735,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('#modal [data-delete]');
   await page.click('#preview [data-confirm]');
   check((await toast()).includes('Mitglied gelöscht. Sicherung: vor-mitglied-loeschen'), 'Mitglied ohne Buchhaltungsbezug gelöscht');
-  check(!(await page.locator('main tbody').textContent().catch(() => '')).includes('Gast, Gina'), 'Gelöschtes Mitglied nicht mehr in der Liste');
+  check(!(await page.locator('main .ml-tabelle').textContent()).includes('Gast, Gina'), 'Gelöschtes Mitglied nicht mehr in der Liste');
   await page.fill('#member-search', 'musterfrau');
   await page.locator('main tbody tr').first().click();
   await page.click('#modal [data-delete]');
@@ -746,7 +746,8 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.fill('#member-search', 'testallee');
 
   // Mitgliederbuchhaltung: Beitragskonto, Soll festlegen, Rückstände
-  check((await page.locator('main .cards').textContent()).includes('Aktive Mitglieder'), 'Kennzahlen des Mitgliederbestands');
+  check(/^1 von \d+ Mitglied(ern)? der Liste „Alle aktiven“$/.test((await page.locator('main #ml-aussage').textContent()).trim()) && Number(await page.locator('main [data-liste=aktiv] .n').textContent()) >= 1,
+    'Aussage über der Tabelle und Zahl der aktiven Mitglieder an der Liste');
   await page.locator('main tbody tr').first().click();
   await page.waitForSelector('#modal [data-target]');
   check((await page.locator('#modal [data-account]').textContent()).includes('Rückstand'), 'Beitragskonto mit Rückstand (Soll laut Staffel)');
@@ -1484,14 +1485,14 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
 
   // Start: Aufgaben je Bereich, Kennzahlen; Kreisverbandsseite über die Budgets
   await page.click('[data-page=overview]');
-  check(await page.locator('main .cards .card').count() === 4, 'Kennzahlen');
-  check(await page.locator('.task-card').count() === 4 && await page.locator('.task-row').count() >= 4, 'Aufgaben je Bereich');
+  check(await page.locator('main .kz-band .kz').count() === 4, 'Kennzahlen');
+  check(await page.locator('main [data-bereich]').count() === 4 && await page.locator('.task-row').count() >= 4, 'Aufgaben je Bereich');
   await shot('04-start-aufgaben');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click('#menu-toggle');
   await page.click('[data-page=overview]');
   await page.waitForTimeout(400);
-  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0 && await page.evaluate(() => [...document.querySelectorAll('.task-card h3')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map((h) => h.textContent).join('|')) === 'Mitgliederverwaltung|Kreisverbände und Haushalt|Buchhaltung|Verwaltung', 'Start auf dem Handy: eine Spalte ohne seitliches Scrollen, Reihenfolge wie im Dokument');
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0 && await page.evaluate(() => [...document.querySelectorAll('main [data-bereich] :is(h2, h3)')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).map((h) => h.textContent).join('|')) === 'Mitgliederverwaltung|Buchhaltung|Kreisverbände und Haushalt|Verwaltung', 'Start auf dem Handy: eine Spalte ohne seitliches Scrollen, Reihenfolge wie im Dokument');
   await shot('04b-start-handy');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('.task-row:has-text("KV-Budgets")').click();
@@ -1611,7 +1612,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check((await page.locator('main tr:has-text("Max Spender")').textContent()).includes('Einzahlung überfällig'), 'Barspende: 30-Tage-Frist überwacht');
   await shot('31-spenden');
   await page.click('[data-page=overview]');
-  check((await page.locator('.task-grid').textContent()).includes('Barspenden einzahlen'), 'Frist Barspende auf der Startseite');
+  check((await page.locator('main [data-bereich=vb]').textContent()).includes('Barspenden einzahlen'), 'Frist Barspende auf der Startseite');
 
   // Konten: alle Konten des Kontenrahmens, Kontenblatt mit Anfangsbestand, CSV
   await page.click('[data-page=konten]');

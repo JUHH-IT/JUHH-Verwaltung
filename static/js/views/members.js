@@ -12,8 +12,8 @@ import { pageHead, icon, table, empty, dialog, overlay, safe, toast, badge, uplo
 import { kvOvFields, bindKvOv, setKvOv, ovById, ovLabel, ovsOf } from '../gliederung.js';
 import { invoiceBadge } from './invoices.js';
 import { mandateSection, bindMandateSection, activeMandate } from './sepa.js';
-import { matchMembers, sortName, addressLine, pickMembers } from '../member-picker.js';
-import { listen, isActive, fehlt, anschriftVollstaendig, gespeichert, speichern } from '../mitglieder-listen.js';
+import { matchMembers, sortName, pickMembers } from '../member-picker.js';
+import { listen, isActive, anschriftVollstaendig, gespeichert, speichern } from '../mitglieder-listen.js';
 import { doppelteDialog } from './doppelte.js';
 import { ovAbgleichDialog } from './ov-abgleich.js';
 
@@ -615,7 +615,7 @@ function duesState(m) {
   const hint = m.dues_state === 'klaeren' ? 'Beitrag nicht berechenbar' : m.dues_state === 'frei' ? (m.guest ? 'Gastmitglied' : m.dues_basis || '')
     : older.length ? `offen: ${older.join(', ')}` : m.dues_state === 'offen' && (m.paid || 0) > 0
       ? ((m.paid || 0) >= (m.dues_soll || 0) ? 'Zahlung deckt ältere Jahre' : 'teilweise bezahlt') : '';
-  return [badge(label, kind), hint];
+  return [label, kind, hint];
 }
 const postfaehig = (m) => anschriftVollstaendig(m) && !m.no_mail;   // wie mitgliederlisten.postfaehig
 
@@ -668,7 +668,7 @@ export function openList(id, { kv = '' } = {}) {
 
 export function members(main) {
   if (ovFilter && ovFilter !== 'none' && !ovsOf(kvFilter, ovFilter).some((o) => String(o.id) === ovFilter)) ovFilter = '';
-  const today = todayIso(), y = String(store.year);
+  const today = todayIso();
   const all = store.data.members;
   const lists = listen(store.year, today);
   if (!lists.some((l) => l.id === liste)) liste = 'aktiv';
@@ -682,62 +682,67 @@ export function members(main) {
   selected = new Set([...selected].filter((id) => shown.has(id)));   // Auswahl folgt der Liste
   const picked = list.filter((m) => selected.has(m.id)), post = picked.filter(postfaehig).length;
   const ovChoices = kvFilter ? (store.data.ovs || []).filter((o) => o.kv === kvFilter && (o.members || o.active)) : [];
-  const active = all.filter((m) => isActive(m, today));
-  const joined = all.filter((m) => (m.joined || '').startsWith(y)).length, left = all.filter((m) => (m.left_on || '').startsWith(y)).length;
-  const turning = active.filter((m) => m.birth && Number(m.birth.slice(0, 4)) === store.year - 35).length;   // Altersgrenze Satzung § 2
-  const gaps = active.filter((m) => fehlt(m).length).length;
   const kvs = store.data.kv.filter((k) => all.some((m) => m.kv === k.code));
   const cases = store.data.cases?.active || 0;
   const wahl = all.some((m) => m.wahl);
   const ids = list.map((m) => m.id);   // „alle auswählen“: die ganze Liste, auch über die angezeigten LIMIT Zeilen hinaus
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
   const write = can('mitglieder', 'schreiben');
-  mount(main, html`<div class="page wide">
-    ${pageHead('Mitgliederverwaltung', 'Mitglieder', html`<button type="button" class="btn" data-doubles>Doppelte prüfen</button>
-      <button type="button" class="btn" data-ov-abgleich>Ortsverbände abgleichen</button>${write ? html`
-      <button type="button" class="btn" data-import>${icon('upload', 16)} Liste importieren</button>
-      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>` : ''}`)}
-    <section class="cards" aria-label="Mitgliederbestand">
-      <div class="card"><span class="label">Aktive Mitglieder</span><span class="value">${active.length}</span>
-        <span class="note">${kvs.length} ${kvs.length === 1 ? 'Kreisverband' : 'Kreisverbände'}${all.length > active.length ? ` · ${all.length - active.length} ausgetreten` : ''}</span></div>
-      <div class="card"><span class="label">Eintritte ${store.year}</span><span class="value">${joined}</span><span class="note">Austritte ${store.year}: ${left}</span></div>
-      <div class="card"><span class="label">Werden ${store.year} 35 Jahre</span><span class="value">${turning}</span><span class="note">Altersgrenze (Satzung § 2)</span></div>
-      <div class="card"><span class="label">Daten vervollständigen</span><span class="value ${gaps ? 'over' : ''}">${gaps}</span>
-        <span class="note">Anschrift, E-Mail, Geburtsdatum oder Ortsverband fehlt</span></div>
-    </section>
-    ${cases ? html`<p class="notice warn">${cases} ${cases === 1 ? 'Beitragszahlung wartet' : 'Beitragszahlungen warten'} auf Klärung, zu wem sie gehören:
-      <button type="button" class="link" data-go-cases>Klärfälle öffnen</button></p>` : ''}
-    <div class="tabs ml-tabs" role="tablist" aria-label="Listen">${lists.map((l) => html`
-      <button type="button" role="tab" data-liste="${l.id}" aria-selected="${!ansicht && l.id === liste}">${l.label}<span class="n">${all.filter(l.test).length}</span></button>`)}${
-      saved.map((v, i) => html`<button type="button" role="tab" data-saved="${i}" aria-selected="${ansicht === v.name}">${v.name}</button>`)}</div>
-    <div class="toolbar"><label class="search grow">${icon('search', 16)}<span class="sr-only">Mitglieder suchen</span><input id="member-search" type="search" autocomplete="off"
-        placeholder="Name, Straße, PLZ, Ort, Mitgliedsnummer oder E-Mail" value="${search}"></label>
-      <label class="field inline">Kreisverband<select id="member-kv"><option value="">alle</option>${kvs.map((k) => html`<option value="${k.code}" ${k.code === kvFilter ? 'selected' : ''}>${k.name}</option>`)}</select></label>
-      ${kvFilter ? html`<label class="field inline">Ortsverband<select id="member-ov"><option value="">alle</option><option value="none" ${ovFilter === 'none' ? 'selected' : ''}>ohne Ortsverband</option>
-        ${ovChoices.map((o) => html`<option value="${o.id}" ${String(o.id) === ovFilter ? 'selected' : ''}>${ovLabel(o)} (${o.members})</option>`)}</select></label>` : ''}
-      ${money ? html`<label class="field inline">Beitrag<select id="member-state"><option value="">alle</option>${Object.entries(STATES).map(([k, v]) => html`<option value="${k}" ${k === stateFilter ? 'selected' : ''}>${v}</option>`)}</select></label>` : ''}
-      ${ansicht ? html`<button type="button" class="link" data-delete-view>Ansicht „${ansicht}“ löschen</button>`
-        : html`<button type="button" class="ml-save" data-save-view>+ Ansicht speichern</button>`}</div>
-    ${current.hint && !ansicht ? html`<p class="small muted">${current.label}: ${current.hint}.</p>` : ''}
-    <section class="panel" style="padding:6px 12px">${all.length ? table([
-      { label: html`<input type="checkbox" class="ml-check" data-check-all ${allOn ? 'checked' : ''} ${ids.length ? '' : 'disabled'} aria-label="Alle ${ids.length} auswählen">`, className: 'ml-pick' },
-      'Mitglied', 'Anschrift', 'Kreis- und Ortsverband', 'Kontakt', { label: 'Alter', className: 'num' }, `Beitrag ${store.year}`, ...(wahl ? ['Status'] : [])],
-      list.slice(0, LIMIT).map((m) => {
-        const [state, hint] = duesState(m), age = years(m.birth);
-        return html`<tr class="clickable ${selected.has(m.id) ? 'is-picked' : ''}" data-member="${m.id}" tabindex="0">
-          <td class="ml-pick"><input type="checkbox" class="ml-check" data-pick="${m.id}" ${selected.has(m.id) ? 'checked' : ''} aria-label="${sortName(m)} auswählen"></td>
-          <td><strong style="font-weight:600">${sortName(m)}</strong>${statusBadges(m)}<span class="sub">${m.number}${
-            m.left_on ? ` · ${m.left_on > today ? 'Austritt zum' : 'ausgetreten'} ${date(m.left_on)}` : m.joined ? ` · seit ${m.joined.slice(0, 4)}` : ''}</span></td>
-          <td class="small">${anschriftVollstaendig(m) ? addressLine(m) : html`${addressLine(m)} ${badge('Anschrift prüfen', 'warn')}`}</td>
-          <td>${kvName(m.kv)}${m.ov_id ? html`<span class="sub">${ovLabel(ovById(m.ov_id))}</span>` : ''}</td><td class="small">${m.email || badge('E-Mail fehlt', 'warn')}</td>
-          <td class="num">${age ?? '—'}${age !== null && m.birth && Number(m.birth.slice(0, 4)) === store.year - 35 ? html`<span class="sub">wird 35</span>` : ''}</td>
-          <td title="${m.dues_basis || ''}">${state}${activeMandate(m.id) ? html` ${badge('Lastschrift', 'navy')}` : ''}${hint ? html`<span class="sub">${hint}</span>` : ''}</td>
-          ${wahl ? html`<td>${m.wahl ? html`${wahlBadge(m.wahl.status)}${m.wahl.status === 'nicht' ? html`<span class="sub">${m.wahl.gruende.join(' · ')}</span>` : ''}` : ''}</td>` : ''}</tr>`;
-      }))
-      : empty('Noch keine Mitglieder', 'Einzeln anlegen oder eine Mitgliederliste (Excel/CSV) importieren.')}
-      ${all.length && !list.length ? html`<p class="muted" style="padding:12px">Kein Mitglied passt zur Auswahl.</p>` : ''}</section>
-    <p class="small muted">${list.length > LIMIT ? `Die ersten ${LIMIT} von ${list.length} Treffern – Suche oder Kreisverband eingrenzen.` : `${list.length} von ${all.length} angezeigt`} · sortiert nach Nachname.
-      Hier steht nur der Stand des Beitrags ${store.year}. Beträge, Beitragseingänge und die OP-Listen der Kreisverbände stehen in der Buchhaltung.</p>
+  const gesamt = all.filter(current.test).length, gefiltert = !!(search || kvFilter || ovFilter || stateFilter);
+  const wo = ansicht ? `der Ansicht „${ansicht}“` : `der Liste „${current.label}“`;
+  const aussage = !gefiltert ? `${list.length === 0 ? 'Kein Mitglied' : list.length === 1 ? 'Ein Mitglied' : `${list.length} Mitglieder`} in ${wo}`
+    : list.length ? `${list.length} von ${gesamt} ${gesamt === 1 ? 'Mitglied' : 'Mitgliedern'} ${ansicht ? `in ${wo}` : wo}` : `Kein Mitglied ${ansicht ? `in ${wo}` : wo} passt zur Auswahl`;
+  const reiter = (l) => html`<button type="button" role="tab" data-liste="${l.id}" aria-selected="${!ansicht && l.id === liste}">${l.label}<span class="n">${all.filter(l.test).length}</span></button>`;
+  const reihe = (id, titel, inhalt) => html`<span id="ml-r-${id}">${titel}</span><div role="tablist" aria-labelledby="ml-r-${id}">${inhalt}</div>`;
+  const fehltText = (text) => html`<span class="ml-fehlt"><span class="punkt" aria-hidden="true"></span>${text}</span>`;
+  mount(main, html`<div class="page wide ml-page">
+    ${pageHead('Mitgliederverwaltung', 'Mitglieder', write ? html`
+      <button type="button" class="btn" data-import>Liste importieren</button>
+      <button type="button" class="btn primary" data-new>${icon('plus', 16)} Mitglied anlegen</button>` : '')}
+    <div class="blatt">
+      <section class="blatt-teil ml-wahl" aria-label="Suchen und eingrenzen">
+        <div class="toolbar"><label class="search grow">${icon('search', 16)}<span class="sr-only">Mitglieder suchen</span><input id="member-search" type="search" autocomplete="off"
+            placeholder="Name, Straße, PLZ, Ort, Mitgliedsnummer oder E-Mail" value="${search}"></label>
+          <label class="field inline">Kreisverband<select id="member-kv"><option value="">alle</option>${kvs.map((k) => html`<option value="${k.code}" ${k.code === kvFilter ? 'selected' : ''}>${k.name}</option>`)}</select></label>
+          ${kvFilter ? html`<label class="field inline">Ortsverband<select id="member-ov"><option value="">alle</option><option value="none" ${ovFilter === 'none' ? 'selected' : ''}>ohne Ortsverband</option>
+            ${ovChoices.map((o) => html`<option value="${o.id}" ${String(o.id) === ovFilter ? 'selected' : ''}>${ovLabel(o)} (${o.members})</option>`)}</select></label>` : ''}
+          ${money ? html`<label class="field inline">Beitrag<select id="member-state"><option value="">alle</option>${Object.entries(STATES).map(([k, v]) => html`<option value="${k}" ${k === stateFilter ? 'selected' : ''}>${v}</option>`)}</select></label>` : ''}</div>
+        <div class="ml-listen">
+          ${reihe('bestand', 'Bestand', lists.filter((l) => !l.arbeit).map(reiter))}
+          ${reihe('arbeit', 'Arbeitsvorrat', lists.filter((l) => l.arbeit).map(reiter))}
+          ${saved.length ? reihe('eigene', 'Eigene Ansichten', saved.map((v, i) => html`<button type="button" role="tab" data-saved="${i}" aria-selected="${ansicht === v.name}">${v.name}</button>`)) : ''}
+          <span>Abgleichen</span><div><button type="button" class="blatt-link" data-doubles>Doppelte prüfen</button>
+            <button type="button" class="blatt-link" data-ov-abgleich>Ortsverbände abgleichen</button></div>
+        </div>
+        ${cases ? html`<p class="ml-hinweis"><span class="punkt" aria-hidden="true"></span><span>${cases} ${cases === 1 ? 'Beitragszahlung wartet' : 'Beitragszahlungen warten'} auf Klärung, zu wem sie gehören.
+          <button type="button" class="blatt-link" data-go-cases>Klärfälle öffnen</button></span></p>` : ''}
+      </section>
+      <section class="blatt-teil ml-tabelle" aria-labelledby="ml-aussage">
+        ${all.length ? html`<div class="ml-kopf"><div><h2 class="blatt-aussage" id="ml-aussage">${aussage}</h2>
+            <p class="small muted">${current.hint && !ansicht ? `${current.hint}. ` : ''}Sortiert nach Nachname.</p></div>
+          ${ansicht ? html`<button type="button" class="blatt-link" data-delete-view>Ansicht „${ansicht}“ löschen</button>`
+            : html`<button type="button" class="blatt-link" data-save-view>Ansicht speichern</button>`}</div>
+        ${list.length ? table([
+          { label: html`<input type="checkbox" class="ml-check" data-check-all ${allOn ? 'checked' : ''} aria-label="Alle ${ids.length} auswählen">`, className: 'ml-pick' },
+          'Mitglied', 'Anschrift', 'Kreis- und Ortsverband', 'Kontakt', { label: 'Alter', className: 'num' }, `Beitrag ${store.year}`, ...(wahl ? ['Status'] : [])],
+          list.slice(0, LIMIT).map((m) => {
+            const [label, kind, hint] = duesState(m), age = years(m.birth);
+            const ort = [`${m.zip || ''} ${m.city || ''}`.trim(), m.country].filter(Boolean).join(', ');
+            const zusatz = [m.left_on && `${m.left_on > today ? 'Austritt zum' : 'ausgetreten'} ${date(m.left_on)}`, m.guest && 'Gast', m.dues_free && 'beitragsfrei', m.no_mail && 'Postausschluss'].filter(Boolean);
+            return html`<tr class="clickable ${selected.has(m.id) ? 'is-picked' : ''}" data-member="${m.id}" tabindex="0">
+              <td class="ml-pick"><input type="checkbox" class="ml-check" data-pick="${m.id}" ${selected.has(m.id) ? 'checked' : ''} aria-label="${sortName(m)} auswählen"></td>
+              <td><strong>${sortName(m)}</strong><span class="sub"><span>${m.number}${!m.left_on && m.joined ? `, seit ${m.joined.slice(0, 4)}` : ''}</span>${zusatz.map((z) => html`, <span>${z}</span>`)}</span></td>
+              <td>${m.street || ''}${ort ? html`<span class="sub">${ort}</span>` : ''}${anschriftVollstaendig(m) ? '' : fehltText('Anschrift prüfen')}</td>
+              <td>${kvName(m.kv)}${m.ov_id ? html`<span class="sub">${ovLabel(ovById(m.ov_id))}</span>` : ''}</td><td>${m.email || fehltText('E-Mail fehlt')}</td>
+              <td class="num">${age ?? '—'}${age !== null && m.birth && Number(m.birth.slice(0, 4)) === store.year - 35 ? html`<span class="sub">wird 35</span>` : ''}</td>
+              <td title="${m.dues_basis || ''}"><span class="ml-stand ${kind}">${label}</span>${hint || activeMandate(m.id) ? html`<span class="sub">${[hint, activeMandate(m.id) && 'Lastschrift'].filter(Boolean).join(', ')}</span>` : ''}</td>
+              ${wahl ? html`<td>${m.wahl ? html`<span class="ml-stand ${WAHL[m.wahl.status][1]}">${WAHL[m.wahl.status][0]}</span>${m.wahl.status === 'nicht' ? html`<span class="sub">${m.wahl.gruende.join(', ')}</span>` : ''}` : ''}</td>` : ''}</tr>`;
+          }), { className: 'blatt-tab' }) : ''}
+        <p class="blatt-fuss">${list.length > LIMIT ? `Die ersten ${LIMIT} von ${list.length} Treffern, Suche oder Kreisverband grenzen ein. ` : ''}Hier steht nur der Stand des Beitrags ${store.year}.
+          Beträge, Beitragseingänge und die OP-Listen der Kreisverbände stehen in der Buchhaltung.</p>`
+        : empty('Noch keine Mitglieder', 'Einzeln anlegen oder eine Mitgliederliste (Excel/CSV) importieren.')}
+      </section>
+    </div>
     ${picked.length ? html`<div class="ml-bar" role="region" aria-label="Auswahl">
       <strong>${picked.length} ausgewählt</strong>${picked.length > post ? html`<span class="small">${picked.length - post} ohne Post (Anschrift unvollständig oder Postausschluss)</span>` : ''}
       <span class="ml-actions"><button type="button" class="btn small" data-letter ${post ? '' : 'disabled'}>${icon('file', 14)} Anschreiben</button>
