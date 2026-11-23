@@ -36,6 +36,9 @@ DEFAULTS = {
     'issuer': '', 'issuer_address': '', 'iban': '', 'bic': '', 'bank_name': '',
     'contact_email': '', 'contact_phone': '', 'website': '',
     'tax_note': '', 'invoice_ready': 'no',
+    # E-Rechnung (ab 0.59, zugferd.py): Schalter; Steuernummer und/oder USt-IdNr. des Ausstellers; Umsatzsteuer normaler
+    # Rechnungen: O = nicht steuerbar, E = steuerbefreit, leer = noch nicht entschieden (Beitragsrechnungen sind immer O)
+    'erechnung': 'no', 'tax_number': '', 'vat_id': '', 'tax_category': '',
     # Buchhaltung: Konto für Eingangsrechnungen (fachlich zu bestätigen, Standard 1600)
     'liability_account': '1600', 'liability_name': 'Verbindlichkeiten (Eingangsrechnungen)',
     # SEPA-Lastschrift: Gläubiger-ID (Bundesbank), Präfix der Mandatsreferenz, Vorabankündigung in Tagen
@@ -106,6 +109,8 @@ DEFAULTS = {
     'pdf_normal_text': 'wir stellen dir folgende Leistungen in Rechnung:',
 }
 
+# Angaben für die E-Rechnung – mit jeder Rechnung festgeschrieben, auch leer (zugferd.py liest nur dieses Abbild; fehlen die Schlüssel, ist die Rechnung von vor 0.59)
+ERECHNUNG = ('tax_number', 'vat_id', 'tax_category', 'creditor_id')
 TEXT_KEYS = {'issuer', 'issuer_address', 'bank_name', 'liability_name', 'chair_name', 'treasurer_name', 'contact_phone', 'website', 'tax_note', 'mail_from_name',
              'tpl_dues_subject', 'tpl_dues_body', 'tpl_normal_subject', 'tpl_normal_body',
              'tpl_reminder_subject', 'tpl_reminder_body', 'tpl_debit_body', 'pdf_dues_text', 'pdf_normal_text'}
@@ -169,6 +174,19 @@ def clean(data, current):
             if v and not lastschrift.creditor_id_valid(v):
                 raise ValueError('Gläubiger-Identifikationsnummer ist ungültig (Prüfziffer oder Aufbau, z. B. DE98ZZZ09999999999).')
             out[key] = v
+        elif key == 'tax_number':
+            if v and not (re.fullmatch(r'[\d /]+', v) and 10 <= len(re.sub(r'\D', '', v)) <= 13):
+                raise ValueError('Steuernummer: 10 bis 13 Ziffern, z. B. 22/123/45678.')
+            out[key] = v
+        elif key == 'vat_id':
+            v = re.sub(r'\s+', '', v).upper()
+            if v and not re.fullmatch(r'DE\d{9}', v):
+                raise ValueError('USt-IdNr.: DE und 9 Ziffern, z. B. DE123456789.')
+            out[key] = v
+        elif key == 'tax_category':
+            if v not in ('', 'O', 'E'):
+                raise ValueError('Umsatzsteuer normaler Rechnungen: nicht steuerbar oder steuerbefreit wählen.')
+            out[key] = v
         elif key == 'sepa_prefix':
             if not re.fullmatch(r'[A-Za-z0-9]{1,10}', v):
                 raise ValueError('Präfix der Mandatsreferenz: 1 bis 10 Buchstaben oder Ziffern.')
@@ -226,7 +244,7 @@ def clean(data, current):
             if v not in ('', 'jan1', 'dec31'):
                 raise ValueError('Ungültiger Altersstichtag.')
             out[key] = v
-        elif key in ('invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene'):
+        elif key in ('invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene', 'erechnung'):
             out[key] = 'yes' if v in ('yes', 'true', 'on', '1') else 'no'
         elif key == 'kenntnis_ohne':   # Angaben, die nicht zur Kenntnis genommen werden (Feldnamen mit Komma)
             import kenntnis

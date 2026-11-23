@@ -5,7 +5,7 @@ import { html, mount } from '../html.js';
 import { eur, date, parseCents } from '../format.js';
 import { store, refresh, kvName } from '../store.js';
 import { dialog, table, badge, safe, icon, mailPreview } from '../ui.js';
-import { afterIssue } from './mailing.js';
+import { afterIssue, erechnungHinweis } from './mailing.js';
 import { accountField, bindAccountPickers } from '../account-picker.js';
 
 let state = null;
@@ -74,6 +74,7 @@ function renderForm() {
         <button type="button" class="link" id="m-all">Alle angezeigten wählen</button><button type="button" class="link" id="m-none">Keine</button></div>
       <div id="m-list">${markup}</div>`
     : html`<div style="display:flex;flex-direction:column;gap:8px" id="others">${state.others.map(otherRow)}</div>
+      <p class="small muted">Anschrift im Ausland: das Land in die letzte Zeile schreiben.</p>
       <div><button type="button" class="link" id="add-other">${icon('plus', 14)} Empfänger</button></div>`}
     <div class="bulkbar"><strong>${count} Empfänger · je ${eur(total)} · gesamt ${eur(total * count)}</strong>
       <button type="submit" class="btn primary">${icon('eye', 16)} Vorschau</button></div>
@@ -135,6 +136,7 @@ function renderPreview(pv) {
       <div class="card"><span class="label">Fällig am</span><span class="value" style="font-size:22px">${date(pv.due)}</span><span class="note">Buchung: ${kvName(pv.kv)}</span></div></div>
     <p class="small muted">Positionen: ${pv.lines.map((l, i) => html`${i ? ' · ' : ''}${l.description} (${eur(l.amount)}, Konto ${l.account})`)}</p>
     ${noMail ? html`<p class="notice warn">${noMail} Empfänger ohne E-Mail-Adresse – diese Rechnungen bitte drucken und per Post schicken.</p>` : ''}
+    ${erechnungHinweis('normal')}
     ${table(['Nummer', 'Empfänger', 'E-Mail', 'Vorschau'], pv.recipients.map((r, i) => html`<tr>
       <td>${r.number}</td><td>${r.name}<span class="sub">${r.member_number || 'kein Mitglied'}</span></td><td>${r.email || badge('keine – Post')}</td>
       <td style="white-space:nowrap"><a class="btn small" href="/api/preview.pdf?draft=${pv.token}&i=${i}" target="_blank" rel="noopener">PDF</a>

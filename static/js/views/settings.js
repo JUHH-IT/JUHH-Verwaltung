@@ -6,6 +6,7 @@ import { toInput, weekdayDate } from '../format.js';
 import { store, refresh, can } from '../store.js';
 import { pageHead, safe, toast, icon, mailPreview, dialog, table, badge, empty, confirmAction, uploadProtected } from '../ui.js';
 import { ovLabel } from '../gliederung.js';
+import { erechnungFehlt } from './mailing.js';
 import { gebietVon, gebietText, gebietFelder, gebietVorschlaege } from '../ov-gebiete.js';
 import { accountField, bindAccountPickers } from '../account-picker.js';
 import { addressState, addressSummary, addressCredit, loadAddressData, loadedText } from '../adressdaten.js';
@@ -63,6 +64,19 @@ function schalter(s) {
             <span class="small" data-weekday-text></span>
             <span class="small muted">leer = Vorschlag (letzter Werktag im Januar): ${weekdayDate(wahl.vorschlag.beitrag)} – bitte prüfen: Samstag zählt hier als Werktag</span></label>
         </div></div>
+    </div>
+    <div class="switch-row">
+      <div class="switch-text"><h2>Rechnungen als E-Rechnung versenden (ZUGFeRD)</h2>
+        <p class="muted"><strong>An:</strong> Jede Rechnung, die per E-Mail hinausgeht oder einzeln geöffnet wird, ist eine E-Rechnung: die gewohnte PDF,
+          in der zusätzlich die Rechnungsdaten zum Einlesen stecken (ZUGFeRD, Profil EN 16931) – eine Datei, kein zweiter Anhang. Fehlte bei der Ausstellung
+          eine Angabe, geht die bisherige PDF hinaus. <strong>Aus (Vorgabe):</strong> immer die bisherige PDF. Zahlungserinnerungen, Vorschauen, das Sammel-PDF zum Drucken und
+          stornierte Rechnungen bleiben immer normale PDF.</p>
+        ${s.erechnung !== 'yes' ? '' : erechnungFehlt().length ? html`<p class="notice warn" data-erechnung-stand>${erechnungFehlt().join(' ')} Eintragen unter „Verein &amp; Bank“ → E-Rechnung.
+            Das gilt für Rechnungen, die ab jetzt erstellt werden; schon erstellte behalten die Angaben vom Tag ihrer Ausstellung.</p>`
+          : html`<p class="small" data-erechnung-stand>Die Angaben sind vollständig: Rechnungen, die ab jetzt erstellt werden, gehen als E-Rechnung hinaus.
+            Schon erstellte behalten die Angaben vom Tag ihrer Ausstellung – fehlte dort etwas, bleiben sie normale PDF.</p>`}</div>
+      <label class="switch"><input type="checkbox" name="erechnung" role="switch" aria-label="Rechnungen als E-Rechnung versenden" ${s.erechnung === 'yes' ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
+        <span class="switch-label" data-switch-label>${s.erechnung === 'yes' ? 'An' : 'Aus'}</span></label>
     </div>
     <div class="switch-row">
       <div class="switch-text"><h2>Änderungen an Mitgliedern zur Kenntnis nehmen</h2>
@@ -146,6 +160,16 @@ function verein(s) {
     <h3>Normale Rechnungen (z. B. Veranstaltungen)</h3>
     ${area('Steuerhinweis', 'tax_note', s.tax_note, 2, 'Nur den fachlich bestätigten Text eintragen.')}
     <label class="check"><input type="checkbox" name="invoice_ready" ${s.invoice_ready === 'yes' ? 'checked' : ''}> Rechnungen ohne Umsatzsteuerausweis sind für den Aussteller fachlich bestätigt.</label>
+    <h3>E-Rechnung (ZUGFeRD)</h3>
+    <div class="formgrid">
+      ${field('Steuernummer', 'tax_number', s.tax_number, 'autocomplete="off" placeholder="z. B. 22/123/45678"', 'Steht in den Rechnungsdaten der E-Rechnung. Ohne Steuernummer genügt für nicht steuerbare Rechnungen die Gläubiger-ID (oben).')}
+      ${field('USt-IdNr.', 'vat_id', s.vat_id, 'autocomplete="off" placeholder="z. B. DE123456789"', 'optional; wird bei nicht steuerbaren Rechnungen nicht angegeben')}
+      <label class="field">Umsatzsteuer normaler Rechnungen<select name="tax_category">
+        <option value="">Noch nicht entschieden – normale PDF</option>
+        <option value="O" ${s.tax_category === 'O' ? 'selected' : ''}>Nicht steuerbar (kein Unternehmer im Sinne des Umsatzsteuerrechts)</option>
+        <option value="E" ${s.tax_category === 'E' ? 'selected' : ''}>Steuerbefreit (z. B. Kleinunternehmer nach § 19 UStG)</option></select>
+        <span class="small muted">Nur nach fachlicher Bestätigung wählen. Die Begründung in der E-Rechnung ist der Steuerhinweis oben. Beitragsrechnungen gelten immer als nicht steuerbar.</span></label>
+    </div>
     <p class="notice">Rechnungsnummern werden automatisch fortlaufend je Kalenderjahr vergeben und können nicht geändert werden.
       Nächste Nummern: <strong>${n.dues}</strong> (Beitrag) · <strong>${n.normal}</strong> (Rechnung).</p>
     ${save}</form>`;
@@ -403,7 +427,7 @@ function zugang() {
 
 function collect(form) {
   const data = Object.fromEntries(new FormData(form));
-  for (const name of ['invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene']) if (form.elements[name]) data[name] = form.elements[name].checked ? 'yes' : 'no';
+  for (const name of ['invoice_ready', 'dues_prorate', 'kv_share_auto', 'map_tiles', 'kenntnis', 'kenntnis_eigene', 'erechnung']) if (form.elements[name]) data[name] = form.elements[name].checked ? 'yes' : 'no';
   if (form.querySelector('[data-ohne]')) data.kenntnis_ohne = [...form.querySelectorAll('[data-ohne]:checked')].map((b) => b.value).join(',');
   if (data.kv_share_auto === 'no') delete data.kv_share_auto_from;   // Schalter aus: kein Jahr speichern, das noch niemand entschieden hat
   return data;
