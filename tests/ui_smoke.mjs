@@ -1385,6 +1385,269 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   const cashPdf = await page.evaluate(async () => (await fetch(document.querySelector('a[href^="/api/kasse.pdf"]').href)).headers.get('content-type'));
   check(cashPdf === 'application/pdf', 'Kassenbuch als PDF');
 
+  // Weitere Kasse der Art Bargeld (0.60): Handkasse einrichten, Beleg erfassen und verbuchen, Umbuchung auf die Bank über 2380, eigenes Kassenbuch, zurück zur Bargeldkasse
+  check(await page.locator('main [data-kasse]').count() === 0, 'Eine Kasse: kein Umschalter');
+  await page.click('[data-add-kasse]');
+  check(await page.inputValue('#cash-add input[name=account]') === '1430', 'Weitere Kasse: freies Konto vorgeschlagen');
+  await page.fill('#cash-add input[name=name]', 'Handkasse');
+  check(await page.locator('#cash-add input[name=art]:checked').count() === 0, 'Weitere Kasse: Art ist bewusst zu wählen');
+  await page.check('#cash-add input[name=art][value=bar]');
+  await page.fill('#cash-add input[name=account]', '1420');
+  await page.fill('#cash-add input[name=prefix]', 'hk');
+  await page.fill('#cash-add input[name=amount]', '40');
+  await page.click('#cash-add button[type=submit]');
+  check((await toast()).includes('1420 gibt es schon'), 'Weitere Kasse: vorhandenes Konto abgewiesen');
+  await page.fill('#cash-add input[name=account]', '1430');
+  await page.click('#cash-add button[type=submit]');
+  check((await toast()).includes('Handkasse ist eingerichtet'), 'Weitere Kasse eingerichtet');
+  check(await page.locator('main [data-kasse]').count() === 2 && (await page.locator('main [data-kasse][aria-pressed=true]').textContent()).includes('Handkasse'), 'Umschalter zeigt beide Kassen, Handkasse gewählt');
+  check((await page.locator('main .cards').textContent()).includes('Bestand Handkasse heute') && (await page.locator('main .cards .card').first().textContent()).includes('40,00'), 'Handkasse mit eigenem Anfangsbestand');
+  await page.click('[data-new-cash]');
+  const hkForm = await page.locator('#modal').textContent();
+  check(hkForm.includes('Beleg erfassen – Handkasse') && hkForm.includes('Umbuchung auf die Bank') && !hkForm.includes('Abhebung') && !hkForm.includes('Kassenbon'), 'Handkasse: Dialog nennt die Kasse, Wörter ohne Bargeld');
+  await page.fill('#cash-form input[name=amount]', '1,50');
+  await page.fill('#cash-form input[name=text]', 'Gebühr Handkasse');
+  await page.click('#cash-form button[type=submit]');
+  check(/^Handkasse: HK-\d{4}-0001 erfasst – jetzt verbuchen/.test(await toast()), 'Handkasse-Beleg mit eigenem Nummernkreis erfasst, Meldung nennt die Kasse');
+  await page.waitForSelector('#book-form');
+  await page.locator('.part [data-account]').first().click();
+  await page.fill('#account-query', '14');
+  check(!(await page.locator('#preview').textContent()).includes('Handkasse') && !(await page.locator('#preview').textContent()).includes('1400'), 'Handkasse-Beleg: Kassenkonten nicht als Kontierung wählbar');
+  await page.keyboard.press('Escape');
+  await pick('.part [data-account]', '4225');
+  await page.click('#book-submit');
+  check((await toast()).includes('verbucht'), 'Handkasse-Beleg wie Kontoumsatz verbucht');
+  await page.click('[data-new-cash]');
+  await page.check('#cash-form input[value=deposit]');
+  await page.fill('#cash-form input[name=amount]', '20');
+  await page.click('#cash-form button[type=submit]');
+  check(/HK-\d{4}-0002 erfasst und auf Geldtransit 2380 gebucht/.test(await toast()), 'Handkasse: Umbuchung auf die Bank über 2380');
+  await page.waitForSelector('[data-cash-csv]');
+  const hkBook = await page.locator('[data-custom]').textContent();
+  check(hkBook.includes('Kassenbuch Handkasse') && hkBook.includes('18,50') && hkBook.includes('4225') && hkBook.includes('2380') && hkBook.includes('auf 1430') && !/\bK-\d{4}-/.test(hkBook),
+    'Kassenbuch Handkasse mit Kontierung, Umbuchung und Bestand – ohne Bargeldbelege');
+  const hkJournal = await page.evaluate(async () => (await (await fetch('/api/data?year=' + new Date().getFullYear())).json()).journal.filter((j) => /Gebühr Handkasse/.test(j.description)).map((j) => j.account).sort().join());
+  check(hkJournal === '1430,4225', 'Handkasse-Beleg bucht 1430 statt 1400/1420');
+  const hkPdf = await page.evaluate(async () => { const r = await fetch(document.querySelector('a[href^="/api/kasse.pdf"]').href); return r.headers.get('content-type') + ' ' + r.headers.get('content-disposition'); });
+  check(hkPdf.startsWith('application/pdf') && hkPdf.includes('Kassenbuch-Handkasse-1430-'), 'Kassenbuch Handkasse als PDF (Dateiname mit Konto)');
+  // Geldtransit zugeordnet statt saldiert: Handkasse-Umbuchung (20) und Bargeld-Abhebung (50) haben beide noch keinen Kontoumsatz – jede Kasse zeigt ihren Posten
+  const hkTransit = await page.locator('main [data-transit]').textContent();
+  check(hkTransit.includes('20,00') && /1 Beleg ohne Gegenseite im Kontoauszug: HK-\d{4}-0002/.test(hkTransit) && !/\bK-\d{4}/.test(hkTransit), 'Geldtransit Handkasse: eigener offener Posten mit Belegnummer');
+  await shot('38b-kasse-handkasse');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(150);
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'Kasse mit Umschalter auf dem Handy ohne seitliches Scrollen');
+  await shot('38c-kasse-handkasse-handy');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const gewaehlt = () => page.locator('main [data-kasse][aria-pressed=true]').textContent();
+  await page.click('[data-page=overview]');
+  const transitTasks = await page.locator('main').textContent();
+  check(transitTasks.includes('Geldtransit 2380: Handkasse') && transitTasks.includes('Geldtransit 2380: Bargeldkasse'), 'Start: offener Geldtransit je Kasse');
+  await page.click('[data-page=cash]');
+  check((await gewaehlt()).includes('Handkasse'), 'Gewählte Kasse (Handkasse) bleibt beim Seitenwechsel');
+  await page.reload();
+  await page.waitForSelector('.sidebar');
+  await page.click('[data-page=cash]');
+  check((await gewaehlt()).includes('Handkasse') && (await page.locator('main .cards').textContent()).includes('Bestand Handkasse heute'), 'Gewählte Kasse (Handkasse) bleibt nach dem Neuladen der Seite');
+  await page.click('[data-opening]');
+  check((await page.locator('#modal .dialog-head').textContent()).includes('Anfangsbestand Handkasse'), 'Anfangsbestand: Dialog nennt die Kasse');
+  await dialogClose();
+  await page.click('main [data-kasse="0"]');
+  await page.click('main [data-filter=book]');   // nach dem Neuladen steht wieder die Arbeitsliste vorn
+  await page.waitForSelector('[data-cash-csv]');
+  const barBook = await page.locator('[data-custom]').textContent();
+  check((await page.locator('main .cards').textContent()).includes('Kassenbestand heute') && barBook.includes('137,50') && !barBook.includes('HK-') && !barBook.includes('Handkasse'),
+    'Zurück zur Bargeldkasse: Kassenbuch und Bestand unverändert');
+  const barTransit = await page.locator('main [data-transit]').textContent();
+  check(barTransit.includes('50,00') && /K-\d{4}-0002/.test(barTransit) && !barTransit.includes('HK-'), 'Geldtransit Bargeldkasse: nur der eigene Posten');
+  await page.click('[data-new-cash]');
+  check((await page.locator('#modal .dialog-head').textContent()).includes('Kassenbeleg erfassen – Bargeldkasse'), 'Belegdialog der Bargeldkasse nennt die Kasse');
+  await dialogClose();
+  await page.evaluate(() => localStorage.setItem('ju-finanzen-kasse', '99'));   // gemerkte Kasse gibt es nicht (mehr)
+  await page.reload();
+  await page.waitForSelector('.sidebar');
+  await page.click('[data-page=cash]');
+  check((await gewaehlt()).includes('Bargeldkasse'), 'Gemerkte Kasse gibt es nicht: Bargeldkasse');
+  await page.click('main [data-kasse="0"]');
+  // PayPal als Konto bei einem Zahlungsdienst (0.60, Antworten Lennert Gust 23.11.2026) – ohne Geldtransit: Ausgabe erfassen (Bestand im
+  // Minus, Hinweis), Abbuchung im Kontoauszug direkt auf das PayPal-Konto buchen (Bestand 0), umbenennen, stilllegen
+  await page.click('[data-add-kasse]');
+  check(await page.inputValue('#cash-add input[name=account]') === '1431', 'PayPal: nächstes freies Konto vorgeschlagen');
+  await page.fill('#cash-add input[name=name]', 'PayPal');
+  await page.check('#cash-add input[name=art][value=dienst]');
+  await shot('38d-kasse-einrichten-art');
+  await page.fill('#cash-add input[name=prefix]', 'pp');
+  await page.fill('#cash-add input[name=amount]', '0');
+  await page.click('#cash-add button[type=submit]');
+  check((await toast()).includes('PayPal ist eingerichtet'), 'PayPal als Zahlungsdienst eingerichtet');
+  check((await gewaehlt()).includes('PayPal') && (await page.locator('main .cards').textContent()).includes('Bestand PayPal heute') && await page.locator('main [data-transit]').count() === 0,
+    'PayPal: eigene Kennzahlen, keine Kennzahl Geldtransit');
+  await page.click('[data-new-cash]');
+  const ppForm = await page.locator('#modal').textContent();
+  check(ppForm.includes('Beleg erfassen – PayPal') && !ppForm.includes('Umbuchung') && await page.locator('#cash-form input[name=kind]').count() === 2, 'PayPal: nur Ausgabe und Einnahme, keine Umbuchung über 2380');
+  await page.fill('#cash-form input[name=amount]', '12,50');
+  await page.fill('#cash-form input[name=text]', 'Plakate über PayPal');
+  await page.click('#cash-form button[type=submit]');
+  check(/^PayPal: PP-\d{4}-0001 erfasst – jetzt verbuchen/.test(await toast()), 'PayPal: Ausgabe vor dem Einzug vom Bankkonto angenommen');
+  await page.waitForSelector('#book-form');
+  await pick('.part [data-account]', '4220');
+  await page.click('#book-submit');
+  check((await toast()).includes('verbucht'), 'PayPal-Ausgabe verbucht');
+  // Buchungsplatz der Kasse neben den neuen Kontoumsätzen (0.58): parken, Parkkonto auflösen, stornieren, ungültig – am zweiten PayPal-Beleg
+  await page.click('[data-new-cash]');
+  await page.fill('#cash-form input[name=amount]', '3');
+  await page.fill('#cash-form input[name=text]', 'Unklare PayPal-Zahlung');
+  await page.click('#cash-form button[type=submit]');
+  check(/^PayPal: PP-\d{4}-0002 erfasst/.test(await toast()), 'PayPal: zweiter Beleg erfasst');
+  await page.waitForSelector('#book-form');
+  await page.click('#park');
+  await page.fill('#park-form input', 'Beleg fehlt');
+  await page.click('#park-form button[type=submit]');
+  check((await toast()).includes('Parkkonto 1370'), 'PayPal-Beleg geparkt');
+  await page.click('main [data-filter=parked]');
+  check(await items(1) && (await page.locator('main [data-filter=parked] .n').textContent()) === '1', 'PayPal: geparkter Beleg steht unter Parkkonto 1370');
+  await page.waitForSelector('#book-form');
+  await pick('.part [data-account]', '4225');
+  await page.click('#book-submit');
+  check((await toast()).includes('aufgelöst'), 'PayPal: Parkkonto aufgelöst');
+  await page.click('main [data-filter=booked]');
+  await page.locator('.bank-item:has(.amount:has-text("3,00"))').click();
+  check((await page.locator('main .detail .reference').textContent()).includes('Unklare PayPal-Zahlung'), 'PayPal: verbuchter Beleg mit Kontierung gewählt');
+  await page.click('main [data-reverse]');
+  await page.click('#modal [data-ok]');
+  check((await toast()).includes('storniert') && await items(1), 'PayPal-Beleg storniert: wieder offen');
+  await page.click('main [data-void]');
+  await page.fill('#cash-void input[name=reason]', 'doppelt erfasst');
+  await page.click('#cash-void button[type=submit]');
+  check(/PP-\d{4}-0002 ist ungültig/.test(await toast()) && (await page.locator('main [data-filter=open] .n').textContent()) === '0', 'PayPal-Beleg für ungültig erklärt: zählt nicht mehr');
+  const minus = await page.locator('main [data-minus]').textContent();
+  check(minus.includes('Bestand im Minus') && minus.includes('12,50') && minus.includes('Konto 1431') && (await page.locator('main .cards .card').first().textContent()).includes('-12,50'),
+    'PayPal: Bestand im Minus mit Hinweis auf den fehlenden Einzug');
+  await shot('38e-kasse-paypal-im-minus');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(150);
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'PayPal im Minus auf dem Handy ohne seitliches Scrollen');
+  await shot('38e-kasse-paypal-im-minus-handy');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.click('[data-page=overview]');
+  check((await page.locator('main [data-bereich=bh]').textContent()).includes('PayPal: Einzug vom Bankkonto fehlt'), 'Start: Hinweis auf den fehlenden Einzug bei PayPal');
+  await shot('38f-start-mit-kassen');
+  const heuteDe = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  writeFileSync(join(base, 'paypal-einzug.csv'), `Datum;Betrag;Name;Verwendungszweck\n${heuteDe};-12,50;PAYPAL EUROPE;Lastschrift PP Plakate\n${heuteDe};4,00;PAYPAL EUROPE;Auszahlung PP Guthaben\n`);
+  await page.click('[data-page=bank]');
+  await page.click('[data-import]');
+  await page.setInputFiles('#bank-file', join(base, 'paypal-einzug.csv'));
+  await page.click('#confirm-import');
+  check((await toast()).includes('2 Umsätze importiert'), 'Kontoauszug mit der Abbuchung von PayPal und einer Auszahlung');
+  // Der Buchungsplatz des Kontoauszugs ist die Maske „Verbuchen“ (0.58): Liste → „Offene verbuchen“ → direkt auf das PayPal-Konto
+  const imMenue = async () => Number((await page.locator('.nav [data-page=bank] .count').textContent()).trim());
+  const offenVorher = await imMenue();
+  check(offenVorher >= 2 && (await page.locator('.ku-lage h2').textContent()) === `${offenVorher} Umsätze sind noch nicht verbucht.`, `Kontoumsätze: Zahl im Menü und Satz über der Liste stimmen (${offenVorher})`);
+  await page.click('[data-verbuchen]');
+  await page.waitForSelector('.vb-page #book-form');
+  await page.locator('.vb-zeile:has-text("PAYPAL EUROPE"):has-text("12,50")').click();
+  await page.locator('.part [data-account]').first().click();
+  await page.fill('#account-query', '1431');
+  check((await page.locator('#account-list').textContent()).includes('PayPal'), 'Maske „Verbuchen“: das Konto der Kasse PayPal ist wählbar');
+  await page.keyboard.press('Enter');
+  await page.click('#book-submit');
+  check((await toast()).includes('verbucht'), 'Abbuchung im Kontoauszug direkt auf das PayPal-Konto gebucht');
+  await page.locator('[data-zurueck]').first().click();
+  await page.waitForSelector('.ku-page');
+  const ppZeile = page.locator('.ku-zeile:has-text("Lastschrift PP Plakate")');
+  await ppZeile.click();
+  const ppDaten = await page.evaluate(async () => (await (await fetch('/api/data?year=' + new Date().getFullYear())).json()).bank.find((b) => /Lastschrift PP Plakate/.test(b.reference)));
+  check((await ppZeile.locator('.ku-konto').textContent()).includes('1431 PayPal') && (await page.locator('.ku-gebucht').textContent()).includes('1431 PayPal')
+    && (await page.locator('.ku-stand').textContent()).includes('Verbucht'), 'Kontoumsätze: der Einzug steht als zugeordnet mit Konto und Namen der Kasse');
+  check(ppDaten.state === 'booked' && ppDaten.ohne_beleg === false && (await page.locator('.kz:has-text("Ausgaben ohne Beleg") .wert').textContent()).trim() === '0',
+    'Umbuchung auf das Konto der Kasse zählt nicht als Ausgabe ohne Beleg');
+  check(await imMenue() === offenVorher - 1 && (await page.locator('.ku-lage h2').textContent()) === (offenVorher === 2 ? '1 Umsatz ist noch nicht verbucht.' : `${offenVorher - 1} Umsätze sind noch nicht verbucht.`),
+    'Kontoumsätze: Zahl im Menü und Satz nach dem Verbuchen');
+  await shot('38i-kontoumsaetze-paypal-gebucht');
+  await page.click('[data-page=cash]');
+  check((await gewaehlt()).includes('PayPal') && await page.locator('main [data-minus]').count() === 0 && (await page.locator('main .cards .card').first().textContent()).includes('0,00'),
+    'PayPal: nach dem Einzug Bestand 0, Hinweis weg');
+  // Bestand im Plus (0.60): bei einem Zahlungsdienst liegt gewöhnlich kein Guthaben – ruhiger Hinweis auf der Seite Kasse und auf dem
+  // Start (fehlt ein Beleg, oder liegt Guthaben dort?). Hier über eine Einnahme; der Beleg wird danach für ungültig erklärt.
+  await page.click('[data-new-cash]');
+  await page.check('#cash-form input[name=kind][value=in]');
+  await page.fill('#cash-form input[name=amount]', '4');
+  await page.fill('#cash-form input[name=text]', 'Teilnahmebeitrag über PayPal');
+  await page.click('#cash-form button[type=submit]');
+  check(/^PayPal: PP-\d{4}-0003 erfasst/.test(await toast()), 'PayPal: Einnahme erfasst');
+  const plus = await page.locator('main [data-plus]').textContent();
+  check(plus.includes('Bestand im Buch +4,00') && plus.includes('Fehlt ein Beleg für eine Zahlung, oder liegt Guthaben bei PayPal?') && await page.locator('main [data-minus]').count() === 0,
+    'PayPal: Bestand im Plus mit ruhigem Hinweis (Beleg fehlt oder Guthaben)');
+  await shot('38j-kasse-paypal-im-plus');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(150);
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'PayPal im Plus auf dem Handy ohne seitliches Scrollen');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.click('[data-page=overview]');
+  const plusZeile = page.locator('.task-row:has-text("PayPal: Bestand im Buch im Plus")');
+  check((await plusZeile.textContent()).includes('liegt Guthaben bei PayPal?') && (await plusZeile.locator('.zahl').textContent()).includes('+4,00') && await plusZeile.locator('.punkt').count() === 0,
+    'Start: Bestand im Plus bei PayPal als Zeile ohne Punkt');
+  await plusZeile.scrollIntoViewIfNeeded();
+  await shot('38j-start-paypal-im-plus');
+  await plusZeile.click();
+  check((await gewaehlt()).includes('PayPal') && await page.locator('main [data-plus]').count() === 1, 'Start → Kasse PayPal mit dem Hinweis');
+  await page.click('main [data-filter=open]');
+  await page.waitForSelector('main [data-void]');
+  await page.click('main [data-void]');
+  await page.fill('#cash-void input[name=reason]', 'nur zur Probe');
+  await page.click('#cash-void button[type=submit]');
+  check(/PP-\d{4}-0003 ist ungültig/.test(await toast()) && await page.locator('main [data-plus]').count() === 0 && (await page.locator('main .cards .card').first().textContent()).includes('0,00'),
+    'PayPal: Beleg ungültig, Bestand 0, Hinweis weg');
+  await page.click('main [data-filter=book]');
+  await page.waitForSelector('[data-cash-csv]');
+  const ppBook = await page.locator('[data-custom]').textContent();
+  check(ppBook.includes('Kassenbuch PayPal') && ppBook.includes('Einzug vom Bankkonto') && ppBook.includes('direkt auf Konto 1431') && !ppBook.includes('2380'), 'Kassenbuch PayPal: Einzug vom Bankkonto, ohne 2380');
+  const ppJournal = await page.evaluate(async () => (await (await fetch('/api/data?year=' + new Date().getFullYear())).json()).journal.filter((j) => /Lastschrift PP Plakate/.test(j.description)).map((j) => j.account).sort().join());
+  check(ppJournal === '1420,1431', 'Einzug bucht Bank an PayPal-Konto (1420/1431), nicht über 2380');
+  await shot('38g-kassenbuch-paypal');
+  const kassenZeile = (name) => page.locator(`#modal [data-kasse-zeile]:has(strong:text-is("${name}"))`);
+  await page.click('[data-manage-kassen]');
+  check(await page.locator('#modal [data-kasse-zeile]').count() === 2 && !(await page.locator('#modal .cash-kassen').textContent()).includes('Bargeldkasse'), 'Kassen verwalten: nur die weiteren Kassen');
+  await shot('38h-kassen-verwalten');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(150);
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth <= 0 && [...document.querySelectorAll('#modal .cash-kassen button')].every((b) => b.getBoundingClientRect().right <= window.innerWidth)),
+    'Kassen verwalten auf dem Handy: alle Knöpfe sichtbar, kein seitliches Scrollen');
+  await shot('38h-kassen-verwalten-handy');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await kassenZeile('PayPal').locator('[data-rename]').click();
+  await page.fill('#cash-rename input[name=name]', 'PayPal JU');
+  await page.click('#cash-rename button[type=submit]');
+  check((await toast()).includes('heißt jetzt PayPal JU') && (await gewaehlt()).includes('PayPal JU'), 'PayPal umbenannt');
+  const kontoName = await page.evaluate(async () => (await (await fetch('/api/data?year=' + new Date().getFullYear())).json()).accounts.find((a) => a.code === '1431').name);
+  check(kontoName === 'PayPal JU', 'Umbenennen: der Kontoname im Kontenrahmen zieht mit');
+  await page.click('[data-manage-kassen]');
+  await kassenZeile('Handkasse').locator('[data-active]').click();
+  check((await toast()).includes('Handkasse hat noch Belege im Geldtransit 2380'), 'Stilllegen abgewiesen: offener Geldtransit');
+  await kassenZeile('PayPal JU').locator('[data-active]').click();
+  check((await toast()).includes('PayPal JU ist stillgelegt'), 'PayPal stillgelegt (Bestand 0, nichts offen)');
+  check(await page.locator('main [data-kasse]').count() === 2 && !(await page.locator('main .segmented').textContent()).includes('PayPal') && (await gewaehlt()).includes('Bargeldkasse'),
+    'Stillgelegt: nicht mehr im Umschalter, Bargeldkasse gewählt');
+  // Gegenrichtung in der Maske (Auszahlung von PayPal aufs Bankkonto): eine stillgelegte Kasse nimmt keine Buchung an – der Umsatz
+  // bleibt offen und wird hier für ungültig erklärt, damit er die folgenden Abläufe nicht berührt
+  await zurMaske('PAYPAL EUROPE');
+  await pick('.part [data-account]', '1431');
+  await page.click('#book-submit');
+  check((await toast()).includes('PayPal JU ist stillgelegt') && (await page.locator('.vb-zeile[aria-current=true]').textContent()).includes('PAYPAL EUROPE'),
+    'Maske „Verbuchen“: Buchung auf das Konto einer stillgelegten Kasse abgewiesen, Umsatz bleibt offen');
+  await page.click('.vb-maske [data-void]');
+  await page.waitForSelector('#bank-void');
+  await page.click('#bank-void button[type=submit]');
+  check((await toast()).includes('ungültig'), 'Auszahlung von PayPal für ungültig erklärt');
+  await page.click('[data-page=cash]');
+  await page.click('[data-manage-kassen]');
+  const still = await kassenZeile('PayPal JU').textContent();
+  check(still.includes('stillgelegt') && still.includes('Wieder aktivieren') && still.includes(`Kassenbuch ${new Date().getFullYear()}`), 'Kassen verwalten: stillgelegte Kasse mit Kassenbuch und „Wieder aktivieren“');
+  const stillPdf = await page.evaluate(async () => (await fetch(document.querySelector('#modal a[href^="/api/kasse.pdf"]').href)).headers.get('content-type'));
+  check(stillPdf === 'application/pdf', 'Kassenbuch der stillgelegten Kasse als PDF');
+  await page.click('#modal .form-actions [data-close]');
+  check(!(await page.locator('#modal').evaluate((d) => d.open)), 'Kassen verwalten: „Schließen“ schließt den Dialog');
+
   // Eingangsrechnung erfassen → Zahlungsvorschlag (Kopieren, GiroCode) → Kontoauszug → Abgleich
   const billNo = `E-${new Date().getFullYear()}-00001`;
   await page.click('[data-page=bills]');
@@ -2097,8 +2360,10 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await login();
   check(true, 'Abmelden und Anmelden');
 
-  // 6 bisherige + doppelte OV-Nummer + ungültige Steuernummer (0.59) + Beleg mit falschem Inhalt (0.58) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
-  const expected = 9 + (existsSync(lockedPath) ? 2 : 0);
+  // 6 bisherige + doppelte OV-Nummer + ungültige Steuernummer (0.59) + Beleg mit falschem Inhalt (0.58)
+  // + vorhandenes Konto für eine weitere Kasse (0.60) + Stilllegen mit offenem Geldtransit (0.60)
+  // + Buchung auf das Konto einer stillgelegten Kasse (0.60) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
+  const expected = 12 + (existsSync(lockedPath) ? 2 : 0);
   check(rejected === expected, `Nur die ${expected} absichtlich falschen Eingaben abgelehnt (${rejected})`);
   check(errors.length === 0, 'Keine Fehler in der Browser-Konsole' + (errors.length ? ': ' + errors.join(' | ') : ''));
 } catch (e) {

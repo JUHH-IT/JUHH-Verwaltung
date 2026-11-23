@@ -1,7 +1,7 @@
 // Einstieg: Anmeldung, Gerüst (Seitenleiste) und Seitenwechsel.
 import { api, setCsrf, onUnauthorized, onConfirm, onLocked } from './api.js';
 import { html, mount } from './html.js';
-import { store, onChange, refresh, go, can, yearBank } from './store.js';
+import { store, onChange, refresh, go, can, yearBank, currentKasse } from './store.js';
 import { overlay, icon, safe, toast, closeTop } from './ui.js';
 import { dateTime } from './format.js';
 import { overview } from './views/overview.js';
@@ -340,7 +340,7 @@ document.addEventListener('keydown', (e) => {
 // Tastenkürzel im Buchungsplatz (nur ohne offenen Dialog und außerhalb von Eingabefeldern).
 document.addEventListener('keydown', (e) => {
   if (!['bank', 'cash'].includes(store.page) || document.getElementById('modal').open || document.getElementById('preview').open) return;
-  if (store.page === 'cash' && (store.cash.filter === 'book' || !store.data?.cash?.start)) return;
+  if (store.page === 'cash' && (store.cash.filter === 'book' || !currentKasse()?.start)) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const tag = (e.target.tagName || '').toLowerCase();
   if (['input', 'select', 'textarea'].includes(tag)) {

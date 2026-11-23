@@ -2,6 +2,14 @@
 // was der Server verbindlich entscheidet (Buchungen, Beiträge, Budgets).
 import { api } from './api.js';
 
+const KASSE_KEY = 'ju-finanzen-kasse';
+function gemerkteKasse() {
+  try {
+    const roh = localStorage.getItem(KASSE_KEY);
+    return /^[0-9]+$/.test(roh || '') ? Number(roh) : null;
+  } catch { return null; /* kein Speicher: ohne Wahl */ }
+}
+
 export const store = {
   user: '',
   version: '',
@@ -14,7 +22,7 @@ export const store = {
   household: null,   // /api/haushalt: Gesamthaushalt Plan/Ist
   workflow: null,    // /api/workflow: KV-Budgets, Parkkonto, Lernbeispiele
   bank: { filter: 'open', search: '', selected: null, modus: 'liste' },   // Kontoumsätze: 'liste' oder 'verbuchen' (Maske, ab 0.58)
-  cash: { filter: 'open', search: '', selected: null },   // Kasse (Kassenbelege, ab 0.25)
+  cash: { filter: 'open', search: '', selected: null, kasse: gemerkteKasse() },   // Kasse (Kassenbelege, ab 0.25); kasse: gewählte Kasse (ab 0.60, null = erste eingerichtete)
   budgets: { mode: 'household', onlyDeviations: false, kvSearch: '', kvAttention: false, kvSelected: null, kvKey: null, kvData: null },
   journal: { limit: 300, search: '' },
   konten: { search: '', onlyUsed: false, selected: null, kv: '', list: null, listKey: null, sheet: null, sheetKey: null, error: '' },
@@ -57,6 +65,7 @@ export function go(page, options = {}) {
     store.cash.filter = options.cashFilter;
     store.cash.selected = null;
   }
+  if (options.kasse !== undefined) setKasse(options.kasse);   // Seite Kasse: diese Kasse zeigen
   if (options.rpjAssign) store.rpjAssign = true;   // RPJ-Seite öffnet „RPJ zuordnen“
   if (options.openSide) store.openSide = options.openSide;   // Offene Posten: Reiter (dues | receivables | payables)
   if (options.opKv !== undefined) store.opKv = options.opKv;  // … und Kreisverband der OP-Liste
@@ -76,8 +85,23 @@ export const titleLabel = (id) => {
   return t ? `${t.code ? t.code + ' · ' : ''}${t.label}` : id || '';
 };
 
-/** Umsätze des gewählten Haushaltsjahres (nach Datum): Kontoauszug ('bank') oder Kassenbelege ('cash'). */
-export const ledgerRows = (ledger) => store.data.bank.filter((b) => (b.ledger || 'bank') === ledger && b.booked.startsWith(String(store.year)));
+/** Kasse wählen – die Wahl gilt je Browser weiter (localStorage, wie die Darstellung), auch nach dem Neuladen der Seite. */
+export function setKasse(id) {
+  store.cash.kasse = id;
+  try { localStorage.setItem(KASSE_KEY, String(id)); } catch { /* Speicher blockiert: gilt nur für diese Seite */ }
+}
+/** Gewählte Kasse der Seite Kasse (ab 0.60 mehrere: Bargeld, PayPal …) – ohne Wahl oder wenn es die gemerkte nicht (mehr) gibt
+ *  oder sie stillgelegt ist, die erste eingerichtete (Bargeldkasse zuerst). */
+export function currentKasse() {
+  const all = (store.data?.cash?.kassen || []).filter((k) => k.aktiv);
+  return all.find((k) => k.id === store.cash.kasse) || all.find((k) => k.start) || all[0];
+}
+/** Gegenkonto eines Umsatzes: Bank 1420 bzw. das Konto seiner Kasse (wie kasse.ledger_account). */
+export const ownAccount = (b) => (b.ledger === 'cash' ? store.data.cash.kassen.find((k) => k.id === (b.kasse || 0))?.account : '1420');
+/** Gehört der Umsatz zum Kontoauszug ('bank') bzw. zur gewählten Kasse ('cash')? */
+export const inLedger = (b, ledger) => (b.ledger || 'bank') === ledger && (ledger !== 'cash' || (b.kasse || 0) === currentKasse()?.id);
+/** Umsätze des gewählten Haushaltsjahres (nach Datum): Kontoauszug ('bank') oder Belege der gewählten Kasse ('cash'). */
+export const ledgerRows = (ledger) => store.data.bank.filter((b) => inLedger(b, ledger) && b.booked.startsWith(String(store.year)));
 /** Bankumsätze des gewählten Haushaltsjahres (nach Bankdatum). */
 export const yearBank = () => ledgerRows('bank');
 

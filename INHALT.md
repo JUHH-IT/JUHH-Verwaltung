@@ -17,7 +17,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 **Buchhaltung lesen:** `GET /api/abgleich`, `GET /api/beitraege-offen`, `GET /api/bill-file`, `GET /api/bill-qr.svg`, `GET /api/bill-transfers`, `GET /api/donations`, `GET /api/dues-preview`, `GET /api/invoice.pdf`, `GET /api/invoices.pdf`, `GET /api/journal.csv`, `GET /api/kasse-datei`, `GET /api/kasse.csv`, `GET /api/kasse.pdf`, `GET /api/kasse`, `GET /api/konten`, `GET /api/konto.csv`, `GET /api/konto`, `GET /api/mail-preview`, `GET /api/mail-status`, `GET /api/mandate.pdf`, `GET /api/matches`, `GET /api/member-account.pdf`, `GET /api/member-dues`, `GET /api/mitgliederkonten.csv`, `GET /api/monatsbericht.pdf`, `GET /api/op-liste.csv`, `GET /api/op-liste.pdf`, `GET /api/op-liste`, `GET /api/op-listen.zip` ⚠, `GET /api/preview.pdf`, `GET /api/pruefpaket.zip` ⚠, `GET /api/quarter-review.pdf`, `GET /api/quarter-review`, `GET /api/refund-form.pdf`, `GET /api/reminders`, `GET /api/sepa`, `GET /api/suggestions`, `GET /api/umsatz-akte`, `GET /api/umsatz-beleg`
 
-**Buchhaltung ändern:** `GET /api/sepa.xml` ⚠, `POST /api/abgleich`, `POST /api/beitraege-vorschlaege`, `POST /api/beitrag-zuordnen`, `POST /api/bill-approval-revoke`, `POST /api/bill-approve`, `POST /api/bill-cancel`, `POST /api/bill-release`, `POST /api/bill-transferred`, `POST /api/bill-writeoff`, `POST /api/bill`, `POST /api/book`, `POST /api/cancel-invoice`, `POST /api/debit-notice`, `POST /api/dues`, `POST /api/einvoice`, `POST /api/forget`, `POST /api/import-bank`, `POST /api/import-master`, `POST /api/invoice`, `POST /api/kasse-anfang`, `POST /api/kasse-beleg`, `POST /api/kasse-ungueltig`, `POST /api/klaerfall-melden`, `POST /api/mail-cancel`, `POST /api/mail-send`, `POST /api/mandate-revoke`, `POST /api/mandate`, `POST /api/member-target`, `POST /api/park`, `POST /api/preview-bank`, `POST /api/preview-master`, `POST /api/quarter-review`, `POST /api/reverse-bank`, `POST /api/sepa-aufteilen`, `POST /api/sepa-batch-status`, `POST /api/sepa-batch`, `POST /api/sepa-begleitzettel`, `POST /api/sepa-debit-reject`, `POST /api/sepa-debit-remove`, `POST /api/sepa-mandat-vergessen` ⚠, `POST /api/sepa-vorschau`, `POST /api/series-preview`, `POST /api/series`, `POST /api/umsatz-beleg-entfernen`, `POST /api/umsatz-beleg`, `POST /api/umsatz-gueltig`, `POST /api/umsatz-notiz`, `POST /api/umsatz-ungueltig`
+**Buchhaltung ändern:** `GET /api/sepa.xml` ⚠, `POST /api/abgleich`, `POST /api/beitraege-vorschlaege`, `POST /api/beitrag-zuordnen`, `POST /api/bill-approval-revoke`, `POST /api/bill-approve`, `POST /api/bill-cancel`, `POST /api/bill-release`, `POST /api/bill-transferred`, `POST /api/bill-writeoff`, `POST /api/bill`, `POST /api/book`, `POST /api/cancel-invoice`, `POST /api/debit-notice`, `POST /api/dues`, `POST /api/einvoice`, `POST /api/forget`, `POST /api/import-bank`, `POST /api/import-master`, `POST /api/invoice`, `POST /api/kasse-aktiv`, `POST /api/kasse-anfang`, `POST /api/kasse-beleg`, `POST /api/kasse-loeschen` ⚠, `POST /api/kasse-neu`, `POST /api/kasse-umbenennen`, `POST /api/kasse-ungueltig`, `POST /api/klaerfall-melden`, `POST /api/mail-cancel`, `POST /api/mail-send`, `POST /api/mandate-revoke`, `POST /api/mandate`, `POST /api/member-target`, `POST /api/park`, `POST /api/preview-bank`, `POST /api/preview-master`, `POST /api/quarter-review`, `POST /api/reverse-bank`, `POST /api/sepa-aufteilen`, `POST /api/sepa-batch-status`, `POST /api/sepa-batch`, `POST /api/sepa-begleitzettel`, `POST /api/sepa-debit-reject`, `POST /api/sepa-debit-remove`, `POST /api/sepa-mandat-vergessen` ⚠, `POST /api/sepa-vorschau`, `POST /api/series-preview`, `POST /api/series`, `POST /api/umsatz-beleg-entfernen`, `POST /api/umsatz-beleg`, `POST /api/umsatz-gueltig`, `POST /api/umsatz-notiz`, `POST /api/umsatz-ungueltig`
 
 **Einstellungen ändern:** `POST /api/mail-check`, `POST /api/mail-forget`, `POST /api/mail-password` ⚠, `POST /api/mail-test`, `POST /api/settings` ⚠
 
@@ -64,7 +64,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/mitglieder-listen.js`: anschriftVollstaendig, fehlt, gespeichert, isActive, listen, speichern
 - `static/js/ov-gebiete.js`: gebietFelder, gebietText, gebietVon, gebietVorschlaege, gebieteDialog → /api/ov-gebiet, /api/ov-gebiete
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
-- `static/js/store.js`: accountName, can, daysOverdue, eligibleInvoices, go, kvName, ledgerRows, onChange, openBills, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
+- `static/js/store.js`: accountName, can, currentKasse, daysOverdue, eligibleInvoices, go, inLedger, kvName, ledgerRows, onChange, openBills, ownAccount, refresh, render, setKasse, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
 - `static/js/views/auswertung.js`: aussageBestand, aussageBindung, aussageDichte, aussageGliederung, aussageStruktur, auswertung, flaecheKm2, klassen, skala, stufe, vorn → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf, /api/karte, /api/karte-gebiete
 - `static/js/views/bank.js`: bankKeys, parkForm, renderLedger, reversedNote, roundSources, useLedger, voidBankDialog → /api/kasse-datei, /api/park, /api/reverse-bank, /api/umsatz-gueltig, /api/umsatz-ungueltig
@@ -72,7 +72,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/bills.js`: approvalBadge, billBadge, bills, paymentDialog, reviewDialog → /api/bill, /api/bill-approval-revoke, /api/bill-approve, /api/bill-cancel, /api/bill-file, /api/bill-qr.svg, /api/bill-release, /api/bill-transferred, /api/bill-transfers, /api/bill-writeoff, /api/einvoice, /api/quarter-review, /api/quarter-review.pdf, /api/refund-form.pdf
 - `static/js/views/booking.js`: bookingEditor → /api/book, /api/matches, /api/suggestions
 - `static/js/views/budgets.js`: budgets → /api/cash-donation, /api/donations, /api/haushalt-import, /api/haushalt-plan, /api/haushalt-reference, /api/haushalt.pdf, /api/kv-close
-- `static/js/views/cash.js`: cash → /api/kasse, /api/kasse-anfang, /api/kasse-beleg, /api/kasse-datei, /api/kasse-ungueltig, /api/kasse.csv, /api/kasse.pdf
+- `static/js/views/cash.js`: cash → /api/kasse, /api/kasse-aktiv, /api/kasse-anfang, /api/kasse-beleg, /api/kasse-datei, /api/kasse-loeschen, /api/kasse-neu, /api/kasse-umbenennen, /api/kasse-ungueltig, /api/kasse.csv, /api/kasse.pdf
 - `static/js/views/doppelte.js`: doppelteDialog → /api/doppelte, /api/kein-duplikat, /api/zusammenfuehren, /api/zusammenfuehren-vorschau
 - `static/js/views/dues.js`: dues → /api/beitraege-offen, /api/beitraege-vorschlaege, /api/beitrag-zuordnen, /api/klaerfall-melden
 - `static/js/views/imports.js`: importDialog, learningDialog, masterDialog → /api/forget, /api/import-bank, /api/import-master, /api/preview-bank, /api/preview-master
@@ -227,7 +227,7 @@ Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte
 
 Geld- und Datumsformate. Alle Geldbeträge werden als ganze Cent geführt.
 
-Tests: test_import.py, test_zugferd.py
+Tests: test_import.py, test_kasse.py, test_zugferd.py
 
 - `money(value)` – Liest einen Betrag im deutschen oder englischen Format und liefert Cent.
 - `cents_from_number(value)` – Zahl aus einer Tabellenzelle (float) exakt in Cent umrechnen.
@@ -257,7 +257,7 @@ Tests: test_kenntnis.py, test_rechnungen.py, test_regelwerk.py, test_zugferd.py
 
 Kontenrahmen der CDU Deutschlands (gültig ab 1.1.2016) mit den zusätzlichen Konten der JU Hamburg; Kontenblätter.
 
-Tests: test_konten.py
+Tests: test_kasse.py, test_konten.py
 
 - `init(db)` – Fehlende Konten des Kontenrahmens anlegen; vorhandene Konten (Namen, Art) bleiben unverändert.
 - `group_of(code)`
@@ -723,25 +723,41 @@ Tests: test_umsatzakte.py
 
 Kassenbuch (Bargeld) – Kassenbelege werden wie Bankumsätze verbucht.
 
+Tabellen: `kassen`
+
 Tests: test_kasse.py, test_klaerfaelle.py, test_rpj.py, test_umsatz_ungueltig.py, test_umsatzakte.py
 
+- Klasse `Kasse` – Eintrag einer Kasse – entsteht nur in `liste`. Daten einer Anfrage (JSON) sind nie von diesem Typ.
 - `init(db)`
-- `ledger_account(b)` – Gegenkonto eines Umsatzes: Kasse für Kassenbelege, sonst Bank.
-- `start(store)` – Beginn des Kassenbuchs (Tag des Anfangsbestands) oder None, solange keine Kasse eingerichtet ist.
-- `opening(store)` – Gültiger Anfangsbestand {'day', 'amount', 'journal'} oder None.
-- `set_opening(store, day, amount, actor)` – Anfangsbestand der Kasse festlegen (Kasse an 9100 Eröffnungsbilanz); eine frühere Festlegung wird gegengebucht.
-- `next_number(store, year)` – Belegnummer K-JJJJ-nnnn, fortlaufend je Jahr.
-- `timeline(store, extra=…)` – Kassenbewegungen in zeitlicher Folge mit Bestand: Buchungen auf 1400 (Kassenbelege, Kontoauszug, Anfangsbestand) und noch
-- `balance(store, until=…)` – Kassenbestand am Ende eines Tages (Standard: alles).
-- `check_after_booking(store, storno=…)` – Nach einer Buchung auf 1400 (z. B. aus dem Kontoauszug): Bestand darf nie negativ werden – nur bei eingerichteter Kasse.
+- `liste(store)` – Alle Kassen, die Bargeldkasse zuerst: je Kasse {'id', 'name', 'account', 'prefix', 'start', 'art', 'aktiv'} (start None = noch nicht
+- `kennung(wert)` – Kennung einer Kasse aus einer Eingabe: leer = Bargeldkasse (0), sonst eine ganze Zahl (auch als Ziffernfolge) – alles andere
+- `eine(store, kasse=…)` – Die Kasse zu einer Kennung (leer = Bargeldkasse) – gibt es sie nicht oder ist es keine Kennung: „Kasse nicht gefunden“.
+- `kinds(k)` – Arten eines Belegs mit den Wörtern der Kasse: Bargeld „Abhebung/Einzahlung“, sonst „Umbuchung von der/auf die Bank“ – bei
+- `ledger_account(store, b)` – Gegenkonto eines Umsatzes: das Konto der Kasse für Kassenbelege, sonst Bank.
+- `start(store, kasse=…)` – Beginn des Kassenbuchs (Tag des Anfangsbestands) oder None, solange die Kasse nicht eingerichtet ist.
+- `opening(store, kasse=…)` – Gültiger Anfangsbestand {'day', 'amount', 'journal'} oder None.
+- `set_opening(store, day, amount, actor, kasse=…)` – Anfangsbestand einer Kasse festlegen (Kasse an 9100 Eröffnungsbilanz); eine frühere Festlegung wird gegengebucht.
+- `free_account(store)` – Vorschlag für das Bestandskonto einer weiteren Kasse: das erste freie ab 1430 (darunter Kasse, Portokasse, Bankkonten), sonst ab 1401.
+- `add(store, data, actor)` – Weitere Kasse einrichten (z. B. PayPal): Name, Art (`ARTEN`, ohne Angabe „bar“ = die strenge), eigenes Bestandskonto 1401–1499
+- `rename(store, kasse, name, actor)` – Weitere Kasse umbenennen – nur der Name (Konto und Belegkürzel bleiben); der Kontoname im Kontenrahmen zieht mit.
+- `set_active(store, kasse, aktiv, actor)` – Weitere Kasse stilllegen (aktiv False: nur bei Bestand 0, ohne offene oder geparkte Belege und ohne offenen Geldtransit) oder
+- `delete(store, kasse, actor)` – Weitere Kasse löschen – nur solange es keinen einzigen Beleg und keine Buchung auf ihrem Konto gibt; das Konto verschwindet mit.
+- `bewegt(store, kasse, year)` – Hatte die Kasse im Jahr Bewegungen (Belege, auch ungültige, oder Buchungen auf ihrem Konto)? Eine stillgelegte Kasse steht nur
+- `next_number(store, year, kasse=…)` – Belegnummer <Kürzel>-JJJJ-nnnn (Bargeld: K-JJJJ-nnnn), fortlaufend je Kasse und Jahr.
+- `timeline(store, extra=…, kasse=…)` – Bewegungen einer Kasse in zeitlicher Folge mit Bestand: Buchungen auf ihrem Konto (Kassenbelege, Kontoauszug, Anfangsbestand)
+- `balance(store, until=…, kasse=…)` – Bestand einer Kasse am Ende eines Tages (Standard: alles).
+- `plus_frage(k)` – Frage zum Bestand im Plus (`k`: Kasse mit `balance`), sonst '' – nur beim Zahlungsdienst (PayPal): er zieht jede Zahlung
+- `check_parts(store, b, parts)` – Vor dem Verbuchen: Kontierung direkt auf ein Kassenkonto (z. B. Bareinzahlung im Kontoauszug auf 1400) – nur aus dem
+- `check_after_booking(store, entries, storno=…)` – Nach einer Buchung auf ein Kassenkonto (Kassenbeleg, Kontoauszug, Storno): der Bestand dieser Kasse darf nie negativ werden
 - `create(store, data, actor, attachment_suffix=…)` – Kassenbeleg erfassen. Einnahme/Ausgabe bleiben offen und werden im Buchungsplatz der Kasse verbucht; Geldtransit wird sofort
 - `void(store, bid, reason, actor)` – Offenen Kassenbeleg mit Grund für ungültig erklären (Tippfehler, doppelt erfasst) – er bleibt sichtbar, zählt aber nicht.
-- `summary(store)` – Kurzüberblick für die Oberfläche: Beginn, Bestand heute, offene Belege, Geldtransit.
-- `transit_open(store, until=…)` – Saldo des Durchlaufkontos 2380 (Geldtransit) am Ende eines Tages: ≠ 0, solange Abhebung/Einzahlung nur auf einer Seite
-- `book(store, year)` – Kassenbuch eines Jahres: Übertrag, Bewegungen mit Beleg, Kontierung und Bestand; ungültige Belege nur zur Information.
-- `balance_today(store)`
-- `is_transit(b)` – Geldtransit (Abhebung/Einzahlung) – braucht keinen eigenen Beleg; die Gegenseite steht im Kontoauszug.
-- `csv(store, year)` – Kassenbuch als CSV (Kassenprüfung).
+- `summary(store)` – Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand, ihre offenen Posten im
+- `transit_open(store, until=…)` – Saldo des Durchlaufkontos 2380 am Ende eines Tages – nur eine Zahl: gegenläufige offene Posten heben sich darin auf.
+- `transit(store, until=…)` – Offene Posten des Geldtransits 2380 am Ende eines Tages – zugeordnet, nicht saldiert. Ein Posten ist ein Beleg einer Kasse
+- `book(store, year, kasse=…)` – Kassenbuch einer Kasse für ein Jahr: Übertrag, Bewegungen mit Beleg, Kontierung und Bestand; ungültige Belege nur zur
+- `balance_today(store, kasse=…)`
+- `is_transit(b)` – Geldtransit (Abhebung/Einzahlung bzw. Umbuchung) – braucht keinen eigenen Beleg; die Gegenseite steht im Kontoauszug.
+- `csv(store, year, kasse=…)` – Kassenbuch einer Kasse als CSV (Kassenprüfung).
 
 ### verbindlichkeiten.py
 
@@ -843,10 +859,11 @@ Tests: test_beitraege.py, test_berichte.py, test_erechnung.py, test_kasse.py, te
 - `monthly(store, day=…)` – Kennzahlen für den Monatsbericht (Stand day; Haushaltsjahr = Jahr von day).
 - `monthly_pdf(store, day=…)`
 - `kv_pdf(store, kv, year, today=…)` – Kompakter Auszug für den Kreisvorsitz: Zugänge (FFK als eigener Punkt), Ausgaben mit kurzer Bezeichnung, Stand, Verfall.
-- `cash_pdf(store, year, today=…)` – Kassenbuch eines Jahres: Übertrag, Einnahmen, Ausgaben, Bestand, alle Bewegungen mit Beleg und Bestand.
+- `cash_pdf(store, year, today=…, kasse_id=…)` – Kassenbuch einer Kasse für ein Jahr: Übertrag, Einnahmen, Ausgaben, Bestand, alle Bewegungen mit Beleg und Bestand.
 - `member_pdf(store, member_id, today=…)` – Beitragskonto eines Mitglieds: je Jahr Soll, gezahlt, Stand und die Buchungen mit laufendem Saldo.
 - `rpj_pdf(store, year, today=…)` – RPJ-Jahresübersicht (Schattenhaushalt): Bescheid, Mittelabrufe, Projekte mit Plan und Ist, Kostenarten, Abstimmung.
 - `rpj_project_pdf(store, project_id, today=…)` – Einzelübersicht eines RPJ-Projekts: Plan und Ist je Kostenart und alle zugeordneten Buchungen.
+- `cash_name(k, year)` – Dateiname eines Kassenbuchs ohne Endung: „Kassenbuch-2026“ (Bargeldkasse, wie seit 0.25), sonst mit Name und Konto
 - `audit_package(store, year, data_dir, out)` – Kassenprüfer-Paket als ZIP in das Dateiobjekt out schreiben (Ordner Kassenpruefung-JJJJ) – Datei für Datei,
 - `audit_files(store, year, data_dir)` – Inhalt des Pakets als (Dateiname → Bytes, Prüfhinweise) – für Tests und kleine Bestände.
 
@@ -1094,7 +1111,7 @@ Rollen und Rechte im Serverbetrieb (ab 0.34).
 
 Tabellen: `roles`, `user_roles`
 
-Tests: test_kenntnis.py, test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py, test_umsatz_ungueltig.py
+Tests: test_kasse.py, test_kenntnis.py, test_keycloak_app.py, test_mitgliedbank.py, test_rollen.py, test_schutz.py, test_sicherheit.py, test_umsatz_ungueltig.py
 
 - `required(method, path)` – Nötiges Recht für eine Adresse; unbekannte Adressen verlangen „Verwaltung schreiben“.
 - `allowed(rights, need)`

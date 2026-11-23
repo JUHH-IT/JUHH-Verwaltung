@@ -209,13 +209,92 @@ class HttpTests(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/kasse-beleg',{'kind':'out','amount':'5','text':'x','file':{'name':'a.xml','content':b64.b64encode(b'<x/>').decode()}},csrf)
         self.assertEqual(cm.exception.code,400)
         data=json.load(request(f'/api/data?year={y}'))
-        self.assertEqual((data['cash']['balance'],data['cash']['open']),(8750,1))
+        self.assertEqual((data['cash']['kassen'][0]['balance'],data['cash']['open']),(8750,1))
         self.assertEqual([b['ledger'] for b in data['bank'] if b['id']==k['id']],['cash'])
         book=json.load(request(f'/api/kasse?year={y}'));self.assertEqual(book['end'],8750)
         self.assertTrue(request(f'/api/kasse.pdf?year={y}').read().startswith(b'%PDF'))
         self.assertIn(f'K-{y}-0001',request(f'/api/kasse.csv?year={y}').read().decode('utf-8-sig'))
         request('/api/kasse-ungueltig',{'id':k['id'],'reason':'Testfall'},csrf)
-        self.assertEqual(json.load(request(f'/api/data?year={y}'))['cash']['balance'],10000)
+        self.assertEqual(json.load(request(f'/api/data?year={y}'))['cash']['kassen'][0]['balance'],10000)
+        # 0.60: weitere Kasse (PayPal) über HTTP – eigenes Konto, eigene Belegnummern, eigenes Kassenbuch (kasse=Kennung)
+        konto=json.load(request(f'/api/data?year={y}'))['cash']['next_account']
+        pp=json.load(request('/api/kasse-neu',{'name':'PayPal','account':konto,'prefix':'pp','day':start,'amount':'40'},csrf))['id']
+        with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/kasse-neu',{'name':'Zweite','account':konto,'prefix':'ZW','day':start,'amount':'0'},csrf)
+        self.assertIn('gibt es schon',json.load(cm.exception)['error'])
+        k=json.load(request('/api/kasse-beleg',{'kasse':pp,'kind':'out','amount':'1,50','day':_d.today().isoformat(),'text':'Gebühr'},csrf))
+        self.assertEqual(k['number'],f'PP-{y}-0001')
+        request('/api/book',{'id':k['id'],'parts':[{'amount':'-1,50','account':'4225','kv':'LV'}]},csrf)
+        data=json.load(request(f'/api/data?year={y}'))
+        self.assertEqual([(x['name'],x['account'],x['balance']) for x in data['cash']['kassen']],[('Bargeldkasse','1400',10000),('PayPal',konto,3850)])
+        self.assertEqual([b['kasse'] for b in data['bank'] if b['id']==k['id']],[pp])
+        book=json.load(request(f'/api/kasse?year={y}&kasse={pp}'));self.assertEqual((book['end'],book['kasse']['name']),(3850,'PayPal'))
+        self.assertEqual(json.load(request(f'/api/kasse?year={y}'))['end'],10000)                              # ohne Angabe: Bargeldkasse wie bisher
+        antwort=request(f'/api/kasse.csv?year={y}&kasse={pp}')
+        self.assertIn(f'Kassenbuch-PayPal-{konto}-{y}.csv',antwort.headers['Content-Disposition']);self.assertIn(f'PP-{y}-0001',antwort.read().decode('utf-8-sig'))
+        self.assertTrue(request(f'/api/kasse.pdf?year={y}&kasse={pp}').read().startswith(b'%PDF'))
+        with self.assertRaises(urllib.error.HTTPError) as cm: request(f'/api/kasse?year={y}&kasse=99')
+        self.assertEqual(cm.exception.code,400)
+        # K1 (Prüfung 0.60): von außen zählt nur die Kennung einer vorhandenen Kasse – Objekt, Liste, unbekannte Zahl, Text: „Kasse nicht gefunden“, nichts geschrieben
+        def stand():
+            db=sqlite3.connect(app.DB)
+            try: return ([db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in ('journals','entries','bank','kassen')],db.execute("SELECT value FROM settings WHERE key='cash_start'").fetchall(),
+                         sorted(str(f.relative_to(app.DATA.parent)) for f in app.DATA.parent.rglob('*.pdf')))
+            finally: db.close()
+        vorher=stand();heute=_d.today().isoformat()
+        fremd={'id':0,'name':'x','account':'1420','prefix':'../../ausbruch','start':'2000-01-01'}
+        for wert in (fremd,{**fremd,'id':pp,'prefix':'R'},{'id':pp},[pp],[],{},99,-1,True,1.5,'abc',' 0 ','1;x'):
+            for path,payload in (('/api/kasse-anfang',{'day':start,'amount':'5000','kasse':wert}),
+                                 ('/api/kasse-beleg',{'kind':'in','amount':'1','day':heute,'text':'x','kasse':wert,'file':{'name':'a.pdf','content':b64.b64encode(pdf_bytes).decode()}}),
+                                 ('/api/kasse-beleg',{'kind':'withdraw','amount':'1','day':'2001-05-05','kasse':wert})):
+                with self.assertRaises(urllib.error.HTTPError) as cm: request(path,payload,csrf)
+                self.assertEqual((cm.exception.code,json.load(cm.exception)['error']),(400,'Kasse nicht gefunden.'),(path,wert))
+        for wert in ('99','-1','abc','1.5','0x1','%200','%7B%22id%22%3A0%7D'):
+            for path in ('/api/kasse','/api/kasse.pdf','/api/kasse.csv'):
+                with self.assertRaises(urllib.error.HTTPError) as cm: request(f'{path}?year={y}&kasse={wert}')
+                self.assertEqual((cm.exception.code,json.load(cm.exception)['error']),(400,'Kasse nicht gefunden.'),(path,wert))
+        probe=Store(app.DB)   # der Belegspeicher bildet nie einen Pfad aus einer ungeprüften Nummer
+        try:
+            for nummer,datei,endung in (('../../ausbruch-2026-0001','../../ausbruch-2026-0001.pdf','.pdf'),(f'K-{y}-0009','../x.pdf','.pdf'),(f'K-{y}-0009',f'K-{y}-0009.exe','.exe')):
+                with self.assertRaises(ValueError): app.save_receipt(probe,'bank',k['id'],nummer,datei,endung,pdf_bytes)
+        finally: probe.db.close()
+        self.assertEqual(stand(),vorher)
+        self.assertEqual(json.load(request(f'/api/kasse?year={y}&kasse={pp}'))['kasse']['name'],'PayPal')   # die Kennung als Text gilt weiter
+        # 0.60 (Antworten 23.11.2026): Art Zahlungsdienst – kein Geldtransit, Bestand darf ins Minus; umbenennen, stilllegen, aktivieren, löschen nur mit Kennung
+        konto2=json.load(request(f'/api/data?year={y}'))['cash']['next_account']
+        st=json.load(request('/api/kasse-neu',{'name':'Stripe','account':konto2,'prefix':'ST','art':'dienst','day':start,'amount':'0'},csrf))['id']
+        stripe=lambda: next(x for x in json.load(request(f'/api/data?year={y}'))['cash']['kassen'] if x['id']==st)
+        def abgelehnt(path,payload,text):
+            with self.assertRaises(urllib.error.HTTPError) as cm: request(path,payload,csrf)
+            self.assertEqual(cm.exception.code,400,(path,payload));self.assertIn(text,json.load(cm.exception)['error'],(path,payload))
+        for kind in ('withdraw','deposit'): abgelehnt('/api/kasse-beleg',{'kasse':st,'kind':kind,'amount':'5','day':heute},'keine Umbuchung über 2380')
+        abgelehnt('/api/kasse-neu',{'name':'Dritte','account':'1499','prefix':'DR','art':'egal','day':start,'amount':'0'},'Art wählen')
+        abgelehnt('/api/kasse-neu',{'name':'Dritte','account':'1499','prefix':'DR','art':['dienst'],'day':start,'amount':'0'},'Art wählen')
+        aus=json.load(request('/api/kasse-beleg',{'kasse':st,'kind':'out','amount':'9','day':heute,'text':'Plakate'},csrf))   # vor dem Einzug vom Bankkonto: angenommen
+        self.assertEqual((stripe()['balance'],stripe()['art'],stripe()['aktiv']),(-900,'dienst',1))
+        request('/api/kasse-umbenennen',{'kasse':st,'name':'Stripe JU'},csrf)
+        self.assertEqual((stripe()['name'],stripe()['account']),('Stripe JU',konto2))
+        self.assertEqual([a['name'] for a in json.load(request(f'/api/data?year={y}'))['accounts'] if a['code']==konto2],['Stripe JU'])
+        for path,payload,text in (('/api/kasse-umbenennen',{'kasse':0,'name':'Barkasse'},'Bargeldkasse ist fest'),('/api/kasse-umbenennen',{'name':'Barkasse'},'Bargeldkasse ist fest'),
+                                  ('/api/kasse-aktiv',{'kasse':0,'aktiv':False},'Bargeldkasse ist fest'),('/api/kasse-loeschen',{'kasse':0},'Bargeldkasse ist fest'),('/api/kasse-loeschen',{},'Bargeldkasse ist fest'),
+                                  ('/api/kasse-umbenennen',{'kasse':st,'name':'PayPal'},'gibt es schon'),('/api/kasse-umbenennen',{'kasse':st,'name':{'x':1}},'Namen'),
+                                  ('/api/kasse-umbenennen',{'kasse':{'id':st},'name':'Neu'},'Kasse nicht gefunden'),('/api/kasse-aktiv',{'kasse':[st],'aktiv':False},'Kasse nicht gefunden'),
+                                  ('/api/kasse-loeschen',{'kasse':99},'Kasse nicht gefunden'),('/api/kasse-loeschen',{'kasse':{'id':st}},'Kasse nicht gefunden'),
+                                  ('/api/kasse-aktiv',{'kasse':st,'aktiv':False},'offene oder geparkte'),('/api/kasse-loeschen',{'kasse':st},'stilllegen')):
+            abgelehnt(path,payload,text)
+        request('/api/kasse-ungueltig',{'id':aus['id'],'reason':'Testfall'},csrf)
+        request('/api/kasse-aktiv',{'kasse':st,'aktiv':False},csrf)
+        self.assertEqual((stripe()['aktiv'],stripe()['balance']),(0,0))
+        abgelehnt('/api/kasse-beleg',{'kasse':st,'kind':'out','amount':'1','day':heute,'text':'x'},'stillgelegt')
+        self.assertTrue(request(f'/api/kasse.pdf?year={y}&kasse={st}').read().startswith(b'%PDF'))             # das Kassenbuch bleibt
+        request('/api/kasse-aktiv',{'kasse':st,'aktiv':'ja'},csrf);self.assertEqual(stripe()['aktiv'],0)       # nur true aktiviert
+        request('/api/kasse-aktiv',{'kasse':st,'aktiv':True},csrf);self.assertEqual(stripe()['aktiv'],1)
+        leer=json.load(request('/api/kasse-neu',{'name':'Leer','account':'1498','prefix':'LE','art':'bar','day':start,'amount':'0'},csrf))['id']
+        request('/api/kasse-loeschen',{'kasse':leer},csrf)
+        data=json.load(request(f'/api/data?year={y}'))
+        self.assertEqual(([x['name'] for x in data['cash']['kassen']],[a['code'] for a in data['accounts'] if a['code']=='1498']),(['Bargeldkasse','PayPal','Stripe JU'],[]))
+        for path in ('/api/kasse-umbenennen','/api/kasse-aktiv','/api/kasse-loeschen'):
+            with self.assertRaises(urllib.error.HTTPError) as cm: request(path,{'kasse':st,'name':'Ohne','aktiv':False})   # ohne CSRF
+            self.assertEqual(cm.exception.code,403)
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/kasse-datei?id=999999')
         self.assertEqual(cm.exception.code,400)
         with self.assertRaises(urllib.error.HTTPError) as cm: request(f'/api/kasse-datei?id={bid}')            # Kontoumsatz, kein Kassenbeleg

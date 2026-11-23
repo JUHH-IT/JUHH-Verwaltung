@@ -17,7 +17,7 @@ export function bookingEditor(container, b, { onBooked, onPark, zusatz = '' }) {
   const kind = b.amount > 0 ? 'income' : 'expense';
   // alle Konten des Kontenrahmens; 8100 nur mit Mitglied – bei Ausgängen als Rückzahlung bzw. Rücklastschrift eines Beitrags;
   // 1592 bei Ausgängen als Rückzahlung von RPJ-Mitteln (mit Mittelabruf)
-  const codes = [...postenCodes(kind, { balance: true }), ...(kind === 'expense' ? ['8100', '1592'] : [])].filter((c) => !(b.ledger === 'cash' && c === '1400'));   // Kassenbeleg nicht auf die Kasse selbst
+  const codes = [...postenCodes(kind, { balance: true }), ...(kind === 'expense' ? ['8100', '1592'] : [])].filter((c) => !(b.ledger === 'cash' && store.data.cash.kassen.some((k) => k.account === c)));   // Kassenbeleg nie direkt auf eine Kasse (Transit über 2380)
   const invoices = eligibleInvoices(b);
   const invoiceOpen = (i) => (b.amount > 0 ? i.total - i.paid : i.paid);
   const matched = invoices.find((i) => `${b.reference} ${b.name}`.includes(i.number));

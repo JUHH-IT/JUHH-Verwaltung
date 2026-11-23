@@ -1,10 +1,11 @@
 // Buchungsplatz (Richtung B): Arbeitsliste links, ausgewählter Umsatz mit Kontierung rechts – ab 0.25 für die Kasse (cash,
-// views/cash.js): dieselbe Kontierung, nur das Gegenkonto ist 1400 statt 1420. Der Kontoauszug steht ab 0.58 auf eigenen Seiten
-// (views/umsaetze.js Liste, views/verbuchen.js Maske) und nutzt von hier Parken, Ungültig und den Hinweis auf ein Storno.
+// views/cash.js): dieselbe Kontierung, nur das Gegenkonto ist das Konto der Kasse (1400, PayPal …) statt 1420. Der Kontoauszug
+// steht ab 0.58 auf eigenen Seiten (views/umsaetze.js Liste, views/verbuchen.js Maske) und nutzt von hier Parken, Ungültig und
+// den Hinweis auf ein Storno.
 import { api } from '../api.js';
 import { html, mount } from '../html.js';
 import { eur, signed, date, shortDate, findIban, bookingKind } from '../format.js';
-import { store, refresh, ledgerRows, eligibleInvoices, kvName, accountName, titleLabel } from '../store.js';
+import { store, refresh, ledgerRows, inLedger, ownAccount, eligibleInvoices, kvName, accountName, titleLabel } from '../store.js';
 import { pageHead, icon, empty, badge, confirmAction, dialog, safe, toast } from '../ui.js';
 import { bookingEditor } from './booking.js';
 import { importDialog, masterDialog, learningDialog } from './imports.js';
@@ -17,7 +18,6 @@ const FILTERS = [
   ['all', 'Alle'],
 ];
 const STATE_LABEL = { open: ['Offen', 'warn'], parked: ['Geparkt', 'warn'], booked: ['Verbucht', 'ok'], reversed: ['Storniert', ''], void: ['Ungültig', ''] };
-const OWN = { bank: '1420', cash: '1400' };   // Gegenkonto des Umsatzes (nicht als Kontierung anzeigen)
 
 /** Arbeitsbereich: Kontoauszug oder Kasse (setzt die jeweilige Seite vor dem Zeichnen). */
 let L = { ledger: 'bank', state: store.bank, head: null, empty: '' };
@@ -28,7 +28,7 @@ export const roundSources = (b, round = b.reversals || 0) => new Set(['bank', 'r
 let editor = null;
 
 function rowsFor(filter) {
-  if (filter === 'parked') return store.workflow.parked.filter((b) => (b.ledger || 'bank') === L.ledger);
+  if (filter === 'parked') return store.workflow.parked.filter((b) => inLedger(b, L.ledger));
   const rows = ledgerRows(L.ledger).filter((b) => filter === 'all' || b.state === filter);
   return filter === 'open' ? rows.sort((a, b) => a.booked.localeCompare(b.booked) || a.id - b.id) : rows;
 }
@@ -44,7 +44,7 @@ function counts() {
   const year = ledgerRows(L.ledger);
   return {
     open: year.filter((b) => b.state === 'open').length,
-    parked: store.workflow.parked.filter((b) => (b.ledger || 'bank') === L.ledger).length,
+    parked: store.workflow.parked.filter((b) => inLedger(b, L.ledger)).length,
     booked: year.filter((b) => b.state === 'booked').length,
     all: year.length,
   };
@@ -63,7 +63,7 @@ function listItem(b, current) {
 /** Gebuchte Zeilen eines Bankumsatzes aus dem Journal (ohne Bank- und Parkkonto); round: Zuordnungsrunde. */
 function bookedLines(b, round) {
   const sources = roundSources(b, round);
-  return store.data.journal.filter((j) => sources.has(j.source) && ![OWN[b.ledger || 'bank'], '1370'].includes(j.account));
+  return store.data.journal.filter((j) => sources.has(j.source) && ![ownAccount(b), '1370'].includes(j.account));
 }
 
 const lineList = (lines) => html`<div class="booked-lines">${lines.map((j) => html`<div>
@@ -92,7 +92,7 @@ function detail(b) {
     <dl class="facts">
       ${iban ? html`<div><dt>IBAN</dt><dd class="mono">${iban}</dd></div>` : ''}
       <div><dt>Quelle</dt><dd>${b.source || '—'}${b.row_no ? ` · Zeile ${b.row_no}` : ''}</dd></div>
-      ${b.ledger === 'cash' ? html`<div><dt>Kassenbeleg</dt><dd>${b.bank_ref}${b.attachment ? html` · <a href="/api/kasse-datei?id=${b.id}" target="_blank" rel="noopener">Beleg ansehen</a>` : html` · <span class="muted">ohne Belegdatei</span>`}</dd></div>`
+      ${b.ledger === 'cash' ? html`<div><dt>${b.kasse ? 'Beleg' : 'Kassenbeleg'}</dt><dd>${b.bank_ref}${b.attachment ? html` · <a href="/api/kasse-datei?id=${b.id}" target="_blank" rel="noopener">Beleg ansehen</a>` : html` · <span class="muted">ohne Belegdatei</span>`}</dd></div>`
         : html`<div><dt>Bankumsatz</dt><dd>#${b.id}</dd></div>`}
     </dl>
     <p class="reference">${b.reference || '—'}</p>

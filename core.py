@@ -52,6 +52,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,bank_id INTEGER REFERENCES bank(id),invoice_id INTEGER REFERENCES invoices(id),amount INTEGER NOT NULL,UNIQUE(bank_id,invoice_id));
         CREATE TABLE IF NOT EXISTS journals(id INTEGER PRIMARY KEY,day TEXT,description TEXT,source TEXT UNIQUE NOT NULL,reversal_of INTEGER UNIQUE REFERENCES journals(id));
         CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY,journal_id INTEGER REFERENCES journals(id),account TEXT REFERENCES accounts(code),kv TEXT REFERENCES kv(code),debit INTEGER NOT NULL DEFAULT 0 CHECK(debit>=0),credit INTEGER NOT NULL DEFAULT 0 CHECK(credit>=0),title TEXT, CHECK((debit>0 AND credit=0) OR (credit>0 AND debit=0)));
+        CREATE INDEX IF NOT EXISTS entries_journal ON entries(journal_id);
         CREATE TABLE IF NOT EXISTS budgets(year INTEGER,kv TEXT REFERENCES kv(code),amount INTEGER CHECK(amount>=0),PRIMARY KEY(year,kv));
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,time TEXT,actor TEXT,action TEXT,detail TEXT);
         CREATE TABLE IF NOT EXISTS mailings(id INTEGER PRIMARY KEY,invoice_id INTEGER NOT NULL REFERENCES invoices(id),time TEXT NOT NULL,recipient TEXT NOT NULL,subject TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('sent','failed','unknown')),error TEXT,message_id TEXT,actor TEXT);
@@ -113,7 +114,7 @@ class Store:
         self.db.execute("CREATE TABLE IF NOT EXISTS reversed_allocations(id INTEGER PRIMARY KEY,bank_id INTEGER NOT NULL REFERENCES bank(id),kind TEXT NOT NULL CHECK(kind IN ('invoice','bill')),target_id INTEGER NOT NULL,amount INTEGER NOT NULL,reversal INTEGER NOT NULL,reversed_on TEXT)")
         self.db.commit()
         import kasse
-        kasse.init(self.db)   # Kassenbuch: Kassenbelege als Umsätze mit ledger='cash' (0.25)
+        kasse.init(self.db)   # Kassenbuch: Kassenbelege als Umsätze mit ledger='cash' (0.25), mehrere Kassen (0.60)
         import rpj
         rpj.init(self.db)     # RPJ-Schattenhaushalt: Projekte, Mittelabrufe, Zuordnung der RPJ-Buchungen (0.26)
         import sepadatei
@@ -542,14 +543,11 @@ class Store:
         else: year=self._previous_year(b)
         fiscal=year or int(b['booked'][:4])   # Haushaltsjahr der Buchung (RPJ-Projekt bzw. Mittelabruf muss dazu passen)
         liability=kontenrahmen.liability_account(self)
-        own=kasse.ledger_account(b)   # Bank 1420 bzw. Kasse 1400 (Kassenbeleg)
+        own=kasse.ledger_account(self,b)   # Bank 1420 bzw. Konto der Kasse (Kassenbeleg: 1400, PayPal …)
         entries=[{'account':'1370' if b['state']=='parked' else own,'kv':'LV','debit':max(b['amount'],0),'credit':max(-b['amount'],0)}]
         if any(p.get('account')==own and not p.get('bill_id') and not p.get('invoice_id') for p in parts):
-            raise ValueError('Ein Umsatz kann nicht auf sein eigenes Konto gebucht werden.' if own=='1400' else 'Konto 1420 wird nicht direkt gebucht (Bankkonto selbst).')
-        if own!=kasse.ACCOUNT and any(p.get('account')==kasse.ACCOUNT and not p.get('bill_id') and not p.get('invoice_id') for p in parts):
-            begin=kasse.start(self)   # Kontoumsatz auf die Kasse: nur im Kassenbuch-Zeitraum, sonst zählte Bargeld doppelt
-            if not begin: raise ValueError('Zuerst die Kasse einrichten (Seite Kasse → Anfangsbestand), dann auf 1400 buchen.')
-            if b['booked']<begin: raise ValueError(f'Buchungen auf die Kasse erst ab Beginn des Kassenbuchs ({begin}).')
+            raise ValueError('Ein Umsatz kann nicht auf sein eigenes Konto gebucht werden.' if b['ledger']=='cash' else 'Konto 1420 wird nicht direkt gebucht (Bankkonto selbst).')
+        kasse.check_parts(self,b,parts)   # Kontoumsatz auf eine Kasse: nur im Kassenbuch-Zeitraum, sonst zählte das Geld doppelt
         for p in parts:
             a=money(p['amount'])
             if not a or (a>0)!=(b['amount']>0): raise ValueError('Teilbeträge müssen dieselbe Richtung wie der Bankumsatz haben.')
@@ -595,7 +593,7 @@ class Store:
         dues.attach(self,entries,fiscal,actor)   # Mitgliedsbeiträge: Zuordnung je Mitglied festhalten
         rpj.attach(self,entries,actor)           # RPJ-Schattenhaushalt: Zuordnung je Buchungszeile
         self.db.execute('UPDATE bank SET state=? WHERE id=?',('booked',bid))
-        if any(e['account']==kasse.ACCOUNT for e in entries): kasse.check_after_booking(self)   # Kassenbestand nie negativ
+        kasse.check_after_booking(self,entries)   # Bestand jeder berührten Kasse nie negativ
         self.audit(actor,'Bankumsatz verbucht',{'id':bid,'parts':dues.audit_parts(parts)})   # ohne Namen außerhalb der Mitgliederliste
         if learn:
             from workflow import remember
@@ -623,7 +621,7 @@ class Store:
             learned=self.db.execute('DELETE FROM booking_examples WHERE bank_id=?',(bid,)).rowcount  # stornierte Kontierung nicht mehr vorschlagen
             self.db.execute("UPDATE bank SET state='open',reversals=reversals+1 WHERE id=?",(bid,))
             import kasse
-            if any(e['account']==kasse.ACCOUNT for e in entries): kasse.check_after_booking(self,storno=True)
+            kasse.check_after_booking(self,entries,storno=True)
             self.audit(actor,'Bankzuordnung storniert',{'id':bid,'round':b['reversals']+1,'learned_removed':bool(learned),'note':'Gegengebucht; Umsatz ist wieder offen und wird neu zugeordnet.'})
 
     def _archive_allocations(self,bid,reversal,day):

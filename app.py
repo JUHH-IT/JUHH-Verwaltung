@@ -42,7 +42,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.59'
+VERSION='0.60'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -61,7 +61,7 @@ NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltun
 CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-listen.zip'),('GET','/api/sepa.xml'),
          ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
          ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/zusammenfuehren'),('POST','/api/ov-abgleich'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
-         ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
+         ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),('POST','/api/kasse-loeschen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
          ('POST','/api/schutz-einstellungen'),('POST','/api/schutz-sperren'),('POST','/api/schutz-freigeben'),('POST','/api/schutz-liste-laden'),
@@ -81,7 +81,12 @@ MASTER_ROW_FIELDS=('sheet','row_no','booked','amount','name','reference','code',
 def backups_dir(): return BACKUPS or DATA.parent/'Sicherungen'
 
 def save_receipt(store,table,rid,number,filename,suffix,raw):
-    """Beleg (Eingangsrechnung, Kassenbeleg oder Beleg am Kontoumsatz) in Daten/Belege speichern – nie einen vorhandenen überschreiben."""
+    """Beleg (Eingangsrechnung, Kassenbeleg oder Beleg am Kontoumsatz) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
+    Der Dateiname ist immer die vom Programm vergebene Nummer (`E-JJJJ-nnnn`, `<Kürzel der Kasse>-JJJJ-nnnn`, `Umsatz-<Umsatz>-<Beleg>`) mit
+    geprüfter Endung, nie ein Pfad."""
+    if not re.fullmatch(r'[A-Z]{1,4}-[0-9]{4}-[0-9]{4,}|Umsatz-[0-9]+-[0-9]+',number) or filename!=number+suffix or suffix not in verbindlichkeiten.FILE_TYPES:
+        with store.db: store.db.execute(f'UPDATE {table} SET attachment=NULL WHERE id=?',(rid,))
+        raise ValueError(f'{number} ist erfasst, der Beleg konnte aber nicht gespeichert werden.')
     try:
         folder=DATA/'Belege';folder.mkdir(exist_ok=True)
         target=folder/filename;n=1
@@ -589,11 +594,11 @@ class Handler(BaseHTTPRequestHandler):
                         return self.send(200,rpj.bookings_csv(store,project_id=pid),'text/csv; charset=utf-8',attachment=f"RPJ-{x['year']}-Projekt-{x['no']:02d}-Buchungen.csv")
                     year=int(query['year'][0]);return self.send(200,rpj.bookings_csv(store,year),'text/csv; charset=utf-8',attachment=f'RPJ-Buchungen-{year}.csv')
                 if path=='/api/rpj-vorlage.csv': return self.send(200,rpj.template_csv(),'text/csv; charset=utf-8',attachment='RPJ-Haushalt-Vorlage.csv')
-                if path=='/api/kasse': return self.send(200,kasse.book(store,int(query['year'][0])))
-                if path=='/api/kasse.pdf':
-                    year=int(query['year'][0]);return self.send(200,berichte.cash_pdf(store,year),'application/pdf',inline=f'Kassenbuch-{year}.pdf')
-                if path=='/api/kasse.csv':
-                    year=int(query['year'][0]);return self.send(200,kasse.csv(store,year),'text/csv; charset=utf-8',attachment=f'Kassenbuch-{year}.csv')
+                if path in ('/api/kasse','/api/kasse.pdf','/api/kasse.csv'):   # je Kasse (kasse=Kennung, ohne Angabe die Bargeldkasse)
+                    year=int(query['year'][0]);k=kasse.eine(store,query.get('kasse',[''])[0]);name=berichte.cash_name(k,year)
+                    if path=='/api/kasse': return self.send(200,kasse.book(store,year,k))
+                    if path=='/api/kasse.pdf': return self.send(200,berichte.cash_pdf(store,year,kasse_id=k['id']),'application/pdf',inline=name+'.pdf')
+                    return self.send(200,kasse.csv(store,year,k),'text/csv; charset=utf-8',attachment=name+'.csv')
                 if path=='/api/kasse-datei':
                     b=store.db.execute("SELECT attachment FROM bank WHERE id=? AND ledger='cash'",(int(query['id'][0]),)).fetchone()
                     if not b or not b['attachment']: raise ValueError('Kein Beleg hinterlegt.')
@@ -1037,7 +1042,7 @@ class Handler(BaseHTTPRequestHandler):
                 if data.get('file'):
                     if not str(data['file'].get('name','')).lower().endswith(('.pdf','.png','.jpg','.jpeg')): raise ValueError('Kassenbeleg bitte als PDF, PNG oder JPG anhängen.')
                     suffix,raw=verbindlichkeiten.check_file(data['file'].get('name',''),data['file'].get('content',''))
-                created=kasse.create(store,data,actor,suffix)
+                created=kasse.create(store,{**data,'kasse':kasse.kennung(data.get('kasse'))},actor,suffix)   # von außen nur die Kennung
                 if raw is not None: save_receipt(store,'bank',created['id'],created['number'],created['filename'],suffix,raw)
                 result={'id':created['id'],'number':created['number']}
             elif path=='/api/rpj-jahr': rpj.save_year(store,data,actor)
@@ -1058,7 +1063,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not p or p['kind']!='rpj' or p['actor']!=actor or time.time()-p['created']>1800: raise ValueError('Vorschau abgelaufen. Datei erneut auswählen.')
                 saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-rpj-import')
                 result={**rpj.apply_import(store,p['preview'],data.get('selected') or [],actor),'backup':saved.name};del PREVIEWS[str(data['token'])]
-            elif path=='/api/kasse-anfang': kasse.set_opening(store,data.get('day',''),data.get('amount',''),actor)
+            elif path=='/api/kasse-anfang': kasse.set_opening(store,data.get('day',''),data.get('amount',''),actor,kasse.kennung(data.get('kasse')))   # von außen nur die Kennung
+            elif path=='/api/kasse-neu': result={'id':kasse.add(store,data,actor)}
+            elif path=='/api/kasse-umbenennen': kasse.rename(store,kasse.kennung(data.get('kasse')),data.get('name'),actor)
+            elif path=='/api/kasse-aktiv': kasse.set_active(store,kasse.kennung(data.get('kasse')),data.get('aktiv') is True,actor)   # alles außer true legt still (der geprüfte Weg)
+            elif path=='/api/kasse-loeschen': kasse.delete(store,kasse.kennung(data.get('kasse')),actor)
             elif path=='/api/kasse-ungueltig': kasse.void(store,int(data['id']),data.get('reason',''),actor)
             elif path=='/api/bill-cancel': verbindlichkeiten.cancel(store,int(data['id']),actor)
             elif path=='/api/bill-transferred': verbindlichkeiten.mark_transferred(store,data['ids'],actor,data.get('undo') is True)
