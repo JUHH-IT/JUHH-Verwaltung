@@ -1221,7 +1221,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   const cashPdf = await page.evaluate(async () => (await fetch(document.querySelector('a[href^="/api/kasse.pdf"]').href)).headers.get('content-type'));
   check(cashPdf === 'application/pdf', 'Kassenbuch als PDF');
 
-  // Weitere Kasse der Art Bargeld (0.59): Handkasse einrichten, Beleg erfassen und verbuchen, Umbuchung auf die Bank über 2380, eigenes Kassenbuch, zurück zur Bargeldkasse
+  // Weitere Kasse der Art Bargeld (0.60): Handkasse einrichten, Beleg erfassen und verbuchen, Umbuchung auf die Bank über 2380, eigenes Kassenbuch, zurück zur Bargeldkasse
   check(await page.locator('main [data-kasse]').count() === 0, 'Eine Kasse: kein Umschalter');
   await page.click('[data-add-kasse]');
   check(await page.inputValue('#cash-add input[name=account]') === '1430', 'Weitere Kasse: freies Konto vorgeschlagen');
@@ -1305,7 +1305,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('[data-page=cash]');
   check((await gewaehlt()).includes('Bargeldkasse'), 'Gemerkte Kasse gibt es nicht: Bargeldkasse');
   await page.click('main [data-kasse="0"]');
-  // PayPal als Konto bei einem Zahlungsdienst (0.59, Antworten Lennert Gust 23.11.2026) – ohne Geldtransit: Ausgabe erfassen (Bestand im
+  // PayPal als Konto bei einem Zahlungsdienst (0.60, Antworten Lennert Gust 23.11.2026) – ohne Geldtransit: Ausgabe erfassen (Bestand im
   // Minus, Hinweis), Abbuchung im Kontoauszug direkt auf das PayPal-Konto buchen (Bestand 0), umbenennen, stilllegen
   await page.click('[data-add-kasse]');
   check(await page.inputValue('#cash-add input[name=account]') === '1431', 'PayPal: nächstes freies Konto vorgeschlagen');
@@ -2107,7 +2107,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await login();
   check(true, 'Abmelden und Anmelden');
 
-  // 6 bisherige + doppelte OV-Nummer + vorhandenes Konto für eine weitere Kasse (0.59) + Stilllegen mit offenem Geldtransit (0.59)
+  // 6 bisherige + doppelte OV-Nummer + vorhandenes Konto für eine weitere Kasse (0.60) + Stilllegen mit offenem Geldtransit (0.60)
   // + geschützte Datei (Kennwort fehlt, Kennwort falsch)
   const expected = 9 + (existsSync(lockedPath) ? 2 : 0);
   check(rejected === expected, `Nur die ${expected} absichtlich falschen Eingaben abgelehnt (${rejected})`);

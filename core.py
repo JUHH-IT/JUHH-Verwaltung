@@ -105,7 +105,7 @@ class Store:
         self.db.execute("CREATE TABLE IF NOT EXISTS reversed_allocations(id INTEGER PRIMARY KEY,bank_id INTEGER NOT NULL REFERENCES bank(id),kind TEXT NOT NULL CHECK(kind IN ('invoice','bill')),target_id INTEGER NOT NULL,amount INTEGER NOT NULL,reversal INTEGER NOT NULL,reversed_on TEXT)")
         self.db.commit()
         import kasse
-        kasse.init(self.db)   # Kassenbuch: Kassenbelege als Umsätze mit ledger='cash' (0.25), mehrere Kassen (0.59)
+        kasse.init(self.db)   # Kassenbuch: Kassenbelege als Umsätze mit ledger='cash' (0.25), mehrere Kassen (0.60)
         import rpj
         rpj.init(self.db)     # RPJ-Schattenhaushalt: Projekte, Mittelabrufe, Zuordnung der RPJ-Buchungen (0.26)
         import sepadatei

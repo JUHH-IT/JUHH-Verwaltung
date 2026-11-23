@@ -155,7 +155,7 @@ class SicherheitHttpTests(unittest.TestCase):
         status, body = self.post(who, '/api/rolle', {'name': 'Neue Rolle', 'rights': {}})
         self.assertEqual((status, body.get('confirm')), (428, True))
         self.assertEqual(self.get(who, '/api/backup')[0], 428)
-        self.assertEqual(self.post(who, '/api/kasse-loeschen', {'kasse': 1})[0], 428)        # 0.59: eine Kasse löschen
+        self.assertEqual(self.post(who, '/api/kasse-loeschen', {'kasse': 1})[0], 428)        # 0.60: eine Kasse löschen
         self.assertEqual(self.post(who, '/api/bestaetigen', {'password': 'falsch'})[0], 400)
         self.assertEqual(self.events('bestaetigung_fehl')[0]['person'], 'Chefin')
         self.assertEqual(self.post(who, '/api/bestaetigen', {'password': PASSWORT})[0], 200)

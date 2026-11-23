@@ -163,7 +163,7 @@ Links die Seitenleiste mit Haushaltsjahr und den Bereichen (ab 0.31 nach Aufgabe
 **Buchhaltung**
 - **Kontoauszüge (Buchungsplatz):** Arbeitsliste links, ausgewählter Umsatz mit Kontierung rechts. Nach dem Verbuchen springt die Auswahl zum nächsten offenen Umsatz.
 - **Beitragseingänge (ab 0.31, vorher „Beiträge zuordnen“ unter Mitglieder):** Zahlungen auf 8100 einem Mitglied zuordnen, SEPA-Datei einlesen, Unklares als Klärfall melden; Kennzahlen Soll, gezahlt, Zahlungen ohne Mitglied.
-- **Kasse (ab 0.25):** Kassenbuch mit Anfangsbestand, Kassenbelege erfassen und im selben Buchungsplatz verbuchen wie Kontoumsätze. Ab 0.59 mehrere Kassen (Bargeld, PayPal …); PayPal läuft ohne Geldtransit, Kassen lassen sich umbenennen und stilllegen.
+- **Kasse (ab 0.25):** Kassenbuch mit Anfangsbestand, Kassenbelege erfassen und im selben Buchungsplatz verbuchen wie Kontoumsätze. Ab 0.60 mehrere Kassen (Bargeld, PayPal …); PayPal läuft ohne Geldtransit, Kassen lassen sich umbenennen und stilllegen.
 - **Rechnungen:** Beitragslauf, Rechnungen für einen oder viele Empfänger, Vorschau, Druck und E-Mail-Versand.
 - **Eingangsrechnungen:** Rechnungen von Lieferanten erfassen und buchen, Zahlungsvorschlag fürs Online-Banking.
 - **Offene Posten:** Reiter **Mitgliedsbeiträge** (offene Beiträge je Mitglied, OP-Listen der Kreisverbände), **Rechnungen** und **Eingangsrechnungen** mit Fälligkeit; Abgleich mit den Kontoumsätzen.
@@ -498,12 +498,12 @@ Seite **Kasse** – Bargeld wird gebucht wie das Bankkonto, nur mit der Kasse (K
 1. **Anfangsbestand** einmal festlegen (z. B. Bargeld am 01.01.2026). Gebucht wird Kasse an 9100 Eröffnungsbilanz – zählt nicht im Haushalt. Eine spätere Änderung bucht den bisherigen Anfangsbestand gegen; Belege vor dem neuen Tag sind dann nicht erlaubt.
 2. **Kassenbeleg erfassen:** Art (Ausgabe, Einnahme, Abhebung von der Bank, Einzahlung auf die Bank), Datum (nicht in der Zukunft, nicht vor dem Anfangsbestand), Betrag, Text (wofür), Name (Empfänger bzw. Einzahler) und – empfohlen – die Quittung bzw. den Kassenbon als PDF, PNG oder JPG. Das Programm vergibt die Belegnummer `K-2026-0001` …
 3. **Verbuchen:** Einnahmen und Ausgaben stehen danach als **offen** in der Arbeitsliste der Kasse und werden genau wie Kontoumsätze kontiert – Haushaltsposten mit Bereich (Titel ergibt sich), mehrere Teilbeträge, Mitgliedsbeitrag 8100 nur mit Mitglied (zählt im Beitragskonto und im KV-Anteil), Rechnung oder Eingangsrechnung zuordnen, Bestandskonto, Parkkonto 1370 mit Klärungsgrund, Storno mit Neuzuordnung, Lernbeispiele, Tastatur wie im Buchungsplatz.
-4. **Geldtransit:** Abhebung und Einzahlung werden sofort gegen 2380 (Durchlauf-/Übergangskonto) gebucht. Den Gegenumsatz im Kontoauszug ebenfalls auf 2380 buchen. Solange er fehlt, zeigt die Kennzahl „Geldtransit 2380 offen“ den Beleg mit Nummer und Betrag (ab 0.59 je Beleg zugeordnet: gleicher Betrag in Gegenrichtung im Kontoauszug, bei mehreren der zeitlich nächste). Wird im Kontoauszug direkt auf 1400 gebucht, zählt das ebenfalls im Kassenbuch (dann keinen eigenen Kassenbeleg erfassen).
+4. **Geldtransit:** Abhebung und Einzahlung werden sofort gegen 2380 (Durchlauf-/Übergangskonto) gebucht. Den Gegenumsatz im Kontoauszug ebenfalls auf 2380 buchen. Solange er fehlt, zeigt die Kennzahl „Geldtransit 2380 offen“ den Beleg mit Nummer und Betrag (ab 0.60 je Beleg zugeordnet: gleicher Betrag in Gegenrichtung im Kontoauszug, bei mehreren der zeitlich nächste). Wird im Kontoauszug direkt auf 1400 gebucht, zählt das ebenfalls im Kassenbuch (dann keinen eigenen Kassenbeleg erfassen).
 5. **Bestand:** Anfangsbestand + Kassenbelege (auch noch nicht verbuchte) + Buchungen auf 1400. Er darf an keinem Tag negativ werden – sonst lehnt das Programm den Beleg bzw. die Buchung ab (dann fehlt meist eine Einnahme, eine Abhebung oder der Anfangsbestand).
 6. **Falsch erfasst?** Einen offenen Beleg mit Grund **für ungültig erklären** – er bleibt sichtbar, zählt aber nicht. Einen verbuchten Beleg zuerst stornieren. Gelöscht wird nichts.
 7. **Kassenbuch** (Reiter): alle Bewegungen des Jahres mit Übertrag, Beleg, Kontierung und Bestand; ungültige Belege darunter; **PDF** und **CSV**. Monatsbericht (Kassenbestand, offene Belege, Geldtransit) und Kassenprüfer-Paket (Kassenbuch als CSV und PDF, Belegdateien, Hinweise auf offene Belege, Ausgaben ohne Beleg und offenen Geldtransit) enthalten die Kasse.
 
-### Weitere Kassen, z. B. PayPal (ab 0.59)
+### Weitere Kassen, z. B. PayPal (ab 0.60)
 
 Ein PayPal-Konto (oder ein anderer Geldbestand neben Bargeld und Bankkonto) wird geführt wie die Kasse – mit eigenem Konto, eigenen Belegnummern und eigenem Kassenbuch.
 

@@ -17,7 +17,7 @@ Lernbeispiele – nur das Gegenkonto ist die Kasse 1400 statt der Bank 1420. Jou
 - Kassenbelege werden nie gelöscht: ein offener Beleg lässt sich mit Grund für ungültig erklären (state 'void'), ein verbuchter
   wird wie ein Bankumsatz storniert.
 
-Mehrere Kassen (ab 0.59, Wunsch Lennert Gust 23.11.2026: „Wir haben hier z. B. auch ein PayPal-Konto. Das sollten wir ja wie eine
+Mehrere Kassen (ab 0.60, Wunsch Lennert Gust 23.11.2026: „Wir haben hier z. B. auch ein PayPal-Konto. Das sollten wir ja wie eine
 Kasse pflegen“): Alles oben gilt je Kasse. Die Bargeldkasse ist fest (`BAR`: Kennung 0, Konto 1400, Kürzel K, Beginn wie seit 0.25
 in der Einstellung `cash_start`) – bestehende Daten laufen ohne Umstellung weiter. Jede weitere Kasse (`add`, z. B. PayPal) steht in
 der Tabelle `kassen` mit eigenem Bestandskonto 1401–1499 (wird dabei im Kontenrahmen angelegt), eigenem Belegkürzel (`PP-JJJJ-nnnn`)
@@ -28,7 +28,7 @@ zwei Kontoumsätze). 2380 ist ein Konto für alle; „Geldtransit offen“ ist d
 Beleg einer Kasse auf 2380 braucht seinen Kontoumsatz auf 2380 (gleicher Betrag, Gegenrichtung) – zwei Kassen gleichen sich nie
 gegenseitig aus.
 
-Art, Umbenennen, Stilllegen (ab 0.59, Antworten Lennert Gust 23.11.2026, REGELN Nr. 37): Jede weitere Kasse hat eine Art (`ARTEN`,
+Art, Umbenennen, Stilllegen (ab 0.60, Antworten Lennert Gust 23.11.2026, REGELN Nr. 37): Jede weitere Kasse hat eine Art (`ARTEN`,
 fest ab dem Einrichten). „bar“ ist ein Bargeldbestand: nie negativ, Geld von und zur Bank über 2380 – wie oben. „dienst“ ist ein Konto
 bei einem Zahlungsdienst (PayPal), der jede Zahlung selbst vom Bankkonto einzieht („ungerne mit einem Transitkonto“): keine Belege auf
 2380 (`kinds`), die Abbuchung im Kontoauszug wird direkt auf das Konto der Kasse gebucht, und der Bestand darf im Buch im Minus
@@ -73,14 +73,14 @@ def init(db):
         if col not in cols:
             db.execute(f'ALTER TABLE bank ADD COLUMN {col} TEXT')
             changed = True
-    if 'kasse' not in cols:      # additiv (0.59): welche Kasse – 0 = Bargeldkasse, sonst kassen.id
+    if 'kasse' not in cols:      # additiv (0.60): welche Kasse – 0 = Bargeldkasse, sonst kassen.id
         db.execute('ALTER TABLE bank ADD COLUMN kasse INTEGER NOT NULL DEFAULT 0')
         changed = True
     db.execute('CREATE INDEX IF NOT EXISTS bank_ledger ON bank(ledger,booked)')
     db.execute('CREATE TABLE IF NOT EXISTS kassen(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,account TEXT NOT NULL UNIQUE,'
                "prefix TEXT NOT NULL UNIQUE,start TEXT NOT NULL,art TEXT NOT NULL DEFAULT 'bar',aktiv INTEGER NOT NULL DEFAULT 1)")
     have = [c[1] for c in db.execute('PRAGMA table_info(kassen)')]
-    for col, kind in (('art', "TEXT NOT NULL DEFAULT 'bar'"), ('aktiv', 'INTEGER NOT NULL DEFAULT 1')):   # additiv: Tabelle aus einem früheren Stand von 0.59
+    for col, kind in (('art', "TEXT NOT NULL DEFAULT 'bar'"), ('aktiv', 'INTEGER NOT NULL DEFAULT 1')):   # additiv: Tabelle aus einem früheren Stand von 0.60
         if col not in have:
             db.execute(f'ALTER TABLE kassen ADD COLUMN {col} {kind}')
             changed = True
