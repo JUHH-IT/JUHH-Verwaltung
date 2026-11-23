@@ -74,7 +74,7 @@ def _month_flows(store, first, day):
     import haushalt
     bank_in, bank_out, count = store.db.execute(
         'SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount END),0),COALESCE(SUM(CASE WHEN amount<0 THEN amount END),0),COUNT(*) '
-        "FROM bank WHERE ledger='bank' AND booked BETWEEN ? AND ?", (first, day)).fetchone()
+        "FROM bank WHERE ledger='bank' AND state!='void' AND booked BETWEEN ? AND ?", (first, day)).fetchone()   # ungültig (doppelt importiert) zählt nicht
     titles = {}
     totals = {'income': 0, 'expense': 0}
     for e in store.rows("SELECT e.account,e.kv,e.title,e.debit,e.credit,a.kind FROM entries e JOIN journals j ON j.id=e.journal_id "
@@ -595,8 +595,8 @@ def _audit_entries(store, year, data_dir, notes):
     yield f'Haushalt-{y}.pdf', haushalt.pdf_report(store, year)
 
     bank = store.rows("SELECT * FROM bank WHERE ledger='bank' AND substr(booked,1,4)=? ORDER BY booked,id", (y,))
-    yield f'Kontoumsaetze-{y}.csv', _csv([[b['id'], b['booked'], _eur(b['amount']), b['name'], b['reference'], b['state'], b['reversals'], b['source']] for b in bank],
-                                         ['Umsatz', 'Datum', 'Betrag', 'Name', 'Verwendungszweck', 'Stand', 'Stornos', 'Datei'])
+    yield f'Kontoumsaetze-{y}.csv', _csv([[b['id'], b['booked'], _eur(b['amount']), b['name'], b['reference'], b['state'], b['reversals'], b['source'], b['note'] if b['state'] == 'void' else ''] for b in bank],
+                                         ['Umsatz', 'Datum', 'Betrag', 'Name', 'Verwendungszweck', 'Stand', 'Stornos', 'Datei', 'Grund (ungültig)'])
     open_bank = [b for b in bank if b['state'] in ('open', 'parked')]
     if open_bank:
         notes.append(f'{len(open_bank)} Bankumsätze nicht endgültig zugeordnet (offen oder Parkkonto)')

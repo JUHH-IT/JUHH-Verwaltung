@@ -16,8 +16,12 @@ export function importDialog() {
     if (!file) return;
     const preview = await api('/api/preview-bank', { filename: file.name, content: await fileToBase64(file) });
     const fresh = preview.rows.filter((r) => r.selected).length;
+    const vorhanden = preview.rows.filter((r) => r.duplicate).length, aehnlich = preview.rows.filter((r) => !r.selected && !r.error && !r.duplicate).length;
     mount(el.querySelector('#import-preview'), html`<h3>Vorschau · ${preview.rows.length} Zeilen, ${fresh} neu</h3>
       ${preview.before_start ? html`<p class="notice">${preview.before_start} Umsätze vor dem Datenbeginn ${date(preview.data_start)} werden nicht übernommen.</p>` : ''}
+      ${vorhanden ? html`<p class="notice">${vorhanden === 1 ? '1 Umsatz ist' : `${vorhanden} Umsätze sind`} schon vorhanden (gleiche Bankreferenz) und ${vorhanden === 1 ? 'wird' : 'werden'} nicht noch einmal übernommen.</p>` : ''}
+      ${aehnlich ? html`<p class="notice warn" data-aehnlich><strong>${aehnlich === 1 ? '1 Zeile sieht' : `${aehnlich} Zeilen sehen`} aus wie ein schon vorhandener Umsatz</strong> und ${aehnlich === 1 ? 'ist' : 'sind'} deshalb abgewählt.
+        Nur ankreuzen, wenn es wirklich eine weitere Zahlung ist – sonst steht der Umsatz doppelt da.</p>` : ''}
       ${table(['', 'Datum', 'Zahlungspartner / Zweck', { label: 'Betrag', className: 'num' }, 'Prüfung'], preview.rows.map((r) => html`<tr>
         <td><input class="import-check" type="checkbox" value="${r.row_no}" ${r.selected ? 'checked' : ''} ${r.error || r.duplicate ? 'disabled' : ''} aria-label="Zeile ${r.row_no} übernehmen"></td>
         <td class="nowrap">${r.booked ? date(r.booked) : '—'}</td>

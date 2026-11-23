@@ -428,7 +428,7 @@ def candidates(store, batch):
     from core import bank_source
     import beitraege
     day = date.fromisoformat(batch['date'])
-    rows = store.rows("SELECT * FROM bank WHERE ledger='bank' AND amount=? AND booked BETWEEN ? AND ? ORDER BY booked,id",
+    rows = store.rows("SELECT * FROM bank WHERE ledger='bank' AND state!='void' AND amount=? AND booked BETWEEN ? AND ? ORDER BY booked,id",
                       (batch['total'], (day - timedelta(days=BEFORE)).isoformat(), (day + timedelta(days=AFTER)).isoformat()))
     out, lines_by_bank = [], None
     done = {(r['bank_id'], r['round']) for r in store.rows('SELECT bank_id,round FROM sepa_files')}
