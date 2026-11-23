@@ -62,13 +62,21 @@ def report_day(month=None, data_start=None, today=None):
 
 def _cash(store, day):
     """Kassen zum Stichtag: je eingerichteter Kasse Bestand, offene Belege und offene Posten im Geldtransit (`kasse.transit`),
-    dazu die Kontoumsätze auf 2380 ohne Kassenbeleg und der Saldo 2380 – None, solange keine Kasse eingerichtet ist."""
+    dazu die Kontoumsätze auf 2380 ohne Kassenbeleg und der Saldo 2380 – None, solange keine Kasse eingerichtet ist. Eine
+    stillgelegte Kasse steht nur in den Jahren, in denen sie Bewegungen hatte."""
     import kasse
     t = kasse.transit(store, day)
     kassen = [{'id': k['id'], 'name': k['name'], 'account': k['account'], 'balance': kasse.balance(store, day, k), 'transit': t['kassen'].get(k['id'], []),
                'open': store.db.execute("SELECT COUNT(*) FROM bank WHERE ledger='cash' AND kasse=? AND state IN ('open','parked') AND booked<=?",
-                                        (k['id'], day)).fetchone()[0]} for k in kasse.liste(store) if k['start']]
+                                        (k['id'], day)).fetchone()[0]} for k in kasse.liste(store) if k['start'] and (k['aktiv'] or kasse.bewegt(store, k, day[:4]))]
     return {'kassen': kassen, 'transit': t['saldo'], 'transit_bank': t['bank']} if kassen else None
+
+
+def _minus_notes(cash, only=None):
+    """Hinweis aus `_cash` je Kasse mit Bestand im Minus – das gibt es nur bei einem Zahlungsdienst (PayPal): der Einzug vom
+    Bankkonto ist noch nicht gebucht. Kein Fehler. only: nur diese Kassen (Kennungen)."""
+    return [f"{k['name']}: Bestand im Minus ({euro(k['balance'])}) – der Einzug vom Bankkonto über {euro(-k['balance'])} fehlt noch "
+            f"(im Kontoauszug auf Konto {k['account']} buchen)" for k in cash['kassen'] if k['balance'] < 0 and (only is None or k['id'] in only)]
 
 
 def _transit_sum(posten):
@@ -264,6 +272,7 @@ def monthly_pdf(store, day=None):
                     + (f'Im Kontoauszug stehen {len(bank_open)} Buchung(en) auf 2380 ohne Kassenbeleg ({_transit_sum(bank_open)}). ' if bank_open else '')
                     + f"Saldo des Kontos 2380: {euro(m['cash']['transit'])}. Bestand laut Kassenbuch (Anfangsbestand + Kassenbelege + Buchungen auf "
                     'dem Konto der Kasse) – mit der Zählung der Kasse bzw. dem Kontostand (z. B. PayPal) abgleichen.', 'small')]
+        story += [p(f'Hinweis – {n}.', 'small') for n in _minus_notes(m['cash'])]
     story += [
              p(f"Im {m['month']}", 'h2'),
              _table([['Eingänge Konto', 'Ausgänge Konto', 'Einnahmen gebucht', 'Ausgaben gebucht'],
@@ -415,9 +424,8 @@ def cash_pdf(store, year, today=None, kasse_id=0):
                      [euro(b['carry']), euro(b['opening_in_year']), euro(b['income']), euro(b['expense']), euro(b['end'])]],
                     [90, 90, 90, 90, 120], st, numeric=(0, 1, 2, 3, 4)),
              p('Bewegungen', 'h2')]
-    kinds = {'anfang': 'Anfangsbestand', 'bank': 'aus Kontoauszug'}
     body = [['Datum', 'Beleg', 'Text', 'Einnahme', 'Ausgabe', 'Bestand']] + [
-        [german_date(x['day']), x['number'] or kinds.get(x['kind'], ''),
+        [german_date(x['day']), x['number'] or x['label'],
          ' · '.join(v for v in (x['text'], x['name'], {'storno': 'Storno', 'open': 'offen', 'parked': 'geparkt',
                                                         'reversed': 'später storniert'}.get(x['state'], '')) if v),
          euro(x['amount']) if x['amount'] > 0 else '', euro(-x['amount']) if x['amount'] < 0 else '', euro(x['balance'])] for x in b['lines']]
@@ -427,10 +435,14 @@ def cash_pdf(store, year, today=None, kasse_id=0):
                   _table([['Datum', 'Beleg', 'Text', 'Betrag', 'Grund']] + [[german_date(v['booked']), v['bank_ref'], v['reference'] or '', euro(v['amount']), v['note'] or '']
                                                                            for v in b['void']], [55, 65, 170, 60, 140], st, numeric=(3,))]
     offen = b['transit']                                      # nur Belege DIESER Kasse, zu denen der Kontoumsatz auf 2380 fehlt
-    story.append(p(f"Bestand = Anfangsbestand + Kassenbelege + Buchungen auf {k['account']} (auch aus dem Kontoauszug). Geldtransit über 2380: "
-                   + (f"{len(offen)} Beleg(e) dieser Kasse ohne Gegenseite im Kontoauszug ({_transit_sum(offen)}): "
+    dienst = k['art'] == 'dienst' and not offen                # Zahlungsdienst (PayPal): kein Geldtransit, Bestand darf im Minus stehen
+    story.append(p(f"Bestand = Anfangsbestand + Kassenbelege + Buchungen auf {k['account']} (auch aus dem Kontoauszug). "
+                   + (f"{k['name']} zieht jede Zahlung vom Bankkonto ein: Die Abbuchung steht im Kontoauszug und wird dort direkt auf Konto "
+                      f"{k['account']} gebucht. Bis dahin steht der Bestand im Minus." if dienst else 'Geldtransit über 2380: '
+                      + (f"{len(offen)} Beleg(e) dieser Kasse ohne Gegenseite im Kontoauszug ({_transit_sum(offen)}): "
                       + ', '.join(f"{x['number']} vom {german_date(x['day'])}" for x in offen) + '.' if offen else
-                      'bei dieser Kasse ausgeglichen – zu jedem Beleg auf 2380 gibt es den Kontoumsatz.'), 'small'))
+                         'bei dieser Kasse ausgeglichen – zu jedem Beleg auf 2380 gibt es den Kontoumsatz.'))
+                   + ('' if k['aktiv'] else ' Die Kasse ist stillgelegt.'), 'small'))
     return _pdf(story, title)
 
 
@@ -659,7 +671,7 @@ def _audit_entries(store, year, data_dir, notes):
     import kasse
     shown = set()
     for k in kasse.liste(store):                              # je Kasse ein Kassenbuch; die Bargeldkasse heißt wie seit 0.25
-        if not k['start'] or k['start'][:4] > y:
+        if not k['start'] or k['start'][:4] > y or not (k['aktiv'] or kasse.bewegt(store, k, y)):   # stillgelegt: nur Jahre mit Bewegungen
             continue
         shown.add(k['id'])
         cash = kasse.book(store, year, k)
@@ -678,7 +690,8 @@ def _audit_entries(store, year, data_dir, notes):
         if cash['missing_receipt']:
             notes.append(f"{cash['missing_receipt']} Kassenausgaben{who} ohne hinterlegten Beleg (Quittung/Kassenbon prüfen)")
     if shown:                                                 # Geldtransit zum Jahresende (laufendes Jahr: heute), wie im Kassenbuch
-        notes += _transit_notes(_cash(store, min(f'{y}-12-31', date.today().isoformat())), shown)
+        cash = _cash(store, min(f'{y}-12-31', date.today().isoformat()))
+        notes += _transit_notes(cash, shown) + [f'Hinweis – {n}' for n in _minus_notes(cash, shown)]
 
     invoices = sorted((i for i in store.invoices() if i['issued'][:4] == y), key=lambda i: i['number'])
     yield f'Ausgangsrechnungen-{y}.csv', _csv([[i['number'], i['issued'], 'Beitrag' if i['kind'] == 'dues' else 'Rechnung', i['year'], i['recipient'],

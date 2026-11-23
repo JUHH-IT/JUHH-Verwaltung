@@ -89,10 +89,10 @@ export function setKasse(id) {
   store.cash.kasse = id;
   try { localStorage.setItem(KASSE_KEY, String(id)); } catch { /* Speicher blockiert: gilt nur für diese Seite */ }
 }
-/** Gewählte Kasse der Seite Kasse (ab 0.59 mehrere: Bargeld, PayPal …) – ohne Wahl oder wenn es die gemerkte nicht (mehr) gibt,
- *  die erste eingerichtete (Bargeldkasse zuerst). */
+/** Gewählte Kasse der Seite Kasse (ab 0.59 mehrere: Bargeld, PayPal …) – ohne Wahl oder wenn es die gemerkte nicht (mehr) gibt
+ *  oder sie stillgelegt ist, die erste eingerichtete (Bargeldkasse zuerst). */
 export function currentKasse() {
-  const all = store.data?.cash?.kassen || [];
+  const all = (store.data?.cash?.kassen || []).filter((k) => k.aktiv);
   return all.find((k) => k.id === store.cash.kasse) || all.find((k) => k.start) || all[0];
 }
 /** Gegenkonto eines Umsatzes: Bank 1420 bzw. das Konto seiner Kasse (wie kasse.ledger_account). */

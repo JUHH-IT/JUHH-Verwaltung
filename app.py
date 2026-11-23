@@ -59,7 +59,7 @@ NO_RIGHT='Dafür fehlt die Berechtigung. Rollen und Rechte vergibt die Verwaltun
 CONFIRM={('GET','/api/backup'),('GET','/api/pruefpaket.zip'),('GET','/api/op-listen.zip'),('GET','/api/sepa.xml'),
          ('POST','/api/benutzer'),('POST','/api/rolle'),('POST','/api/rolle-loeschen'),('POST','/api/settings'),('POST','/api/mail-password'),
          ('POST','/api/member-delete'),('POST','/api/members-import'),('POST','/api/mitglieder-liste'),('POST','/api/zusammenfuehren'),('POST','/api/ov-abgleich'),('POST','/api/ortsverband-loeschen'),('POST','/api/rpj-projekt-loeschen'),
-         ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),
+         ('POST','/api/rpj-abruf-loeschen'),('POST','/api/sepa-mandat-vergessen'),('POST','/api/kasse-loeschen'),
          ('POST','/api/benutzer-abgleichen'),('POST','/api/benutzer-startpasswort'),('POST','/api/benutzer-app-zuruecksetzen'),
          ('POST','/api/notfall-aus'),('POST','/api/wartung'),('POST','/api/sitzung-beenden'),('POST','/api/sperre-aufheben'),
          ('POST','/api/schutz-einstellungen'),('POST','/api/schutz-sperren'),('POST','/api/schutz-freigeben'),('POST','/api/schutz-liste-laden'),
@@ -1048,6 +1048,9 @@ class Handler(BaseHTTPRequestHandler):
                 result={**rpj.apply_import(store,p['preview'],data.get('selected') or [],actor),'backup':saved.name};del PREVIEWS[str(data['token'])]
             elif path=='/api/kasse-anfang': kasse.set_opening(store,data.get('day',''),data.get('amount',''),actor,kasse.kennung(data.get('kasse')))   # von außen nur die Kennung
             elif path=='/api/kasse-neu': result={'id':kasse.add(store,data,actor)}
+            elif path=='/api/kasse-umbenennen': kasse.rename(store,kasse.kennung(data.get('kasse')),data.get('name'),actor)
+            elif path=='/api/kasse-aktiv': kasse.set_active(store,kasse.kennung(data.get('kasse')),data.get('aktiv') is True,actor)   # alles außer true legt still (der geprüfte Weg)
+            elif path=='/api/kasse-loeschen': kasse.delete(store,kasse.kennung(data.get('kasse')),actor)
             elif path=='/api/kasse-ungueltig': kasse.void(store,int(data['id']),data.get('reason',''),actor)
             elif path=='/api/bill-cancel': verbindlichkeiten.cancel(store,int(data['id']),actor)
             elif path=='/api/bill-transferred': verbindlichkeiten.mark_transferred(store,data['ids'],actor,data.get('undo') is True)

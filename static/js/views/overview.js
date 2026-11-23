@@ -95,6 +95,7 @@ function tasks() {
     if (k.open) add('bh', k.id ? `${k.name}: Belege verbuchen` : 'Kassenbelege verbuchen', `${k.id ? 'Bestand' : 'Kassenbestand'} ${eur(k.balance)} – offene Belege wie Kontoumsätze kontieren`, k.open, 'warn', ['cash', { cashFilter: 'open', kasse: k.id }]);
     const cashParked = store.workflow.parked.filter((b) => b.ledger === 'cash' && (b.kasse || 0) === k.id);
     if (cashParked.length) add('bh', k.id ? `${k.name}: Belege im Parkkonto` : 'Kassenbelege im Parkkonto', cashParked[0].reason || 'Klärungsgrund fehlt', cashParked.length, '', ['cash', { cashFilter: 'parked', kasse: k.id }]);
+    if (k.art === 'dienst' && k.balance < 0) add('bh', `${k.name}: Einzug vom Bankkonto fehlt`, `Bestand im Minus – die Abbuchung im Kontoauszug auf Konto ${k.account} buchen`, eur(-k.balance), '', ['bank', { bankFilter: 'open' }]);
     if (k.transit.length) add('bh', `Geldtransit 2380: ${k.name}`, `${k.transit.slice(0, 3).map((x) => x.number).join(', ')}${k.transit.length > 3 ? ' …' : ''} ohne Gegenseite im Kontoauszug (${eur(k.transit.reduce((s, x) => s + Math.abs(x.amount), 0))}) – den Kontoumsatz auf 2380 buchen`, k.transit.length, '', ['cash', { cashFilter: 'book', kasse: k.id }]);
   }
   const ohneBeleg = cashInfo?.transit?.bank || [];   // Kontoumsätze auf 2380, zu denen kein Beleg einer Kasse passt

@@ -155,6 +155,7 @@ class SicherheitHttpTests(unittest.TestCase):
         status, body = self.post(who, '/api/rolle', {'name': 'Neue Rolle', 'rights': {}})
         self.assertEqual((status, body.get('confirm')), (428, True))
         self.assertEqual(self.get(who, '/api/backup')[0], 428)
+        self.assertEqual(self.post(who, '/api/kasse-loeschen', {'kasse': 1})[0], 428)        # 0.59: eine Kasse löschen
         self.assertEqual(self.post(who, '/api/bestaetigen', {'password': 'falsch'})[0], 400)
         self.assertEqual(self.events('bestaetigung_fehl')[0]['person'], 'Chefin')
         self.assertEqual(self.post(who, '/api/bestaetigen', {'password': PASSWORT})[0], 200)
@@ -256,7 +257,7 @@ class SicherheitHttpTests(unittest.TestCase):
     def test_bestaetigung_umfasst_kritische_adressen(self):
         for method, path in app.CONFIRM:
             self.assertIn(path, rollen.POST if method == 'POST' else rollen.GET, path)
-        for path in ('/api/settings', '/api/member-delete', '/api/members-import', '/api/rolle-loeschen'):
+        for path in ('/api/settings', '/api/member-delete', '/api/members-import', '/api/rolle-loeschen', '/api/kasse-loeschen'):
             self.assertIn(('POST', path), app.CONFIRM)
         for path in ('/api/backup', '/api/pruefpaket.zip', '/api/op-listen.zip', '/api/sepa.xml'):
             self.assertIn(('GET', path), app.CONFIRM)

@@ -241,7 +241,7 @@ class MehrereKassenTests(Base):
         self.assertEqual((self.s.rows('SELECT id,booked,amount,bank_ref,ledger,state FROM bank'), self.s.rows('SELECT * FROM settings'),
                           self.s.rows('SELECT source FROM journals ORDER BY id')), before)
         self.assertEqual(self.s.rows('SELECT kasse FROM bank'), [{'kasse': 0}])
-        self.assertEqual(kasse.liste(self.s), [{'id': 0, 'name': 'Bargeldkasse', 'account': '1400', 'prefix': 'K', 'start': START}])
+        self.assertEqual(kasse.liste(self.s), [{'id': 0, 'name': 'Bargeldkasse', 'account': '1400', 'prefix': 'K', 'art': 'bar', 'aktiv': 1, 'start': START}])
         self.assertEqual((kasse.start(self.s), kasse.balance(self.s)), (START, 9000))
         self.assertEqual(self.entry('out', '5')['number'], f'K-{YEAR}-0002')
         self.s.book(old['id'], [{'amount': '-10', 'account': '4220', 'kv': 'LV'}], 'Test')
@@ -251,7 +251,7 @@ class MehrereKassenTests(Base):
         self.assertEqual(kasse.free_account(self.s), '1430')                           # frei: nicht 1400, 1410 Portokasse, 1420 Bank
         pp = self.paypal()
         k = kasse.eine(self.s, pp)
-        self.assertEqual(k, {'id': pp, 'name': 'PayPal', 'account': '1430', 'prefix': 'PP', 'start': START})
+        self.assertEqual(k, {'id': pp, 'name': 'PayPal', 'account': '1430', 'prefix': 'PP', 'start': START, 'art': 'bar', 'aktiv': 1})
         self.assertEqual(self.s.rows("SELECT name,kind FROM accounts WHERE code='1430'"), [{'name': 'PayPal', 'kind': 'asset'}])
         self.assertEqual(kontenrahmen.group_of('1430')[1], 'Geldbestände')
         self.assertEqual((kasse.balance(self.s, kasse=pp), kasse.opening(self.s, pp)['amount'], kasse.start(self.s, pp)), (5000, 5000, START))
@@ -593,3 +593,237 @@ class MehrereKassenTests(Base):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ArtUndPflegeTests(Base):
+    """Ab 0.59 (Antworten Lennert Gust 23.11.2026): Art einer weiteren Kasse (Bargeld bzw. Zahlungsdienst ohne Geldtransit, Bestand
+    darf im Minus stehen), umbenennen, stilllegen, wieder aktivieren, löschen."""
+
+    def neu(self, name='PayPal', account='1430', prefix='PP', art='dienst', amount='0', day=START):
+        return kasse.add(self.s, {'name': name, 'account': account, 'prefix': prefix, 'art': art, 'day': day, 'amount': amount}, 'Test')
+
+    def beleg(self, kid, kind, amount, offset=1, text='Testbeleg'):
+        return kasse.create(self.s, {'kind': kind, 'amount': amount, 'day': self.day(offset), 'text': text, 'kasse': kid}, 'Test')['id']
+
+    def auf_konto(self, amount, offset, account='1430'):
+        bid = self.bank(amount, self.day(offset), 'PAYPAL EUROPE')
+        self.s.book(bid, [{'amount': amount, 'account': account, 'kv': 'LV'}], 'Test')
+        return bid
+
+    def lines(self, bid):
+        return [(e['account'], e['debit'], e['credit']) for e in self.s.rows(
+            'SELECT e.account,e.debit,e.credit FROM entries e JOIN journals j ON j.id=e.journal_id WHERE j.source=? ORDER BY e.id', (f'bank:{bid}',))]
+
+    def stand(self, kid):
+        return next(k for k in kasse.summary(self.s)['kassen'] if k['id'] == kid)
+
+    def hinweise(self):
+        return berichte._minus_notes(berichte._cash(self.s, TODAY))
+
+    def text(self, pdf):
+        from pypdf import PdfReader
+        return ' '.join(' '.join(page.extract_text().split()) for page in PdfReader(BytesIO(pdf)).pages)
+
+    def paket(self, year=YEAR):
+        buf = BytesIO()
+        berichte.audit_package(self.s, year, Path(self.tmp.name), buf)
+        with zipfile.ZipFile(buf) as z:
+            return {n.split('/', 1)[1]: z.read(n) for n in z.namelist()}
+
+    def abgelehnt(self, text, call, *args, **kw):
+        with self.assertRaises(ValueError) as cm:
+            call(*args, **kw)
+        self.assertIn(text, str(cm.exception))
+
+    def test_zahlungsdienst_beleg_vor_dem_einzug_und_zurueck(self):
+        """PayPal zieht vom Bankkonto ein: der Beleg wird vor dem Einzug angenommen (Bestand im Minus, Hinweis), der Kontoumsatz
+        wird direkt auf das PayPal-Konto gebucht (Bestand 0, Hinweis weg) – ohne 2380. Auch die Gegenrichtung und Storno."""
+        kasse.set_opening(self.s, START, '50', 'Test')
+        pp = self.neu()
+        self.assertEqual((kasse.eine(self.s, pp)['art'], self.stand(pp)['art'], self.stand(0)['art']), ('dienst', 'dienst', 'bar'))
+        aus = self.beleg(pp, 'out', '12,50', text='Plakate')                           # Zahlung über PayPal, Einzug folgt
+        self.assertEqual((kasse.balance(self.s, kasse=pp), self.stand(pp)['balance']), (-1250, -1250))
+        self.assertEqual(self.hinweise(), ['PayPal: Bestand im Minus (-12,50 €) – der Einzug vom Bankkonto über 12,50 € fehlt noch '
+                                           '(im Kontoauszug auf Konto 1430 buchen)'])
+        m = berichte.monthly(self.s, TODAY)
+        self.assertFalse(any('Minus' in t or 'negativ' in t for t in m['tasks']))      # Hinweis, keine Aufgabe und kein Fehler
+        self.assertIn('Hinweis – PayPal: Bestand im Minus', self.text(berichte.monthly_pdf(self.s, TODAY)))
+        self.assertIn('Hinweis – PayPal: Bestand im Minus', self.text(self.paket()['00-Uebersicht.pdf']))
+        self.s.book(aus, [{'amount': '-12,50', 'account': '4220', 'kv': 'LV'}], 'Test')   # verbuchen geht auch im Minus
+        self.assertEqual(self.lines(aus), [('1430', 0, 1250), ('4220', 1250, 0)])
+        einzug = self.auf_konto('-12,50', 3)                                           # Abbuchung im Kontoauszug → direkt PayPal
+        self.assertEqual(self.lines(einzug), [('1420', 0, 1250), ('1430', 1250, 0)])
+        self.assertEqual((kasse.balance(self.s, kasse=pp), self.hinweise()), (0, []))
+        self.assertNotIn('Minus (', self.text(berichte.monthly_pdf(self.s, TODAY)))
+        ein = self.beleg(pp, 'in', '30', offset=4, text='Teilnahmebeitrag')            # Gegenrichtung: Guthaben wird ausgezahlt
+        self.s.book(ein, [{'amount': '30', 'account': '8590', 'kv': '5100'}], 'Test')
+        zurueck = self.auf_konto('30', 5)
+        self.assertEqual(self.lines(zurueck), [('1420', 3000, 0), ('1430', 0, 3000)])
+        self.assertEqual(kasse.balance(self.s, kasse=pp), 0)
+        book = kasse.book(self.s, YEAR, pp)
+        self.assertEqual([(x['label'], x['amount'], x['balance']) for x in book['lines']],
+                         [('Kassenbeleg', -1250, -1250), ('Einzug vom Bankkonto', 1250, 0), ('Kassenbeleg', 3000, 3000), ('Auszahlung aufs Bankkonto', -3000, 0)])
+        csv = kasse.csv(self.s, YEAR, pp).decode('utf-8-sig')
+        self.assertIn('Einzug vom Bankkonto', csv)
+        self.assertIn('Auszahlung aufs Bankkonto', csv)
+        pdf = self.text(berichte.cash_pdf(self.s, YEAR, kasse_id=pp))
+        self.assertIn('direkt auf Konto 1430', pdf)
+        self.assertNotIn('Geldtransit', pdf)
+        t = kasse.transit(self.s)                                                      # nichts lief über 2380
+        self.assertEqual((t['saldo'], t['kassen'], t['bank'], self.stand(pp)['transit']), (0, {}, [], []))
+        self.assertEqual(kasse.balance(self.s), 5000)                                  # Bargeldkasse unberührt
+        self.s.reverse_bank(einzug, 'Test')                                            # Storno des Einzugs: wieder im Minus, erlaubt
+        self.assertEqual((kasse.balance(self.s, kasse=pp), len(self.hinweise())), (-1250, 1))
+        self.assertIn('Storno aus Kontoauszug', [x['label'] for x in kasse.book(self.s, YEAR, pp)['lines']])
+        self.s.book(einzug, [{'amount': '-12,50', 'account': '1430', 'kv': 'LV'}], 'Test')
+        self.s.reverse_bank(ein, 'Test')                                               # Storno der Einnahme nach der Auszahlung: -30, erlaubt
+        kasse.void(self.s, ein, 'doppelt', 'Test')
+        self.assertEqual(kasse.balance(self.s, kasse=pp), -3000)
+        self.assertEqual(self.s.db.execute('SELECT SUM(debit)-SUM(credit) FROM entries').fetchone()[0], 0)
+        self.abgelehnt('Beginn des Kassenbuchs', kasse.create, self.s, {'kind': 'out', 'amount': '1', 'day': f'{YEAR - 1}-12-30', 'text': 'x', 'kasse': pp}, 'Test')
+        self.abgelehnt('negativ', kasse.set_opening, self.s, START, '-5', 'Test', pp)  # ein Kontostand zu Beginn ist nie negativ
+
+    def test_zahlungsdienst_ohne_geldtransit(self):
+        pp = self.neu(amount='100')
+        self.assertEqual(list(kasse.kinds(kasse.eine(self.s, pp))), ['in', 'out'])
+        for kind in ('withdraw', 'deposit'):
+            self.abgelehnt('keine Umbuchung über 2380', kasse.create, self.s, {'kind': kind, 'amount': '10', 'day': self.day(1), 'kasse': pp}, 'Test')
+        self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM bank').fetchone()[0], 0)
+        self.assertEqual(self.stand(pp)['transit'], [])
+        # von Hand auf 2380 kontiert (anderer Durchlaufposten): dann – und nur dann – ist bei dieser Kasse etwas im Geldtransit offen
+        aus = self.beleg(pp, 'out', '10')
+        self.s.book(aus, [{'amount': '-10', 'account': '2380', 'kv': 'LV'}], 'Test')
+        self.assertEqual([x['amount'] for x in self.stand(pp)['transit']], [-1000])
+
+    def test_art_bargeld_bleibt_gesperrt(self):
+        """Die Sperre „nie negativ“ gilt für jede Kasse der Art Bargeld unverändert – beim Erfassen, aus dem Kontoauszug, bei
+        ungültig, Storno und Anfangsbestand."""
+        hand = self.neu('Handkasse', '1431', 'HK', art='bar', amount='20')
+        ohne = kasse.add(self.s, {'name': 'Zweite Handkasse', 'account': '1432', 'prefix': 'ZH', 'day': START, 'amount': '0'}, 'Test')
+        self.assertEqual([k['art'] for k in kasse.liste(self.s)], ['bar', 'bar', 'bar'])   # ohne Angabe: die strenge Art
+        self.abgelehnt('negativ', self.beleg, hand, 'out', '25')
+        self.abgelehnt('negativ', self.beleg, ohne, 'out', '1')
+        self.abgelehnt('negativ', self.auf_konto, '30', 2, '1431')                     # Kontoauszug: mehr zurück, als da ist
+        ein = self.beleg(hand, 'in', '10', offset=2)
+        self.beleg(hand, 'out', '25', offset=3)
+        self.abgelehnt('negativ', kasse.void, self.s, ein, 'Fehler', 'Test')
+        self.abgelehnt('negativ', kasse.set_opening, self.s, START, '10', 'Test', hand)
+        zu = self.auf_konto('-30', 3, '1431')                                          # Bank → Handkasse: Bestand 35
+        self.beleg(hand, 'out', '32', offset=4)
+        self.abgelehnt('negativ', self.s.reverse_bank, zu, 'Test')                     # Storno: das Bargeld ist schon ausgegeben
+        self.assertEqual((kasse.balance(self.s, kasse=hand), self.hinweise()), (300, []))
+        self.assertEqual(list(kasse.kinds(kasse.eine(self.s, hand))), ['in', 'out', 'withdraw', 'deposit'])   # Bargeld: weiter über 2380
+        for art in ('x', 'cash', ['dienst'], {'art': 'dienst'}, 1):
+            self.abgelehnt('Art wählen', kasse.add, self.s, {'name': 'Dritte', 'account': '1433', 'prefix': 'DR', 'art': art, 'day': START, 'amount': '0'}, 'Test')
+        self.assertEqual(len(kasse.liste(self.s)), 3)
+
+    def test_umbenennen(self):
+        pp = self.neu()
+        self.neu('Stripe', '1431', 'ST')
+        self.beleg(pp, 'out', '5')
+        kasse.rename(self.s, pp, '  PayPal   JU ', 'Test')
+        k = kasse.eine(self.s, pp)
+        self.assertEqual((k['name'], k['account'], k['prefix'], k['art']), ('PayPal JU', '1430', 'PP', 'dienst'))   # nur der Name
+        self.assertEqual(self.s.rows("SELECT name FROM accounts WHERE code='1430'"), [{'name': 'PayPal JU'}])       # Kontenrahmen zieht mit
+        self.assertEqual(berichte.cash_name(k, YEAR), f'Kassenbuch-PayPal JU-1430-{YEAR}')
+        self.assertEqual(kasse.create(self.s, {'kind': 'out', 'amount': '1', 'day': self.day(1), 'text': 'x', 'kasse': pp}, 'Test')['number'], f'PP-{YEAR}-0002')
+        self.assertEqual(self.s.rows("SELECT action FROM audit WHERE action LIKE 'Kasse um%'"), [{'action': 'Kasse umbenannt'}])
+        kasse.rename(self.s, pp, 'PAYPAL JU', 'Test')                                  # eigene Schreibweise ändern
+        for name, text in (('Stripe', 'gibt es schon'), ('stripe', 'gibt es schon'), ('Bargeldkasse', 'gibt es schon'), ('Kasse', 'Bargeldkasse bzw.'),
+                           ('Bank', 'Bargeldkasse bzw.'), ('', 'Namen'), ('A"B', 'Namen'), ('1234', 'Namen'), ('x' * 41, 'Namen'), (None, 'Namen')):
+            self.abgelehnt(text, kasse.rename, self.s, pp, name, 'Test')
+        self.assertEqual(kasse.eine(self.s, pp)['name'], 'PAYPAL JU')
+        for call in (lambda: kasse.rename(self.s, 0, 'Barkasse', 'Test'), lambda: kasse.set_active(self.s, 0, False, 'Test'),
+                     lambda: kasse.delete(self.s, 0, 'Test')):
+            self.abgelehnt('Bargeldkasse ist fest', call)                              # Kennung 0: weder umbenennen noch stilllegen noch löschen
+        self.abgelehnt('nicht gefunden', kasse.rename, self.s, 99, 'Neu', 'Test')
+        self.assertEqual(kasse.liste(self.s)[0], {'id': 0, 'name': 'Bargeldkasse', 'account': '1400', 'prefix': 'K', 'art': 'bar', 'aktiv': 1, 'start': None})
+
+    def test_stilllegen_und_aktivieren(self):
+        pp = self.neu(amount='40')
+        self.abgelehnt('nicht 0', kasse.set_active, self.s, pp, False, 'Test')         # Bestand 40
+        aus = self.beleg(pp, 'out', '40')
+        self.abgelehnt('offene oder geparkte', kasse.set_active, self.s, pp, False, 'Test')
+        workflow.park(self.s, aus, 'Beleg fehlt', 'Test')
+        self.abgelehnt('offene oder geparkte', kasse.set_active, self.s, pp, False, 'Test')
+        self.s.book(aus, [{'amount': '-40', 'account': '4220', 'kv': 'LV'}], 'Test')
+        hand = self.neu('Handkasse', '1431', 'HK', art='bar')
+        kasse.create(self.s, {'kind': 'withdraw', 'amount': '10', 'day': self.day(1), 'kasse': hand}, 'Test')
+        kasse.create(self.s, {'kind': 'deposit', 'amount': '10', 'day': self.day(2), 'kasse': hand}, 'Test')
+        self.abgelehnt('Geldtransit 2380', kasse.set_active, self.s, hand, False, 'Test')   # Bestand 0, aber Belege ohne Kontoumsatz
+        kasse.set_active(self.s, pp, False, 'Test')
+        self.assertEqual((kasse.eine(self.s, pp)['aktiv'], self.stand(pp)['aktiv'], self.stand(pp)['balance']), (0, 0, 0))
+        self.abgelehnt('stillgelegt', self.beleg, pp, 'in', '5')
+        self.abgelehnt('stillgelegt', kasse.set_opening, self.s, START, '50', 'Test', pp)
+        self.abgelehnt('stillgelegt', self.auf_konto, '-5', 3)                         # auch nicht aus dem Kontoauszug
+        self.abgelehnt('stillgelegt', self.s.reverse_bank, aus, 'Test')                # und kein Storno: der Bestand bliebe nicht 0
+        self.assertEqual(kasse.balance(self.s, kasse=pp), 0)
+        kasse.rename(self.s, pp, 'PayPal alt', 'Test')                                 # umbenennen geht auch stillgelegt
+        kasse.set_active(self.s, pp, True, 'Test')
+        self.assertEqual(kasse.eine(self.s, pp)['aktiv'], 1)
+        self.beleg(pp, 'in', '5', offset=3)
+        self.assertEqual([r['action'] for r in self.s.rows("SELECT action FROM audit WHERE action LIKE 'Kasse %' AND action NOT LIKE 'Kasse eing%' ORDER BY id")],
+                         ['Kasse stillgelegt', 'Kasse umbenannt', 'Kasse wieder aktiviert'])
+
+    def test_loeschen_nur_ohne_beleg_und_buchung(self):
+        leer = self.neu()
+        kasse.delete(self.s, leer, 'Test')
+        self.assertEqual(([k['name'] for k in kasse.liste(self.s)], self.s.rows("SELECT code FROM accounts WHERE code='1430'")), (['Bargeldkasse'], []))
+        self.assertEqual(self.s.rows("SELECT action FROM audit WHERE action='Kasse gelöscht'"), [{'action': 'Kasse gelöscht'}])
+        neu = self.neu()                                                               # Konto und Kürzel sind wieder frei, die Kennung nicht
+        self.assertGreater(neu, leer)
+        mit_anfang = self.neu('Stripe', '1431', 'ST', amount='10')                     # Anfangsbestand ist eine Buchung
+        self.abgelehnt('stilllegen', kasse.delete, self.s, mit_anfang, 'Test')
+        beleg = self.beleg(neu, 'in', '5')
+        kasse.void(self.s, beleg, 'Tippfehler', 'Test')                                # auch ein ungültiger Beleg bleibt sichtbar
+        self.abgelehnt('stilllegen', kasse.delete, self.s, neu, 'Test')
+        nur_konto = self.neu('Klarna', '1432', 'KL')
+        self.auf_konto('-5', 2, '1432')
+        self.abgelehnt('stilllegen', kasse.delete, self.s, nur_konto, 'Test')          # Buchung aus dem Kontoauszug
+        self.assertEqual([k['name'] for k in kasse.liste(self.s)], ['Bargeldkasse', 'PayPal', 'Stripe', 'Klarna'])
+        self.abgelehnt('nicht gefunden', kasse.delete, self.s, leer, 'Test')
+
+    def test_berichte_und_pruefpaket_mit_stillgelegter_kasse(self):
+        """Stillgelegt: nicht mehr in der Belegerfassung, aber in Kassenbuch, Monatsbericht und Prüfpaket der Jahre mit Bewegungen."""
+        kasse.set_opening(self.s, START, '50', 'Test')
+        pp = self.neu()
+        ein = self.beleg(pp, 'in', '10')
+        self.s.book(ein, [{'amount': '10', 'account': '8590', 'kv': '5100'}], 'Test')
+        self.auf_konto('10', 2)
+        alt = self.neu('Stripe', '1431', 'ST', day=f'{YEAR - 1}-06-01')                # Bewegungen nur im Vorjahr
+        for kind, tag in (('in', f'{YEAR - 1}-06-02'), ('out', f'{YEAR - 1}-06-03')):
+            b = kasse.create(self.s, {'kind': kind, 'amount': '7', 'day': tag, 'text': 'Vorjahr', 'kasse': alt}, 'Test')['id']
+            self.s.book(b, [{'amount': '7' if kind == 'in' else '-7', 'account': '8590' if kind == 'in' else '4220', 'kv': 'LV'}], 'Test')
+        kasse.set_active(self.s, pp, False, 'Test')
+        kasse.set_active(self.s, alt, False, 'Test')
+        self.assertEqual((kasse.bewegt(self.s, pp, YEAR), kasse.bewegt(self.s, alt, YEAR), kasse.bewegt(self.s, alt, YEAR - 1)), (True, False, True))
+        self.assertEqual([(k['name'], k['aktiv']) for k in kasse.summary(self.s)['kassen']], [('Bargeldkasse', 1), ('PayPal', 0), ('Stripe', 0)])
+        self.assertEqual([k['name'] for k in berichte.monthly(self.s, TODAY)['cash']['kassen']], ['Bargeldkasse', 'PayPal'])
+        self.assertTrue(berichte.monthly_pdf(self.s, TODAY).startswith(b'%PDF'))
+        book = kasse.book(self.s, YEAR, pp)                                            # Kassenbuch bleibt lesbar
+        self.assertEqual(([x['label'] for x in book['lines']], book['end']), (['Kassenbeleg', 'Auszahlung aufs Bankkonto'], 0))
+        self.assertIn('Die Kasse ist stillgelegt.', self.text(berichte.cash_pdf(self.s, YEAR, kasse_id=pp)))
+        jetzt, vorjahr = self.paket(), self.paket(YEAR - 1)
+        self.assertEqual(sorted(n for n in jetzt if n.startswith('Kassenbuch')),
+                         [f'Kassenbuch-{YEAR}.csv', f'Kassenbuch-{YEAR}.pdf', f'Kassenbuch-PayPal-1430-{YEAR}.csv', f'Kassenbuch-PayPal-1430-{YEAR}.pdf'])
+        self.assertEqual(sorted(n for n in vorjahr if n.startswith('Kassenbuch')),
+                         [f'Kassenbuch-Stripe-1431-{YEAR - 1}.csv', f'Kassenbuch-Stripe-1431-{YEAR - 1}.pdf'])
+        self.assertIn(f'ST-{YEAR - 1}-0002', vorjahr[f'Kassenbuch-Stripe-1431-{YEAR - 1}.csv'].decode('utf-8-sig'))
+
+    def test_rechte(self):
+        for path in ('/api/kasse-umbenennen', '/api/kasse-aktiv', '/api/kasse-loeschen'):
+            self.assertFalse(rollen.allowed({'buchhaltung': 'lesen', 'verband': 'schreiben', 'mitglieder': 'schreiben', 'verwaltung': 'lesen'},
+                                            rollen.required('POST', path)), path)
+            self.assertTrue(rollen.allowed({'buchhaltung': 'schreiben'}, rollen.required('POST', path)), path)
+
+    def test_tabelle_aus_frueherem_stand_wird_ergaenzt(self):
+        """Tabelle `kassen` ohne Art und Stand (früherer Stand von 0.59): beide Spalten kommen dazu, die Kasse bleibt Art Bargeld und aktiv."""
+        pp = self.neu(art='bar', amount='5')
+        self.s.db.execute('ALTER TABLE kassen DROP COLUMN art')
+        self.s.db.execute('ALTER TABLE kassen DROP COLUMN aktiv')
+        self.s.db.commit()
+        self.s.db.close()
+        self.s = Store(Path(self.tmp.name) / 't.db')
+        k = kasse.eine(self.s, pp)
+        self.assertEqual((k['art'], k['aktiv'], kasse.balance(self.s, kasse=pp)), ('bar', 1, 500))
+
