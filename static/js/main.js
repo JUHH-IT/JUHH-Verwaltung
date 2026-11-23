@@ -5,7 +5,8 @@ import { store, onChange, refresh, go, can, yearBank, currentKasse } from './sto
 import { overlay, icon, safe, toast, closeTop } from './ui.js';
 import { dateTime } from './format.js';
 import { overview } from './views/overview.js';
-import { bank, bankKeys } from './views/bank.js';
+import { bankKeys } from './views/bank.js';
+import { kontoumsaetze, umsatzKeys } from './views/umsaetze.js';
 import { cash } from './views/cash.js';
 import { budgets } from './views/budgets.js';
 import { rpj } from './views/rpj.js';
@@ -42,7 +43,7 @@ const PAGES = [
   { id: 'cases', label: 'Klärfälle', icon: 'alert', view: cases, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'map', label: 'Karte', icon: 'map', view: karte, group: 'Mitgliederverwaltung', area: 'mitglieder' },
   { id: 'wahl', label: 'Wahlberechtigung', icon: 'check', view: wahlrecht, group: 'Mitgliederverwaltung', area: 'mitglieder' },
-  { id: 'bank', label: 'Kontoauszüge', icon: 'bank', view: bank, group: 'Buchhaltung', area: 'buchhaltung' },
+  { id: 'bank', label: 'Kontoumsätze', icon: 'bank', view: kontoumsaetze, group: 'Buchhaltung', area: 'buchhaltung' },
   { id: 'dues', label: 'Beitragseingänge', icon: 'coins', view: dues, group: 'Buchhaltung', area: 'buchhaltung' },
   { id: 'cash', label: 'Kasse', icon: 'cash', view: cash, group: 'Buchhaltung', area: 'buchhaltung' },
   { id: 'invoices', label: 'Rechnungen', icon: 'file', view: invoices, group: 'Buchhaltung', area: 'buchhaltung' },
@@ -91,10 +92,11 @@ function renderShell() {
   leaveMap();   // die Seite wird neu aufgebaut: eine offene Karte vorher freigeben (sonst bleibt sie über das Fenster erreichbar)
   const pages = visiblePages();
   const page = pages.find((p) => p.id === store.page) || pages[0];
-  const openCount = yearBank().filter((b) => b.state === 'open').length;
+  // wie der Satz über den Kontoumsätzen: offen im Jahr und geparkt (aus allen Jahren)
+  const openCount = yearBank().filter((b) => b.state === 'open').length + (store.workflow?.parked || []).filter((b) => (b.ledger || 'bank') === 'bank').length;
   const cashOpen = store.data?.cash?.open || 0;
   const rpjOpen = store.data?.rpj?.open || 0;
-  const counts = { bank: [openCount, 'offen'], cash: [cashOpen, 'offen'], rpj: [rpjOpen, 'ohne Zuordnung'], cases: [store.data?.cases?.active || 0, 'zu klären'], kenntnis: [store.data?.kenntnis?.punkte || 0, 'zur Kenntnis'],
+  const counts = { bank: [openCount, 'nicht verbucht'], cash: [cashOpen, 'offen'], rpj: [rpjOpen, 'ohne Zuordnung'], cases: [store.data?.cases?.active || 0, 'zu klären'], kenntnis: [store.data?.kenntnis?.punkte || 0, 'zur Kenntnis'],
     dues: [store.data?.dues_open_all || 0, 'ohne Mitglied'] };
   mount(root, html`<div class="shell">
     <header class="topbar">
@@ -345,7 +347,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') e.target.blur();
     return;
   }
-  bankKeys(e);
+  if (store.page === 'bank') umsatzKeys(e); else bankKeys(e);
 });
 
 boot().catch((e) => {

@@ -72,7 +72,7 @@ GET = {
     '/api/data': FREE, '/api/haushalt': FREE, '/api/workflow': FREE, '/api/karte-gebiete': FREE, '/api/regelwerk': FREE,
     **{path: _r(_B) for path in (
         '/api/suggestions', '/api/dues-preview', '/api/invoice.pdf', '/api/invoices.pdf', '/api/preview.pdf',
-        '/api/mail-preview', '/api/kasse', '/api/kasse.pdf', '/api/kasse.csv', '/api/kasse-datei', '/api/bill-file',
+        '/api/mail-preview', '/api/kasse', '/api/kasse.pdf', '/api/kasse.csv', '/api/kasse-datei', '/api/bill-file', '/api/umsatz-akte', '/api/umsatz-beleg',
         '/api/refund-form.pdf', '/api/bill-transfers', '/api/bill-qr.svg', '/api/monatsbericht.pdf', '/api/pruefpaket.zip',
         '/api/konten', '/api/konto', '/api/konto.csv', '/api/beitraege-offen', '/api/member-dues', '/api/member-account.pdf',
         '/api/op-liste', '/api/op-liste.pdf', '/api/op-liste.csv', '/api/op-listen.zip', '/api/mitgliederkonten.csv',
@@ -121,7 +121,8 @@ POST = {
         '/api/sepa-debit-reject', '/api/debit-notice', '/api/bill-approve', '/api/bill-approval-revoke', '/api/quarter-review',
         '/api/bill-writeoff', '/api/series-preview', '/api/series', '/api/mail-send', '/api/mail-cancel', '/api/dues', '/api/invoice',
         '/api/cancel-invoice', '/api/preview-bank', '/api/preview-master', '/api/import-master', '/api/import-bank', '/api/book',
-        '/api/park', '/api/forget', '/api/reverse-bank', '/api/umsatz-ungueltig', '/api/umsatz-gueltig')},
+        '/api/park', '/api/forget', '/api/reverse-bank', '/api/umsatz-ungueltig', '/api/umsatz-gueltig',
+        '/api/umsatz-notiz', '/api/umsatz-beleg', '/api/umsatz-beleg-entfernen')},   # Notiz und Belege am Kontoumsatz (0.58)
     **{path: _w('verwaltung') for path in ('/api/benutzer', '/api/rolle', '/api/rolle-loeschen')},
     # Keycloak-Betrieb (0.36): Person abgleichen, neues Startpasswort, Authenticator-App zurücksetzen
     **{path: _w('verwaltung') for path in ('/api/benutzer-abgleichen', '/api/benutzer-startpasswort', '/api/benutzer-app-zuruecksetzen')},
@@ -137,7 +138,7 @@ OUTSIDE = ('/api/status', '/api/login', '/api/keycloak/start', '/api/keycloak/ru
 # Gesamtdaten: welcher Schlüssel gehört zu welchem Bereich (alles andere sehen alle Angemeldeten)
 SNAPSHOT = {
     'members': _M, 'ovs': _M, 'cases': _M, 'kenntnis': _M,
-    'invoices': _B, 'bank': _B, 'dues_open': _B, 'dues_open_all': _B, 'bills': _B, 'reviews_due': _B, 'mandates': _B,
+    'invoices': _B, 'bank': _B, 'bank_stand': _B, 'dues_open': _B, 'dues_open_all': _B, 'bills': _B, 'reviews_due': _B, 'mandates': _B,
     'sepa_ready': _B, 'sepa_check': _B, 'cash': _B, 'cash_overdue': _B, 'reminders_ready': _B, 'next_numbers': _B,
     'journal': _B, 'unallocated_dues': _B, 'dues_book': _B, 'audit': _B,
     'rpj': _V, 'budgets': _V, 'kv_closing_due': _V, 'kv_transfers': _V,

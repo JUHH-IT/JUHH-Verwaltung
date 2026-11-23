@@ -18,6 +18,7 @@ import uebernahme
 import rechnung_pdf
 import versand
 import verbindlichkeiten
+import umsatzakte
 import freigabe
 import lastschrift
 import kvbudget
@@ -68,7 +69,7 @@ CONFIRM_SECONDS=300
 # im Notfall/Wartung auch ohne „Sicherheit ändern“ – bewusst ohne /api/password: ein übernommenes Konto soll die echte Person nicht aussperren
 SPERRE_FREI_POST=('/api/logout','/api/bestaetigen','/api/notfall-an')
 PUBLIC_PATHS=('/api/login',)   # ohne Sitzung erreichbar
-UPLOAD_PATHS=('/api/members-preview','/api/gliederung-vorschau','/api/sepa-vorschau','/api/sepa-begleitzettel','/api/rpj-import-vorschau','/api/einvoice','/api/bill','/api/kasse-beleg','/api/preview-bank','/api/preview-master','/api/preview-kv-master')
+UPLOAD_PATHS=('/api/members-preview','/api/gliederung-vorschau','/api/sepa-vorschau','/api/sepa-begleitzettel','/api/rpj-import-vorschau','/api/einvoice','/api/bill','/api/kasse-beleg','/api/umsatz-beleg','/api/preview-bank','/api/preview-master','/api/preview-kv-master')
 TAILNET=[ipaddress.ip_network('100.64.0.0/10'),ipaddress.ip_network('fd7a:115c:a1e0::/48')]
 SESSION_HOURS=8        # höchstens so lange gilt eine Anmeldung
 IDLE_MINUTES=120       # Servermodus: Abmeldung nach so langer Untätigkeit
@@ -79,9 +80,10 @@ MASTER_ROW_FIELDS=('sheet','row_no','booked','amount','name','reference','code',
 def backups_dir(): return BACKUPS or DATA.parent/'Sicherungen'
 
 def save_receipt(store,table,rid,number,filename,suffix,raw):
-    """Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben. Der Dateiname
-    ist immer die vom Programm vergebene Nummer mit geprüfter Endung, nie ein Pfad."""
-    if not re.fullmatch(r'[A-Z]{1,4}-[0-9]{4}-[0-9]{4,}',number) or filename!=number+suffix or suffix not in verbindlichkeiten.FILE_TYPES:
+    """Beleg (Eingangsrechnung, Kassenbeleg oder Beleg am Kontoumsatz) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
+    Der Dateiname ist immer die vom Programm vergebene Nummer (`E-JJJJ-nnnn`, `<Kürzel der Kasse>-JJJJ-nnnn`, `Umsatz-<Umsatz>-<Beleg>`) mit
+    geprüfter Endung, nie ein Pfad."""
+    if not re.fullmatch(r'[A-Z]{1,4}-[0-9]{4}-[0-9]{4,}|Umsatz-[0-9]+-[0-9]+',number) or filename!=number+suffix or suffix not in verbindlichkeiten.FILE_TYPES:
         with store.db: store.db.execute(f'UPDATE {table} SET attachment=NULL WHERE id=?',(rid,))
         raise ValueError(f'{number} ist erfasst, der Beleg konnte aber nicht gespeichert werden.')
     try:
@@ -594,6 +596,11 @@ class Handler(BaseHTTPRequestHandler):
                     if folder not in target.parents or not target.is_file() or target.suffix not in verbindlichkeiten.FILE_TYPES or target.suffix=='.xml':
                         raise ValueError('Beleg nicht gefunden.')
                     return self.send(200,target.read_bytes(),verbindlichkeiten.FILE_TYPES[target.suffix][1],inline=target.name)
+                if path=='/api/umsatz-akte': return self.send(200,umsatzakte.akte(store,int(query['id'][0])))
+                if path=='/api/umsatz-beleg':
+                    b=umsatzakte.beleg(store,int(query['id'][0]),DATA/'Belege')
+                    if not b['pfad']: raise ValueError('Beleg nicht gefunden.')
+                    return self.send(200,b['pfad'].read_bytes(),verbindlichkeiten.FILE_TYPES[b['pfad'].suffix][1],inline=b['pfad'].name)
                 if path=='/api/bill-file':
                     b=store.db.execute('SELECT attachment FROM bills WHERE id=?',(int(query['id'][0]),)).fetchone()
                     if not b or not b['attachment']: raise ValueError('Kein Beleg hinterlegt.')
@@ -1126,6 +1133,14 @@ class Handler(BaseHTTPRequestHandler):
                 result={'count':store.import_bank(p['preview'],data['selected'],actor)};del PREVIEWS[data['token']]
             elif path=='/api/book': store.book(int(data['id']),data['parts'],actor,data.get('learn') is True,data.get('confirm_no_bill') is True)
             elif path=='/api/park': workflow.park(store,int(data['id']),data.get('reason',''),actor)
+            elif path=='/api/umsatz-notiz': result={'notiz':umsatzakte.notiz(store,data.get('id'),data.get('text'),actor)}
+            elif path=='/api/umsatz-beleg':
+                f=data.get('file')
+                if not isinstance(f,dict) or not isinstance(f.get('name'),str) or not isinstance(f.get('content'),str): raise ValueError('Bitte eine Datei auswählen.')
+                suffix,raw=umsatzakte.datei(f['name'],f['content'])
+                result={'id':umsatzakte.anheften(store,data.get('id'),f.get('name',''),suffix,len(raw),actor,
+                                                 lambda rid,nummer,filename: save_receipt(store,'umsatz_belege',rid,nummer,filename,suffix,raw))}
+            elif path=='/api/umsatz-beleg-entfernen': result={'bank_id':umsatzakte.entfernen(store,data.get('id'),DATA/'Belege',actor)}
             elif path=='/api/umsatz-ungueltig': workflow.ungueltig(store,int(data['id']),data.get('reason',''),actor)   # 0.55: doppelt importierter Kontoumsatz
             elif path=='/api/umsatz-gueltig': workflow.gueltig(store,int(data['id']),actor)
             elif path=='/api/forget': workflow.forget(store,int(data['id']),actor)

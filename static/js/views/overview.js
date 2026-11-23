@@ -99,7 +99,7 @@ function tasks() {
     if (k.transit.length) add('bh', `Geldtransit 2380: ${k.name}`, `${k.transit.slice(0, 3).map((x) => x.number).join(', ')}${k.transit.length > 3 ? ' …' : ''} ohne Gegenseite im Kontoauszug (${eur(k.transit.reduce((s, x) => s + Math.abs(x.amount), 0))}) – den Kontoumsatz auf 2380 buchen`, k.transit.length, '', ['cash', { cashFilter: 'book', kasse: k.id }]);
   }
   const ohneBeleg = cashInfo?.transit?.bank || [];   // Kontoumsätze auf 2380, zu denen kein Beleg einer Kasse passt
-  if (ohneBeleg.length) add('bh', 'Kontoumsätze auf 2380 ohne Kassenbeleg', `${ohneBeleg.slice(0, 3).map((x) => `${date(x.day)} ${signed(x.amount)}`).join(', ')}${ohneBeleg.length > 3 ? ' …' : ''} – anderer Durchlaufposten oder der Kassenbeleg (Geldtransit) fehlt`, ohneBeleg.length, '', ['bank', { bankFilter: 'booked' }]);
+  if (ohneBeleg.length) add('bh', 'Kontoumsätze auf 2380 ohne Kassenbeleg', `${ohneBeleg.slice(0, 3).map((x) => `${date(x.day)} ${signed(x.amount)}`).join(', ')}${ohneBeleg.length > 3 ? ' …' : ''} – anderer Durchlaufposten oder der Kassenbeleg (Geldtransit) fehlt`, ohneBeleg.length, '', ['bank']);   // Liste der Kontoumsätze (die Maske zeigt nur offene und geparkte)
   const payables = openBills();
   const payDue = payables.filter((b) => !b.transferred && !b.approval.missing.length && daysOverdue(b.due) >= -7);
   if (payDue.length) add('bh', 'Eingangsrechnungen bezahlen', `${eur(payDue.reduce((s, b) => s + b.open, 0))} fällig in den nächsten 7 Tagen oder überfällig – Zahlungsvorschlag`, payDue.length, 'warn', ['bills']);

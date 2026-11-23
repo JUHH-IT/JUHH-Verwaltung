@@ -643,8 +643,22 @@ def _audit_entries(store, year, data_dir, notes):
     yield f'Haushalt-{y}.pdf', haushalt.pdf_report(store, year)
 
     bank = store.rows("SELECT * FROM bank WHERE ledger='bank' AND substr(booked,1,4)=? ORDER BY booked,id", (y,))
-    yield f'Kontoumsaetze-{y}.csv', _csv([[b['id'], b['booked'], _eur(b['amount']), b['name'], b['reference'], b['state'], b['reversals'], b['source'], b['note'] if b['state'] == 'void' else ''] for b in bank],
-                                         ['Umsatz', 'Datum', 'Betrag', 'Name', 'Verwendungszweck', 'Stand', 'Stornos', 'Datei', 'Grund (ungültig)'])
+    import umsatzakte   # ab 0.58: Notiz und angeheftete Belege am Kontoumsatz
+    akten = umsatzakte.fuer_jahr(store, year)
+    akte = lambda b: akten.get(b['id'], {'notiz': '', 'belege': []})  # noqa: E731
+    yield f'Kontoumsaetze-{y}.csv', _csv([[b['id'], b['booked'], _eur(b['amount']), b['name'], b['reference'], b['state'], b['reversals'], b['source'], b['note'] if b['state'] == 'void' else '',
+                                           akte(b)['notiz'], '; '.join(f"{x['attachment']} ({x['name']})" for x in akte(b)['belege'])] for b in bank],
+                                         ['Umsatz', 'Datum', 'Betrag', 'Name', 'Verwendungszweck', 'Stand', 'Stornos', 'Datei', 'Grund (ungültig)', 'Notiz', 'Belege (Ordner Umsatzbelege)'])
+    for b in bank:
+        for x in akte(b)['belege']:
+            source = _inside(data_dir / 'Belege', x['attachment'])
+            if source:
+                yield f"Umsatzbelege/{_safe_name(x['attachment'])}", source.read_bytes()
+            else:
+                notes.append(f"Kontoumsatz {b['id']} vom {german_date(b['booked'])}: Belegdatei fehlt ({_safe_name(x['name'])})")
+    without = umsatzakte.ohne_beleg(store, year)
+    if without:
+        notes.append(f"{without} verbuchte {'Ausgabe' if without == 1 else 'Ausgaben'} im Kontoauszug ohne Beleg (kein Beleg angeheftet, keine Eingangsrechnung mit Datei)")
     open_bank = [b for b in bank if b['state'] in ('open', 'parked')]
     if open_bank:
         notes.append(f'{len(open_bank)} Bankumsätze nicht endgültig zugeordnet (offen oder Parkkonto)')
