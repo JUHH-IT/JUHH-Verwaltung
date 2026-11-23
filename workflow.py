@@ -58,6 +58,30 @@ def park(store,bid,reason,actor):
         store.db.execute("UPDATE bank SET state='parked' WHERE id=?",(bid,))
         store.audit(actor,'Bankumsatz auf 1370 geparkt',{'bank_id':bid,'reason':reason})
 
+def ungueltig(store,bid,reason,actor):
+    """Offenen Kontoumsatz mit Grund für ungültig erklären (ab 0.55, Wunsch Lennert Gust 23.11.2026: ein Umsatz war nach dem Import
+    doppelt). Gelöscht wird nichts: der Umsatz bleibt mit Grund sichtbar und steht im Protokoll, zählt aber nirgends mehr (nicht als
+    offen, nicht in Monatsbericht, Abgleich und Sammelbuchungen). Nur offene Umsätze – ein verbuchter wird zuerst storniert, ein
+    geparkter zuerst aufgelöst. Kassenbelege: kasse.void (prüft zusätzlich den Kassenbestand)."""
+    reason=' '.join(str(reason or '').split())[:200]
+    if not reason: raise ValueError('Bitte einen Grund angeben (z. B. doppelt importiert).')
+    with store.db:
+        store.db.execute('BEGIN IMMEDIATE')
+        b=store.db.execute('SELECT * FROM bank WHERE id=?',(int(bid),)).fetchone()
+        if not b or b['ledger']!='bank': raise ValueError('Kontoumsatz nicht gefunden.')
+        if b['state']!='open': raise ValueError('Nur offene Umsätze lassen sich für ungültig erklären – einen verbuchten zuerst stornieren, einen geparkten zuerst auflösen.')
+        store.db.execute("UPDATE bank SET state='void',note=? WHERE id=?",(reason,b['id']))
+        store.audit(actor,'Kontoumsatz ungültig',{'bank_id':b['id'],'grund':reason})
+
+def gueltig(store,bid,actor):
+    """Einen für ungültig erklärten Kontoumsatz wieder öffnen (Irrtum) – dieselbe Datei lässt sich nicht noch einmal importieren."""
+    with store.db:
+        store.db.execute('BEGIN IMMEDIATE')
+        b=store.db.execute('SELECT * FROM bank WHERE id=?',(int(bid),)).fetchone()
+        if not b or b['ledger']!='bank' or b['state']!='void': raise ValueError('Dieser Umsatz ist nicht ungültig.')
+        store.db.execute("UPDATE bank SET state='open',note=NULL WHERE id=?",(b['id'],))
+        store.audit(actor,'Kontoumsatz wieder gültig',{'bank_id':b['id'],'grund_vorher':b['note']})
+
 def forget(store,bid,actor):
     with store.db:
         store.db.execute('DELETE FROM booking_examples WHERE bank_id=?',(bid,))

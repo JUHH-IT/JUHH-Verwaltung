@@ -341,7 +341,7 @@ def preview(store, raw, filename):
                 before[r['sheet']] = before.get(r['sheet'], 0) + 1
         rows = [r for r in rows if not (r['year_sheet'] < int(start[:4]) or (r.get('booked') and r['booked'] < start))]
         sheets = [s for s in sheets if any(r['sheet'] == s for r in rows)]
-    banks = store.rows("SELECT * FROM bank WHERE ledger='bank' ORDER BY id")   # Kassenbelege nie mit der Excel abgleichen
+    banks = store.rows("SELECT * FROM bank WHERE ledger='bank' AND state!='void' ORDER BY id")   # Kassenbelege nie mit der Excel abgleichen
     existing, used = {}, set()
     for b in banks:
         existing.setdefault(b['fingerprint'], []).append(b)

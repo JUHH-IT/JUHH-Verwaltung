@@ -4,7 +4,7 @@ import { api } from '../api.js';
 import { html, mount } from '../html.js';
 import { eur, signed, date, shortDate, findIban, bookingKind } from '../format.js';
 import { store, refresh, ledgerRows, eligibleInvoices, kvName, accountName, titleLabel } from '../store.js';
-import { pageHead, icon, empty, badge, confirmAction, safe, toast } from '../ui.js';
+import { pageHead, icon, empty, badge, confirmAction, dialog, safe, toast } from '../ui.js';
 import { bookingEditor } from './booking.js';
 import { importDialog, masterDialog, learningDialog } from './imports.js';
 import { reconcileDialog } from './reconcile.js';
@@ -96,11 +96,15 @@ function detail(b) {
     </dl>
     <p class="reference">${b.reference || '—'}</p>
     ${b.state === 'parked' ? html`<p class="notice warn"><strong>Geparkt auf 1370:</strong> ${b.reason || 'ohne Klärungsgrund'}. Beim Verbuchen wird das Parkkonto aufgelöst; ${b.ledger === 'cash' ? 'die Kasse' : 'die Bank'} wird nicht erneut bebucht.</p>` : ''}
-    ${b.state === 'void' ? html`<p class="notice">Ungültig: ${b.note || ''}. Der Beleg zählt nicht im Kassenbestand.</p>` : ''}
+    ${b.state === 'void' ? html`<p class="notice">Ungültig: ${b.note || ''}. ${b.ledger === 'cash' ? 'Der Beleg zählt nicht im Kassenbestand.' : 'Der Umsatz zählt nicht mehr – nicht als offen, nicht im Monatsbericht, nicht im Abgleich.'}</p>` : ''}
     ${reversedNote(b)}
     ${['open', 'parked'].includes(b.state) ? html`<div id="editor"></div><div id="park-box" hidden></div>` : ''}
     ${b.ledger === 'cash' && b.state === 'open' ? html`<div class="detail-actions"><p class="small muted">Falsch erfasst (Tippfehler, doppelt)? Der Beleg bleibt sichtbar, zählt aber nicht mehr.</p>
       <button type="button" class="btn ghost" data-void>Beleg ungültig</button></div>` : ''}
+    ${b.ledger !== 'cash' && b.state === 'open' ? html`<div class="detail-actions"><p class="small muted">Doppelt importiert? Der Umsatz bleibt mit Grund sichtbar, zählt aber nicht mehr. Gelöscht wird nichts.</p>
+      <button type="button" class="btn ghost" data-void>Umsatz ungültig</button></div>` : ''}
+    ${b.ledger !== 'cash' && b.state === 'void' ? html`<div class="detail-actions"><p class="small muted">Irrtum? Danach ist der Umsatz wieder offen.</p>
+      <button type="button" class="btn ghost" data-unvoid>Wieder gültig</button></div>` : ''}
     ${b.state === 'booked' ? html`<div><h3 style="margin-bottom:8px">Gebucht auf</h3>${lineList(bookedLines(b))}</div>
       <div class="detail-actions"><p class="small muted">Ein Storno bucht gegen; danach ist der Umsatz wieder offen und kann neu zugeordnet werden.</p>
         <button type="button" class="btn danger" data-reverse>Zuordnung stornieren</button></div>` : ''}
@@ -220,6 +224,9 @@ function renderBank(main, { keepScroll = false } = {}) {
     });
   }
   main.querySelector('[data-void]')?.addEventListener('click', () => L.voidDialog?.(current));
+  main.querySelector('[data-unvoid]')?.addEventListener('click', () => confirmAction('Umsatz wieder gültig',
+    'Der Umsatz ist danach wieder offen und kann verbucht werden.', async () => { await api('/api/umsatz-gueltig', { id: current.id }); L.state.filter = 'open'; L.state.selected = current.id; },
+    { label: 'Wieder gültig', done: 'Umsatz ist wieder offen.' }));
   main.querySelector('[data-reverse]')?.addEventListener('click', () => confirmAction('Zuordnung stornieren',
     'Die Buchung wird gegengebucht, eine zugeordnete Rechnung wieder geöffnet. Eine zugeordnete Eingangsrechnung wird als „Zahlung storniert – prüfen“ gesperrt, bis die Abbuchung ihr wieder zugeordnet ist – so wird sie nicht ein zweites Mal überwiesen. Der Umsatz ist danach wieder offen und kann sofort neu zugeordnet werden.',
     async () => {
@@ -229,8 +236,28 @@ function renderBank(main, { keepScroll = false } = {}) {
     }, { label: 'Stornieren', done: 'Zuordnung storniert – Umsatz ist wieder offen.' }));
 }
 
+/** Kontoumsatz für ungültig erklären (0.55, z. B. doppelt importiert) – workflow.ungueltig; Kassenbelege: views/cash.js. */
+function voidBankDialog(b) {
+  const el = dialog('Umsatz ungültig', html`<form id="bank-void" style="display:flex;flex-direction:column;gap:14px">
+    <p class="muted">${date(b.booked)}, ${signed(b.amount)}, ${b.name || 'ohne Zahlungspartner'}. Der Umsatz bleibt unter „Alle“ mit dem Grund sichtbar und steht im Protokoll,
+      zählt aber nicht mehr. Mit „Wieder gültig“ lässt sich das zurücknehmen.</p>
+    <label class="field">Grund<input name="reason" required maxlength="200" autocomplete="off" value="doppelt importiert"></label>
+    <div class="form-actions"><button type="button" class="btn ghost" data-close>Abbrechen</button><button type="submit" class="btn danger">Ungültig</button></div></form>`);
+  el.querySelector('form [data-close]').onclick = () => el.close();
+  el.querySelector('#bank-void').onsubmit = (e) => {
+    e.preventDefault();
+    safe(async () => {
+      await api('/api/umsatz-ungueltig', { id: b.id, reason: e.target.reason.value });
+      el.close();
+      store.bank.selected = null;
+      await refresh();
+      toast('Umsatz ist ungültig und zählt nicht mehr.');
+    });
+  };
+}
+
 export function bank(main) {
-  useLedger({ ledger: 'bank', state: store.bank, head: null, empty: '' });
+  useLedger({ ledger: 'bank', state: store.bank, head: null, empty: '', voidDialog: voidBankDialog });
   renderBank(main);
 }
 

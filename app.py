@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.54'
+VERSION='0.55'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -1118,6 +1118,8 @@ class Handler(BaseHTTPRequestHandler):
                 result={'count':store.import_bank(p['preview'],data['selected'],actor)};del PREVIEWS[data['token']]
             elif path=='/api/book': store.book(int(data['id']),data['parts'],actor,data.get('learn') is True,data.get('confirm_no_bill') is True)
             elif path=='/api/park': workflow.park(store,int(data['id']),data.get('reason',''),actor)
+            elif path=='/api/umsatz-ungueltig': workflow.ungueltig(store,int(data['id']),data.get('reason',''),actor)   # 0.55: doppelt importierter Kontoumsatz
+            elif path=='/api/umsatz-gueltig': workflow.gueltig(store,int(data['id']),actor)
             elif path=='/api/forget': workflow.forget(store,int(data['id']),actor)
             elif path=='/api/reverse-bank': store.reverse_bank(int(data['id']),actor)
             elif path=='/api/budget': kvbudget.set_plan(store,int(data['year']),data.get('kv'),data.get('amount'),actor)   # ältere Schnittstelle: ein Planwert je KV

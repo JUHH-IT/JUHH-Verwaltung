@@ -30,7 +30,7 @@ Funktionen, Wege und Tests je Modul: `INHALT.md` (erzeugt). Die Tabelle hier nen
 | `freigabe.py` | Freigabe von Fremdrechnungen (FO § 7 Abs. 4), Quartalsprüfung und Prüfprotokoll (FO § 7 Abs. 3, § 8 Abs. 8) |
 | `bankimport.py` | Kontoauszüge (.xls, CSV) → einheitliche Zeilen, keine Buchungen |
 | `uebernahme.py` | vorkontierte Excel-Masterdatei → Bankumsätze mit Buchungen |
-| `haushalt.py` / `workflow.py` | Haushaltsansicht mit 10-%-Regel (`overruns`) / Parkkonto und Lernbeispiele |
+| `haushalt.py` / `workflow.py` | Haushaltsansicht mit 10-%-Regel (`overruns`) / Parkkonto und Lernbeispiele; ab 0.55 `ungueltig`/`gueltig`: offenen Kontoumsatz mit Grund für ungültig erklären (`bank.state='void'`, nichts löschen; REGELN Nr. 36). **Wer Kontoumsätze zählt, summiert oder zuordnet, schließt `state='void'` aus** (wie `berichte._month_flows`, `uebernahme`, `sepadatei.candidates`); die Importvorschau (`core.preview_bank`) vergleicht dagegen bewusst auch mit ungültigen |
 | `sicherung.py` | tägliche automatische Sicherung |
 | `zugang.py` | Serverbetrieb: Passwort-Hash (scrypt), Anmeldeprüfung, Sperre nach Fehlversuchen |
 | `verwaltung.py` | Serverbetrieb: Verwaltungsbefehle (`passwort`, `benutzer`, `rolle`, `notfall-aus`, `schutz-aus`, `keycloak-verbinden [--kc-name]`, `notzugang [--minuten N\|--aus]`, `sicherung`, `pruefen`, `uebernehmen`) – Ausgaben nur als Anzahlen (Ausnahme: das Startpasswort von `keycloak-verbinden` genau einmal) |
