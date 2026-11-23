@@ -214,8 +214,8 @@ export function bookingEditor(container, b, { onBooked, onPark }) {
     if (!state.valid) return toast('Bitte Beträge und Zuordnung (Konto mit Haushaltstitel, bei 8100 das Mitglied, bei RPJ das Projekt, Rechnung oder Eingangsrechnung) vollständig angeben.', true);
     const send = async (confirmNoBill = false) => {
       await api('/api/book', { id: b.id, parts: state.parts, learn: container.querySelector('#learn').checked, confirm_no_bill: confirmNoBill });
-      toast(b.state === 'parked' ? 'Parkkonto aufgelöst und verbucht.' : 'Umsatz verbucht.');
       await onBooked();
+      toast(b.state === 'parked' ? 'Parkkonto aufgelöst und verbucht.' : 'Umsatz verbucht.');
     };
     safe(async () => {
       try {

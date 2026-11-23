@@ -359,7 +359,7 @@ html.compact .nav button { min-height: 44px; font-size: 15px; }
 html.compact .main { padding: 24px 24px 56px; }
 html.compact .worklist .detail { top: 72px; scroll-margin-top: 64px; }
 
-/* Mitglieder: Auswahl (0.43); die Liste selbst steht ab 0.59 auf einem Blatt (siehe „Mitgliederliste als Blatt“ am Ende) */
+/* Mitglieder: Auswahl (0.43); die Liste selbst steht ab 0.57 auf einem Blatt (siehe „Mitgliederliste als Blatt“ am Ende) */
 .ml-pick { width: 34px; }
 .ml-check { display: block; width: 18px; height: 18px; accent-color: var(--navy); margin: 0; }
 tr.is-picked td { background: var(--navy-50); }
@@ -935,7 +935,7 @@ button.map-kv:hover { background: var(--surface-2); }
 .aw-saeulen .aw-wert { font-size: 11.5px; line-height: 1.2; color: var(--ink-2); }
 .aw-achse { margin-top: 6px; font-size: 11.5px; color: var(--muted); }
 .aw-saeulen .jetzt .aw-wert, .aw-saeulen .jetzt .aw-achse { font-weight: 600; color: var(--ink); }
-.aw-saeulen .leer .aw-achse { opacity: 0.6; }
+/* Monate nach dem Stichtag: die Beschriftung bleibt lesbar (Kontrast), leer ist die Säule */
 @container (max-width: 460px) {   /* schmal: ’26 statt 2026, an der Linie nur Anfang, Ende und Ausschläge beschriftet */
   .aw-cc { font-size: 0; }
   .aw-cc::after { content: "’"; font-size: 11px; }
@@ -1137,7 +1137,7 @@ td.aw-ton span { position: relative; color: var(--ink); }
   .blatt-aussage, .blatt-aussage.gross { font-size: 22px; }
 }
 
-/* Liste als Tabelle im Blatt (0.59): nur Haarlinien, Kopf klein und ruhig, zweite Zeile je Zelle über .sub */
+/* Liste als Tabelle im Blatt (0.57): nur Haarlinien, Kopf klein und ruhig, zweite Zeile je Zelle über .sub */
 table.blatt-tab th, table.blatt-tab td { padding: 9px 0 9px 20px; border-bottom: 0; border-top: 1px solid var(--line); color: var(--ink-2); vertical-align: top; }
 table.blatt-tab th:first-child, table.blatt-tab td:first-child { padding-left: 0; }
 table.blatt-tab thead th { padding-top: 0; padding-bottom: 8px; border-top: 0; font-size: 13px; font-weight: 400; color: var(--muted); vertical-align: bottom; }
@@ -1146,6 +1146,9 @@ table.blatt-tab tr.clickable:hover strong { color: var(--navy); }
 table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }   /* Schatten zeichnet der Browser an Tabellenzeilen nicht */
 
 /* ---------- Zur Kenntnis (0.54, views/kenntnis.js) ---------- */
+/* Einstellungen: Angaben von der Kenntnisnahme ausnehmen (0.55) */
+.kn-ohne summary { cursor: pointer; font-weight: 600; }
+.kn-ohne .kv-chips { margin-top: 10px; }
 .kn-einleitung { margin: -8px 0 0; max-width: 680px; color: var(--ink-2); }
 .kn-reihe > .kn-liste { flex: 8 1 340px; padding-top: 16px; padding-bottom: 16px; border-right: 1px solid var(--line); }
 .kn-reihe > .kn-detail { flex: 13 1 440px; gap: 18px; align-self: flex-start; position: sticky; top: 12px; }
@@ -1264,7 +1267,7 @@ table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offse
   .ck-kenntnis > div > :last-child { grid-column: 2; grid-row: 1 / span 2; }
 }
 
-/* ---------- Start als Blatt (0.59, views/overview.js): Lage, Haushalt, Aufgaben je Bereich, Termine, Verwaltung ---------- */
+/* ---------- Start als Blatt (0.57, views/overview.js): Lage, Haushalt, Aufgaben je Bereich, Termine, Verwaltung ---------- */
 .task-lage { padding-top: 32px; padding-bottom: 28px; }
 .task-bereich + .task-bereich { margin-top: 24px; }
 .task-bereich h3 { margin: 0; padding-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
@@ -1285,7 +1288,7 @@ table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offse
 .task-termine li:last-child .task-row > span:last-child { padding-bottom: 0; }
 @media (max-width: 640px) { .task-page .kz .wert { font-size: 20px; } }   /* Beträge sind breiter als die Zahlen des Cockpits */
 
-/* ---------- Mitgliederliste als Blatt (0.59, views/members.js): Suche und Listen, darunter die Tabelle mit ihrer Aussage ---------- */
+/* ---------- Mitgliederliste als Blatt (0.57, views/members.js): Suche und Listen, darunter die Tabelle mit ihrer Aussage ---------- */
 .ml-wahl { gap: 18px; padding-bottom: 20px; }
 .ml-listen { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 24px; align-items: baseline; }
 .ml-listen > span { font-size: 13px; color: var(--muted); white-space: nowrap; }

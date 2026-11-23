@@ -1,4 +1,4 @@
-// Start (ab 0.31, Wunsch Lennert Gust 10.11.2026; ab 0.59 als Blatt, Wunsch 23.11.2026): Lage in einem Satz, Kennzahlen des Haushalts,
+// Start (ab 0.31, Wunsch Lennert Gust 10.11.2026; ab 0.57 als Blatt, Wunsch 23.11.2026): Lage in einem Satz, Kennzahlen des Haushalts,
 // Aufgaben je Bereich (jede Zeile führt in die Liste dazu), Termine und Zustand der Verwaltung. Jede Person sieht nur ihre Bereiche.
 import { download } from '../api.js';
 import { html, mount } from '../html.js';
