@@ -401,6 +401,8 @@ Tabellen: `mitglied_aenderungen`
 Tests: test_kenntnis.py
 
 - `init(db)` – Tabelle und Auslöser (additiv). Nach `mitglieder.init` aufrufen – die Auslöser nennen alle Spalten der Stammdaten.
+- `felder()` – Angaben, die festgehalten werden können, mit Beschriftung – für die Auswahl „ausnehmen“ in den Einstellungen.
+- `ohne(db)` – Angaben, die nicht festgehalten werden (Einstellung `kenntnis_ohne`, mit Komma getrennt).
 - `an(db)` – Ist die Kenntnisnahme eingeschaltet (Einstellung `kenntnis`, Vorgabe an)?
 - `zuordnen(db, actor, action, detail=…)` – Frisch festgehaltene Änderungen dieser Verbindung der Person und dem Vorgang zuordnen – ruft `Store.audit` bei jedem Eintrag.
 - `kurz(db)` – Für die Gesamtdaten: eingeschaltet?, Kennungen der Mitglieder mit offener Änderung (Liste „Änderung offen“, Lage im Cockpit) und
