@@ -40,7 +40,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.55'
+VERSION='0.57'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -578,11 +578,11 @@ class Handler(BaseHTTPRequestHandler):
                         return self.send(200,rpj.bookings_csv(store,project_id=pid),'text/csv; charset=utf-8',attachment=f"RPJ-{x['year']}-Projekt-{x['no']:02d}-Buchungen.csv")
                     year=int(query['year'][0]);return self.send(200,rpj.bookings_csv(store,year),'text/csv; charset=utf-8',attachment=f'RPJ-Buchungen-{year}.csv')
                 if path=='/api/rpj-vorlage.csv': return self.send(200,rpj.template_csv(),'text/csv; charset=utf-8',attachment='RPJ-Haushalt-Vorlage.csv')
-                if path=='/api/kasse': return self.send(200,kasse.book(store,int(query['year'][0])))
-                if path=='/api/kasse.pdf':
-                    year=int(query['year'][0]);return self.send(200,berichte.cash_pdf(store,year),'application/pdf',inline=f'Kassenbuch-{year}.pdf')
-                if path=='/api/kasse.csv':
-                    year=int(query['year'][0]);return self.send(200,kasse.csv(store,year),'text/csv; charset=utf-8',attachment=f'Kassenbuch-{year}.csv')
+                if path in ('/api/kasse','/api/kasse.pdf','/api/kasse.csv'):   # je Kasse (kasse=Kennung, ohne Angabe die Bargeldkasse)
+                    year=int(query['year'][0]);k=kasse.eine(store,query.get('kasse',[''])[0]);name=f"Kassenbuch{'-'+berichte._safe_name(k['name']) if k['id'] else ''}-{year}"
+                    if path=='/api/kasse': return self.send(200,kasse.book(store,year,k))
+                    if path=='/api/kasse.pdf': return self.send(200,berichte.cash_pdf(store,year,kasse_id=k['id']),'application/pdf',inline=name+'.pdf')
+                    return self.send(200,kasse.csv(store,year,k),'text/csv; charset=utf-8',attachment=name+'.csv')
                 if path=='/api/kasse-datei':
                     b=store.db.execute("SELECT attachment FROM bank WHERE id=? AND ledger='cash'",(int(query['id'][0]),)).fetchone()
                     if not b or not b['attachment']: raise ValueError('Kein Beleg hinterlegt.')
@@ -1042,7 +1042,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not p or p['kind']!='rpj' or p['actor']!=actor or time.time()-p['created']>1800: raise ValueError('Vorschau abgelaufen. Datei erneut auswählen.')
                 saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-rpj-import')
                 result={**rpj.apply_import(store,p['preview'],data.get('selected') or [],actor),'backup':saved.name};del PREVIEWS[str(data['token'])]
-            elif path=='/api/kasse-anfang': kasse.set_opening(store,data.get('day',''),data.get('amount',''),actor)
+            elif path=='/api/kasse-anfang': kasse.set_opening(store,data.get('day',''),data.get('amount',''),actor,data.get('kasse'))
+            elif path=='/api/kasse-neu': result={'id':kasse.add(store,data,actor)}
             elif path=='/api/kasse-ungueltig': kasse.void(store,int(data['id']),data.get('reason',''),actor)
             elif path=='/api/bill-cancel': verbindlichkeiten.cancel(store,int(data['id']),actor)
             elif path=='/api/bill-transferred': verbindlichkeiten.mark_transferred(store,data['ids'],actor,data.get('undo') is True)

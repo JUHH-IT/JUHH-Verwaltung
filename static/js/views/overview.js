@@ -90,10 +90,12 @@ function tasks() {
   if (d.dues_open_all) add('bh', 'Beitragszahlungen ohne Mitglied', `zuordnen oder als Klärfall melden${duesOther ? ` (${d.dues_open} aus ${y}, ${duesOther} aus anderen Jahren)` : ''} – erst dann stimmen Beitragskonten und der Anteil der Kreisverbände`,
     d.dues_open_all, 'warn', ['dues']);
   const cashInfo = d.cash;
-  if (cashInfo?.open) add('bh', 'Kassenbelege verbuchen', `Kassenbestand ${eur(cashInfo.balance)} – offene Belege wie Kontoumsätze kontieren`, cashInfo.open, 'warn', ['cash', { cashFilter: 'open' }]);
-  const cashParked = store.workflow.parked.filter((b) => b.ledger === 'cash');
-  if (cashParked.length) add('bh', 'Kassenbelege im Parkkonto', cashParked[0].reason || 'Klärungsgrund fehlt', cashParked.length, '', ['cash', { cashFilter: 'parked' }]);
-  if (cashInfo?.transit) add('bh', 'Geldtransit 2380 offen', 'Abhebung oder Einzahlung fehlt auf einer Seite – Kassenbeleg bzw. Kontoumsatz auf 2380 buchen', eur(cashInfo.transit), '', ['cash', { cashFilter: 'book' }]);
+  for (const k of cashInfo?.kassen || []) {   // je Kasse eine Zeile (Bargeld, PayPal …)
+    if (k.open) add('bh', k.id ? `${k.name}: Belege verbuchen` : 'Kassenbelege verbuchen', `${k.id ? 'Bestand' : 'Kassenbestand'} ${eur(k.balance)} – offene Belege wie Kontoumsätze kontieren`, k.open, 'warn', ['cash', { cashFilter: 'open', kasse: k.id }]);
+    const cashParked = store.workflow.parked.filter((b) => b.ledger === 'cash' && (b.kasse || 0) === k.id);
+    if (cashParked.length) add('bh', k.id ? `${k.name}: Belege im Parkkonto` : 'Kassenbelege im Parkkonto', cashParked[0].reason || 'Klärungsgrund fehlt', cashParked.length, '', ['cash', { cashFilter: 'parked', kasse: k.id }]);
+  }
+  if (cashInfo?.transit) add('bh', 'Geldtransit 2380 offen', 'Abhebung, Einzahlung oder Umbuchung fehlt auf einer Seite – Kassenbeleg bzw. Kontoumsatz auf 2380 buchen', eur(cashInfo.transit), '', ['cash', { cashFilter: 'book' }]);
   const payables = openBills();
   const payDue = payables.filter((b) => !b.transferred && !b.approval.missing.length && daysOverdue(b.due) >= -7);
   if (payDue.length) add('bh', 'Eingangsrechnungen bezahlen', `${eur(payDue.reduce((s, b) => s + b.open, 0))} fällig in den nächsten 7 Tagen oder überfällig – Zahlungsvorschlag`, payDue.length, 'warn', ['bills']);

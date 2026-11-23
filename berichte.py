@@ -61,12 +61,13 @@ def report_day(month=None, data_start=None, today=None):
 
 
 def _cash(store, day):
-    """Kasse zum Stichtag: Bestand, offene Kassenbelege, Geldtransit – None, solange keine Kasse eingerichtet ist."""
+    """Kassen zum Stichtag: je eingerichteter Kasse Bestand und offene Belege, dazu der Geldtransit (ein Konto für alle) – None,
+    solange keine Kasse eingerichtet ist."""
     import kasse
-    if not kasse.start(store):
-        return None
-    open_ = store.db.execute("SELECT COUNT(*) FROM bank WHERE ledger='cash' AND state IN ('open','parked') AND booked<=?", (day,)).fetchone()[0]
-    return {'balance': kasse.balance(store, day), 'open': open_, 'transit': kasse.transit_open(store)}
+    kassen = [{'name': k['name'], 'account': k['account'], 'balance': kasse.balance(store, day, k),
+               'open': store.db.execute("SELECT COUNT(*) FROM bank WHERE ledger='cash' AND kasse=? AND state IN ('open','parked') AND booked<=?",
+                                        (k['id'], day)).fetchone()[0]} for k in kasse.liste(store) if k['start']]
+    return {'kassen': kassen, 'transit': kasse.transit_open(store)} if kassen else None
 
 
 def _month_flows(store, first, day):
@@ -146,10 +147,9 @@ def monthly(store, day=None):
     if rpj_open:
         tasks.append(f"{len(rpj_open)} RPJ-Buchung(en) einem Projekt bzw. Mittelabruf zuordnen (Seite RPJ-Mittel → RPJ zuordnen)")
     cash = _cash(store, day)
-    if cash and cash['open']:
-        tasks.append(f"{cash['open']} Kassenbeleg(e) verbuchen (Kasse → Buchungsplatz)")
+    tasks += [f"{k['open']} Kassenbeleg(e) verbuchen (Kasse → {k['name']} → Buchungsplatz)" for k in (cash or {}).get('kassen', []) if k['open']]
     if cash and cash['transit']:
-        tasks.append(f"Geldtransit 2380 nicht ausgeglichen ({euro(cash['transit'])}) – Abhebung/Einzahlung in Kasse und Kontoauszug buchen")
+        tasks.append(f"Geldtransit 2380 nicht ausgeglichen ({euro(cash['transit'])}) – Abhebung/Einzahlung bzw. Umbuchung in Kasse und Kontoauszug buchen")
     tasks += [f'KV-Budgetjahr {y} abschließen (FO § 6)' + (' – vorher alle Beitragszahlungen des Jahres zuordnen'
                                                             if any(x['year'] == y for x in unassigned) else '') for y in kvbudget.closing_due(store, day)]
     tasks += [f"Barspende {c['receipt']}: {', '.join(c['issues'])}" for c in kvbudget.cash_list(store, day) if c['overdue'] or not c['cdu_informed_on']]
@@ -236,9 +236,11 @@ def monthly_pdf(store, day=None):
              p('Saldo = Summe der gebuchten Kontobewegungen (ein Anfangsbestand nur, wenn er gebucht ist) – mit dem Kontoauszug abgleichen. '
                'Umsätze in Parkkonto und offen: Anzahl und Betrag laut Kontoauszug.', 'small')]
     if m['cash']:
-        story += [p('Kasse', 'h2'), _table([['Kassenbestand am Stichtag', 'Offene Kassenbelege', 'Geldtransit 2380 offen'],
-                                             [euro(m['cash']['balance']), m['cash']['open'], euro(m['cash']['transit'])]], [170, 150, 160], st),
-                  p('Bestand laut Kassenbuch (Anfangsbestand + Kassenbelege + Buchungen auf 1400) – mit der Zählung der Kasse abgleichen.', 'small')]
+        story += [p('Kasse', 'h2'), _table([['Kasse', 'Bestand am Stichtag', 'Offene Kassenbelege']]
+                                            + [[f"{k['name']} ({k['account']})", euro(k['balance']), k['open']] for k in m['cash']['kassen']],
+                                            [210, 140, 130], st, numeric=(1, 2)),
+                  p(f"Geldtransit 2380 offen: {euro(m['cash']['transit'])}. Bestand laut Kassenbuch (Anfangsbestand + Kassenbelege + Buchungen auf "
+                    'dem Konto der Kasse) – mit der Zählung der Kasse bzw. dem Kontostand (z. B. PayPal) abgleichen.', 'small')]
     story += [
              p(f"Im {m['month']}", 'h2'),
              _table([['Eingänge Konto', 'Ausgänge Konto', 'Einnahmen gebucht', 'Ausgaben gebucht'],
@@ -374,16 +376,18 @@ def kv_pdf(store, kv, year, today=None):
 
 
 @exclusive
-def cash_pdf(store, year, today=None):
-    """Kassenbuch eines Jahres: Übertrag, Einnahmen, Ausgaben, Bestand, alle Bewegungen mit Beleg und Bestand."""
+def cash_pdf(store, year, today=None, kasse_id=0):
+    """Kassenbuch einer Kasse für ein Jahr: Übertrag, Einnahmen, Ausgaben, Bestand, alle Bewegungen mit Beleg und Bestand."""
     import kasse
     today = today or date.today().isoformat()
-    b = kasse.book(store, year)
+    b = kasse.book(store, year, kasse_id)
+    k = b['kasse']
+    title = f"Kassenbuch {k['name']} {year}" if k['id'] else f'Kassenbuch {year}'
     st, cfg = _styles(), store.config()
     p = _para(st)
     end_label = f'Bestand heute ({german_date(today)})' if int(today[:4]) == int(year) else f'Bestand 31.12.{year}'
-    story = [p(f'Kassenbuch {year}', 'title'),
-             p(f"{cfg.get('issuer') or 'Junge Union Hamburg'} · Kasse (Konto 1400) · Kassenbuch ab {german_date(b['start']) or '—'} · erstellt am {german_date(today)}", 'small'),
+    story = [p(title, 'title'),
+             p(f"{cfg.get('issuer') or 'Junge Union Hamburg'} · {k['name'] if k['id'] else 'Kasse'} (Konto {k['account']}) · Kassenbuch ab {german_date(b['start']) or '—'} · erstellt am {german_date(today)}", 'small'),
              _table([['Übertrag 01.01.', 'Anfangsbestand', 'Einnahmen', 'Ausgaben', end_label],
                      [euro(b['carry']), euro(b['opening_in_year']), euro(b['income']), euro(b['expense']), euro(b['end'])]],
                     [90, 90, 90, 90, 120], st, numeric=(0, 1, 2, 3, 4)),
@@ -399,9 +403,9 @@ def cash_pdf(store, year, today=None):
         story += [p('Ungültige Belege (zählen nicht)', 'h2'),
                   _table([['Datum', 'Beleg', 'Text', 'Betrag', 'Grund']] + [[german_date(v['booked']), v['bank_ref'], v['reference'] or '', euro(v['amount']), v['note'] or '']
                                                                            for v in b['void']], [55, 65, 170, 60, 140], st, numeric=(3,))]
-    story.append(p('Bestand = Anfangsbestand + Kassenbelege + Buchungen auf 1400 (auch Abhebungen/Einzahlungen aus dem Kontoauszug). '
+    story.append(p(f"Bestand = Anfangsbestand + Kassenbelege + Buchungen auf {k['account']} (auch aus dem Kontoauszug). "
                    'Geldtransit über 2380' + (f": offen {euro(b['transit'])} – eine Seite (Kasse oder Kontoauszug) fehlt noch." if b['transit'] else ' ausgeglichen.'), 'small'))
-    return _pdf(story, f'Kassenbuch {year}')
+    return _pdf(story, title)
 
 
 @exclusive
@@ -621,24 +625,28 @@ def _audit_entries(store, year, data_dir, notes):
             notes.append(f'Beleg zur SEPA-Sammelbuchung fehlt: {name}')
 
     import kasse
-    if kasse.start(store) and kasse.start(store)[:4] <= y:
-        cash = kasse.book(store, year)
-        yield f'Kassenbuch-{y}.csv', kasse.csv(store, year)
-        yield f'Kassenbuch-{y}.pdf', cash_pdf(store, year)
-        for c in store.rows("SELECT bank_ref,attachment FROM bank WHERE ledger='cash' AND attachment IS NOT NULL AND substr(booked,1,4)=? ORDER BY booked,id", (y,)):
+    transit = 0
+    for k in kasse.liste(store):                              # je Kasse ein Kassenbuch; die Bargeldkasse heißt wie seit 0.25
+        if not k['start'] or k['start'][:4] > y:
+            continue
+        cash, tag = kasse.book(store, year, k), f"-{_safe_name(k['name'])}" if k['id'] else ''
+        who = f" ({k['name']})" if k['id'] else ''
+        yield f'Kassenbuch{tag}-{y}.csv', kasse.csv(store, year, k)
+        yield f'Kassenbuch{tag}-{y}.pdf', cash_pdf(store, year, kasse_id=k['id'])
+        for c in store.rows("SELECT bank_ref,attachment FROM bank WHERE ledger='cash' AND kasse=? AND attachment IS NOT NULL AND substr(booked,1,4)=? "
+                            'ORDER BY booked,id', (k['id'], y)):
             source = _inside(data_dir / 'Belege', c['attachment'])
             if source:
                 yield f"Kassenbelege/{_safe_name(c['attachment'])}", source.read_bytes()
             else:
                 notes.append(f"Kassenbeleg {c['bank_ref']}: Belegdatei fehlt")
         if cash['open'] or cash['parked']:
-            notes.append(f"{cash['open'] + cash['parked']} Kassenbelege nicht endgültig verbucht (offen oder Parkkonto)")
-        if cash['transit']:
-            notes.append(f"Geldtransit 2380 nicht ausgeglichen ({euro(cash['transit'])})")
-        without = sum(1 for c in store.rows("SELECT source FROM bank WHERE ledger='cash' AND state!='void' AND attachment IS NULL AND amount<0 "
-                                            "AND substr(booked,1,4)=?", (y,)) if not kasse.is_transit(c))
-        if without:
-            notes.append(f'{without} Kassenausgaben ohne hinterlegten Beleg (Quittung/Kassenbon prüfen)')
+            notes.append(f"{cash['open'] + cash['parked']} Kassenbelege{who} nicht endgültig verbucht (offen oder Parkkonto)")
+        transit = cash['transit']                             # 2380 ist ein Konto für alle Kassen: einmal melden
+        if cash['missing_receipt']:
+            notes.append(f"{cash['missing_receipt']} Kassenausgaben{who} ohne hinterlegten Beleg (Quittung/Kassenbon prüfen)")
+    if transit:
+        notes.append(f'Geldtransit 2380 nicht ausgeglichen ({euro(transit)})')
 
     invoices = sorted((i for i in store.invoices() if i['issued'][:4] == y), key=lambda i: i['number'])
     yield f'Ausgangsrechnungen-{y}.csv', _csv([[i['number'], i['issued'], 'Beitrag' if i['kind'] == 'dues' else 'Rechnung', i['year'], i['recipient'],

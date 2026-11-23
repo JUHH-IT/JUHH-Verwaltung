@@ -53,7 +53,7 @@ def park(store,bid,reason,actor):
         a=b['amount']
         import kasse
         store.journal(b['booked'],'Geparkt: '+reason,bank_source('bank',b),[
-            {'account':kasse.ledger_account(b),'kv':'LV','debit':max(a,0),'credit':max(-a,0)},   # Bank 1420 bzw. Kasse 1400
+            {'account':kasse.ledger_account(store,b),'kv':'LV','debit':max(a,0),'credit':max(-a,0)},   # Bank 1420 bzw. Konto der Kasse
             {'account':'1370','kv':'LV','debit':max(-a,0),'credit':max(a,0),'title':reason}],year=store._previous_year(b))
         store.db.execute("UPDATE bank SET state='parked' WHERE id=?",(bid,))
         store.audit(actor,'Bankumsatz auf 1370 geparkt',{'bank_id':bid,'reason':reason})

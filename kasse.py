@@ -16,7 +16,17 @@ Lernbeispiele – nur das Gegenkonto ist die Kasse 1400 statt der Bank 1420. Jou
   keinem Tag negativ werden (sonst fehlt eine Einnahme oder Abhebung) – geprüft beim Erfassen und beim Buchen auf 1400.
 - Kassenbelege werden nie gelöscht: ein offener Beleg lässt sich mit Grund für ungültig erklären (state 'void'), ein verbuchter
   wird wie ein Bankumsatz storniert.
+
+Mehrere Kassen (ab 0.57, Wunsch Lennert Gust 23.11.2026: „Wir haben hier z. B. auch ein PayPal-Konto. Das sollten wir ja wie eine
+Kasse pflegen“): Alles oben gilt je Kasse. Die Bargeldkasse ist fest (`BAR`: Kennung 0, Konto 1400, Kürzel K, Beginn wie seit 0.25
+in der Einstellung `cash_start`) – bestehende Daten laufen ohne Umstellung weiter. Jede weitere Kasse (`add`, z. B. PayPal) steht in
+der Tabelle `kassen` mit eigenem Bestandskonto 1401–1499 (wird dabei im Kontenrahmen angelegt), eigenem Belegkürzel (`PP-JJJJ-nnnn`)
+und eigenem Beginn. Ihre Belege bleiben Zeilen in `bank` mit `ledger='cash'`; die Spalte `bank.kasse` nennt die Kasse (0 = Bargeld).
+Ein Kassenkonto ist wie 1400 nur aus dem Kontoauszug direkt bebuchbar (im Zeitraum des Kassenbuchs, Bestand nie negativ), nie aus
+dem Beleg einer Kasse – zwischen Kasse und Bank bzw. zwei Kassen läuft das Geld über 2380. 2380 ist ein Konto für alle: „Geldtransit
+offen“ gilt deshalb für alle Kassen zusammen. Funktionen nehmen die Kasse als Kennung oder als Eintrag aus `liste` (Standard: Bargeld).
 """
+import re
 from datetime import date, datetime
 
 from formate import money, iso
@@ -26,7 +36,10 @@ TRANSIT = '2380'        # Durchlauf- und Übergangskonto (Geldtransit Kasse/Bank
 OPENING = '9100'        # Eröffnungsbilanz
 SOURCE = 'Kassenbuch'
 KINDS = {'in': 'Einnahme', 'out': 'Ausgabe', 'withdraw': 'Abhebung von der Bank', 'deposit': 'Einzahlung auf die Bank'}
+KINDS_OTHER = {**KINDS, 'withdraw': 'Umbuchung von der Bank', 'deposit': 'Umbuchung auf die Bank'}   # weitere Kassen (PayPal): kein Bargeld
 MAX_TEXT = 200
+BAR = {'id': 0, 'name': 'Bargeldkasse', 'account': ACCOUNT, 'prefix': 'K'}
+RESERVED = ('E', 'B', 'R')   # Nummernkreise der Eingangsrechnungen, Beitrags- und Ausgangsrechnungen
 
 
 def init(db):
@@ -39,85 +52,167 @@ def init(db):
         if col not in cols:
             db.execute(f'ALTER TABLE bank ADD COLUMN {col} TEXT')
             changed = True
+    if 'kasse' not in cols:      # additiv (0.57): welche Kasse – 0 = Bargeldkasse, sonst kassen.id
+        db.execute('ALTER TABLE bank ADD COLUMN kasse INTEGER NOT NULL DEFAULT 0')
+        changed = True
     db.execute('CREATE INDEX IF NOT EXISTS bank_ledger ON bank(ledger,booked)')
+    db.execute('CREATE TABLE IF NOT EXISTS kassen(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,account TEXT NOT NULL UNIQUE,'
+               'prefix TEXT NOT NULL UNIQUE,start TEXT NOT NULL)')
     if changed:
         db.commit()
 
 
-def ledger_account(b):
-    """Gegenkonto eines Umsatzes: Kasse für Kassenbelege, sonst Bank."""
-    return ACCOUNT if 'ledger' in b.keys() and b['ledger'] == 'cash' else '1420'
-
-
-def start(store):
-    """Beginn des Kassenbuchs (Tag des Anfangsbestands) oder None, solange keine Kasse eingerichtet ist."""
+def liste(store):
+    """Alle Kassen, die Bargeldkasse zuerst: je Kasse {'id', 'name', 'account', 'prefix', 'start'} (start None = noch nicht eingerichtet)."""
     row = store.db.execute("SELECT value FROM settings WHERE key='cash_start'").fetchone()
-    return row[0] if row else None
+    return [{**BAR, 'start': row[0] if row else None}] + store.rows('SELECT id,name,account,prefix,start FROM kassen ORDER BY id')
 
 
-def _opening_journals(store):
+def eine(store, kasse=0):
+    """Eine Kasse aus `liste` – aus ihrer Kennung (leer = Bargeldkasse) oder unverändert, wenn schon der Eintrag übergeben wird."""
+    if isinstance(kasse, dict):
+        return kasse
+    try:
+        kid = int(kasse or 0)
+    except (TypeError, ValueError):
+        raise ValueError('Kasse nicht gefunden.')
+    found = next((k for k in liste(store) if k['id'] == kid), None)
+    if not found:
+        raise ValueError('Kasse nicht gefunden.')
+    return found
+
+
+def kinds(k):
+    """Arten eines Belegs mit den Wörtern der Kasse: Bargeld „Abhebung/Einzahlung“, sonst „Umbuchung von der/auf die Bank“."""
+    return KINDS_OTHER if k['id'] else KINDS
+
+
+def _label(k):
+    return k['name'] if k['id'] else 'Kasse'    # Bargeldkasse: Texte wie seit 0.25
+
+
+def ledger_account(store, b):
+    """Gegenkonto eines Umsatzes: das Konto der Kasse für Kassenbelege, sonst Bank."""
+    return eine(store, b['kasse'])['account'] if 'ledger' in b.keys() and b['ledger'] == 'cash' else '1420'
+
+
+def start(store, kasse=0):
+    """Beginn des Kassenbuchs (Tag des Anfangsbestands) oder None, solange die Kasse nicht eingerichtet ist."""
+    return eine(store, kasse)['start']
+
+
+def _opening_journals(store, k):
     return store.rows("SELECT j.id,j.day,j.source,j.reversal_of,e.debit-e.credit amount FROM journals j JOIN entries e ON e.journal_id=j.id "
-                      "WHERE j.source LIKE 'kasse-anfang:%' AND e.account=? ORDER BY j.id", (ACCOUNT,))
+                      "WHERE j.source LIKE 'kasse-anfang:%' AND e.account=? ORDER BY j.id", (k['account'],))
 
 
-def opening(store):
+def opening(store, kasse=0):
     """Gültiger Anfangsbestand {'day', 'amount', 'journal'} oder None."""
-    rows = _opening_journals(store)
+    rows = _opening_journals(store, eine(store, kasse))
     reversed_ids = {r['reversal_of'] for r in rows if r['reversal_of']}
     live = [r for r in rows if not r['reversal_of'] and r['id'] not in reversed_ids]
     return {'day': live[-1]['day'], 'amount': live[-1]['amount'], 'journal': live[-1]['id']} if live else None
 
 
-def set_opening(store, day, amount, actor):
-    """Anfangsbestand der Kasse festlegen (Kasse an 9100 Eröffnungsbilanz); eine frühere Festlegung wird gegengebucht."""
+def set_opening(store, day, amount, actor, kasse=0):
+    """Anfangsbestand einer Kasse festlegen (Kasse an 9100 Eröffnungsbilanz); eine frühere Festlegung wird gegengebucht."""
     day = iso(day)
     cents = money(amount)
+    with store.db:
+        store.db.execute('BEGIN IMMEDIATE')
+        _set_opening(store, eine(store, kasse), day, cents, actor)
+
+
+def _set_opening(store, k, day, cents, actor):
+    """Anfangsbestand buchen und Beginn festhalten – innerhalb einer offenen Transaktion (set_opening, add)."""
+    label = _label(k)
     if cents < 0:
         raise ValueError('Der Anfangsbestand der Kasse kann nicht negativ sein.')
     if store.data_start() and day < store.data_start():
         raise ValueError(f'Der Anfangsbestand liegt vor dem Datenbeginn ({store.data_start()}).')
     if day > date.today().isoformat():
         raise ValueError('Der Tag des Anfangsbestands darf nicht in der Zukunft liegen.')
+    earlier = store.db.execute("SELECT MIN(booked) FROM bank WHERE ledger='cash' AND kasse=? AND state!='void'", (k['id'],)).fetchone()[0]
+    if earlier and earlier < day:
+        raise ValueError(f'Es gibt schon Kassenbelege vor dem {day} (ab {earlier}) – Tag des Anfangsbestands früher wählen.')
+    moved = store.db.execute('SELECT MIN(j.day) FROM entries e JOIN journals j ON j.id=e.journal_id WHERE e.account=? '
+                             "AND j.source NOT LIKE 'kasse-anfang:%'", (k['account'],)).fetchone()[0]
+    if moved and moved < day:
+        raise ValueError(f"Auf der Kasse {k['account']} gibt es schon Buchungen vor dem {day} (ab {moved}) – Tag des Anfangsbestands früher wählen.")
+    old = opening(store, k)
+    n = store.db.execute("SELECT COUNT(*) FROM journals WHERE source LIKE 'kasse-anfang:%'").fetchone()[0] + 1   # fortlaufend über alle Kassen
+    if old:
+        back = store.rows('SELECT account,kv,credit debit,debit credit,title FROM entries WHERE journal_id=?', (old['journal'],))
+        store.journal(old['day'], f'Storno Anfangsbestand {label}', f'kasse-anfang:{n}', back, old['journal'], year=int(old['day'][:4]))
+        n += 1
+    if cents:
+        store.journal(day, f'Anfangsbestand {label}', f'kasse-anfang:{n}',
+                      [{'account': k['account'], 'kv': 'LV', 'debit': cents, 'credit': 0},
+                       {'account': OPENING, 'kv': 'LV', 'debit': 0, 'credit': cents, 'title': ''}], year=int(day[:4]))
+    if k['id']:
+        store.db.execute('UPDATE kassen SET start=? WHERE id=?', (day, k['id']))
+    else:
+        store.db.execute("INSERT INTO settings VALUES('cash_start',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (day,))
+    _check(store, {**k, 'start': day})
+    store.audit(actor, 'Anfangsbestand Kasse festgelegt', {'tag': day, 'cents': cents, **({'kasse': k['name']} if k['id'] else {}),
+                                                           **({'vorher': {'tag': old['day'], 'cents': old['amount']}} if old else {})})
+
+
+def free_account(store):
+    """Vorschlag für das Bestandskonto einer weiteren Kasse: das erste freie ab 1430 (darunter Kasse, Portokasse, Bankkonten), sonst ab 1401."""
+    have = {r[0] for r in store.db.execute("SELECT code FROM accounts WHERE code BETWEEN '1400' AND '1499'")}
+    return next((c for c in (str(n) for n in (*range(1430, 1500), *range(1401, 1430))) if c not in have), '')
+
+
+def add(store, data, actor):
+    """Weitere Kasse einrichten (z. B. PayPal): Name, eigenes Bestandskonto 1401–1499 (wird angelegt, darf es noch nicht geben),
+    Belegkürzel, Stichtag und Anfangsbestand. Liefert die Kennung."""
+    name = ' '.join(str(data.get('name') or '').split())
+    account = str(data.get('account') or '').strip()
+    prefix = str(data.get('prefix') or '').strip().upper()
+    if not re.fullmatch(r'[A-Za-zÄÖÜäöüß0-9 .&+-]{2,40}', name):    # steht in Dateinamen (Kassenbuch) und Buchungstexten
+        raise ValueError('Bitte einen Namen mit 2 bis 40 Zeichen angeben, z. B. PayPal (Buchstaben, Ziffern, Leerzeichen und . - & +).')
+    if not re.fullmatch(r'14\d\d', account) or account == ACCOUNT:
+        raise ValueError('Das Konto der Kasse muss im Bereich 1401–1499 (Geldbestände) liegen.')
+    if not re.fullmatch(r'[A-Z]{1,4}', prefix):
+        raise ValueError('Belegkürzel: 1 bis 4 Buchstaben, z. B. PP.')
+    day = iso(data.get('day') or '')
+    cents = money(data.get('amount') or '0')
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
-        earlier = store.db.execute("SELECT MIN(booked) FROM bank WHERE ledger='cash' AND state!='void'").fetchone()[0]
-        if earlier and earlier < day:
-            raise ValueError(f'Es gibt schon Kassenbelege vor dem {day} (ab {earlier}) – Tag des Anfangsbestands früher wählen.')
-        moved = store.db.execute('SELECT MIN(j.day) FROM entries e JOIN journals j ON j.id=e.journal_id WHERE e.account=? '
-                                 "AND j.source NOT LIKE 'kasse-anfang:%'", (ACCOUNT,)).fetchone()[0]
-        if moved and moved < day:
-            raise ValueError(f'Auf der Kasse 1400 gibt es schon Buchungen vor dem {day} (ab {moved}) – Tag des Anfangsbestands früher wählen.')
-        old = opening(store)
-        n = store.db.execute("SELECT COUNT(*) FROM journals WHERE source LIKE 'kasse-anfang:%'").fetchone()[0] + 1
-        if old:
-            back = store.rows('SELECT account,kv,credit debit,debit credit,title FROM entries WHERE journal_id=?', (old['journal'],))
-            store.journal(old['day'], 'Storno Anfangsbestand Kasse', f'kasse-anfang:{n}', back, old['journal'], year=int(old['day'][:4]))
-            n += 1
-        if cents:
-            store.journal(day, 'Anfangsbestand Kasse', f'kasse-anfang:{n}',
-                          [{'account': ACCOUNT, 'kv': 'LV', 'debit': cents, 'credit': 0},
-                           {'account': OPENING, 'kv': 'LV', 'debit': 0, 'credit': cents, 'title': ''}], year=int(day[:4]))
-        store.db.execute("INSERT INTO settings VALUES('cash_start',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (day,))
-        _check(store)
-        store.audit(actor, 'Anfangsbestand Kasse festgelegt', {'tag': day, 'cents': cents,
-                                                               **({'vorher': {'tag': old['day'], 'cents': old['amount']}} if old else {})})
+        have = liste(store)
+        if any(k['name'].lower() == name.lower() for k in have):
+            raise ValueError(f'Eine Kasse „{name}“ gibt es schon.')
+        if prefix in RESERVED or any(k['prefix'] == prefix for k in have):
+            raise ValueError(f'Das Belegkürzel {prefix} ist schon vergeben – bitte ein anderes wählen.')
+        taken = store.db.execute('SELECT name FROM accounts WHERE code=?', (account,)).fetchone()
+        if taken:
+            raise ValueError(f"Das Konto {account} gibt es schon ({taken['name']}) – bitte ein freies wählen, z. B. {free_account(store)}.")
+        store.db.execute("INSERT INTO accounts VALUES(?,?,'asset')", (account, name))
+        kid = store.db.execute('INSERT INTO kassen(name,account,prefix,start) VALUES(?,?,?,?)', (name, account, prefix, day)).lastrowid
+        store.audit(actor, 'Kasse eingerichtet', {'id': kid, 'name': name, 'konto': account, 'kuerzel': prefix})
+        _set_opening(store, eine(store, kid), day, cents, actor)
+    return kid
 
 
-def next_number(store, year):
-    """Belegnummer K-JJJJ-nnnn, fortlaufend je Jahr."""
-    prefix = f'K-{year}-'
-    row = store.db.execute("SELECT MAX(CAST(substr(bank_ref,8) AS INTEGER)) FROM bank WHERE ledger='cash' AND bank_ref LIKE ?", (prefix + '%',)).fetchone()
+def next_number(store, year, kasse=0):
+    """Belegnummer <Kürzel>-JJJJ-nnnn (Bargeld: K-JJJJ-nnnn), fortlaufend je Kasse und Jahr."""
+    k = eine(store, kasse)
+    prefix = f"{k['prefix']}-{year}-"
+    row = store.db.execute("SELECT MAX(CAST(substr(bank_ref,?) AS INTEGER)) FROM bank WHERE ledger='cash' AND kasse=? AND bank_ref LIKE ?",
+                           (len(prefix) + 1, k['id'], prefix + '%')).fetchone()
     return f'{prefix}{(row[0] or 0) + 1:04d}'
 
 
-def timeline(store, extra=None):
-    """Kassenbewegungen in zeitlicher Folge mit Bestand: Buchungen auf 1400 (Kassenbelege, Kontoauszug, Anfangsbestand) und noch
-    nicht verbuchte Kassenbelege. extra: zusätzlicher Beleg {'day', 'amount'} zur Prüfung vor dem Erfassen."""
+def timeline(store, extra=None, kasse=0):
+    """Bewegungen einer Kasse in zeitlicher Folge mit Bestand: Buchungen auf ihrem Konto (Kassenbelege, Kontoauszug, Anfangsbestand)
+    und noch nicht verbuchte Kassenbelege. extra: zusätzlicher Beleg {'day', 'amount'} zur Prüfung vor dem Erfassen."""
+    k = eine(store, kasse)
     moves = []
     for r in store.rows('SELECT j.id,j.day,j.source,j.description,e.debit-e.credit amount FROM entries e JOIN journals j ON j.id=e.journal_id '
-                        'WHERE e.account=?', (ACCOUNT,)):
+                        'WHERE e.account=?', (k['account'],)):
         moves.append({'day': r['day'], 'amount': r['amount'], 'journal': r['id'], 'source': r['source'], 'text': r['description']})
-    for b in store.rows("SELECT id,booked,amount FROM bank WHERE ledger='cash' AND state='open'"):
+    for b in store.rows("SELECT id,booked,amount FROM bank WHERE ledger='cash' AND kasse=? AND state='open'", (k['id'],)):
         moves.append({'day': b['booked'], 'amount': b['amount'], 'bank_id': b['id'], 'source': None, 'text': ''})
     if extra:
         moves.append({'day': extra['day'], 'amount': extra['amount'], 'source': None, 'text': ''})
@@ -129,25 +224,46 @@ def timeline(store, extra=None):
     return moves
 
 
-def balance(store, until=None):
-    """Kassenbestand am Ende eines Tages (Standard: alles)."""
+def balance(store, until=None, kasse=0):
+    """Bestand einer Kasse am Ende eines Tages (Standard: alles)."""
     until = until or '9999-12-31'
-    return sum(m['amount'] for m in timeline(store) if m['day'] <= until)
+    return sum(m['amount'] for m in timeline(store, kasse=kasse) if m['day'] <= until)
 
 
-def _check(store, extra=None, storno=False):
-    low = next((m for m in timeline(store, extra) if m['balance'] < 0), None)
+def _check(store, k, extra=None, storno=False):
+    low = next((m for m in timeline(store, extra, k) if m['balance'] < 0), None)
     if low:
         from formate import german_date, euro
-        raise ValueError(f"Der Kassenbestand würde am {german_date(low['day'])} negativ ({euro(low['balance'])}) – "
-                         + ('das Bargeld ist schon ausgegeben: zuerst die späteren Kassenausgaben prüfen (ungültig erklären bzw. stornieren).' if storno else
-                            'fehlt eine Einnahme, eine Abhebung oder der Anfangsbestand? Datum und Betrag prüfen.'))
+        what, money_, move = (('Der Kassenbestand', 'das Bargeld', 'eine Abhebung') if not k['id'] else
+                              (f"Der Bestand der Kasse {k['name']}", 'das Geld', 'eine Umbuchung von der Bank'))
+        raise ValueError(f"{what} würde am {german_date(low['day'])} negativ ({euro(low['balance'])}) – "
+                         + (f'{money_} ist schon ausgegeben: zuerst die späteren Kassenausgaben prüfen (ungültig erklären bzw. stornieren).' if storno else
+                            f'fehlt eine Einnahme, {move} oder der Anfangsbestand? Datum und Betrag prüfen.'))
 
 
-def check_after_booking(store, storno=False):
-    """Nach einer Buchung auf 1400 (z. B. aus dem Kontoauszug): Bestand darf nie negativ werden – nur bei eingerichteter Kasse."""
-    if start(store):
-        _check(store, storno=storno)
+def check_parts(store, b, parts):
+    """Vor dem Verbuchen: Kontierung direkt auf ein Kassenkonto (z. B. Bareinzahlung im Kontoauszug auf 1400) – nur aus dem
+    Kontoauszug und nur im Zeitraum des Kassenbuchs, sonst zählte das Geld doppelt."""
+    hit = {p.get('account') for p in parts if not p.get('bill_id') and not p.get('invoice_id')}
+    for k in liste(store):
+        if k['account'] not in hit:
+            continue
+        if b['ledger'] == 'cash':
+            raise ValueError(f"Ein Kassenbeleg wird nicht direkt auf eine andere Kasse ({k['account']} {k['name']}) gebucht – "
+                             f'auf beiden Seiten einen Beleg erfassen und jeweils auf {TRANSIT} (Geldtransit) buchen.')
+        if not k['start']:
+            raise ValueError(f"Zuerst die Kasse einrichten (Seite Kasse → Anfangsbestand), dann auf {k['account']} buchen.")
+        if b['booked'] < k['start']:
+            raise ValueError(f"Buchungen auf die Kasse erst ab Beginn des Kassenbuchs ({k['start']}).")
+
+
+def check_after_booking(store, entries, storno=False):
+    """Nach einer Buchung auf ein Kassenkonto (Kassenbeleg oder Kontoauszug): der Bestand dieser Kasse darf nie negativ werden – nur
+    bei eingerichteter Kasse."""
+    hit = {e['account'] for e in entries}
+    for k in liste(store):
+        if k['start'] and k['account'] in hit:
+            _check(store, k, storno=storno)
 
 
 def create(store, data, actor, attachment_suffix=None):
@@ -155,7 +271,7 @@ def create(store, data, actor, attachment_suffix=None):
     gegen 2380 gebucht. Liefert {'id', 'number', 'filename'}."""
     kind = data.get('kind')
     if kind not in KINDS:
-        raise ValueError('Art wählen: Einnahme, Ausgabe, Abhebung oder Einzahlung.')
+        raise ValueError('Art wählen: Einnahme, Ausgabe oder Geldtransit (von der Bank bzw. auf die Bank).')
     day = iso(data.get('day') or date.today().isoformat())
     if day > date.today().isoformat():
         raise ValueError('Das Datum eines Kassenbelegs darf nicht in der Zukunft liegen.')
@@ -169,20 +285,20 @@ def create(store, data, actor, attachment_suffix=None):
         raise ValueError('Bitte angeben, wofür (Text des Belegs).')
     if len(name) > MAX_TEXT or len(text) > MAX_TEXT:
         raise ValueError(f'Name und Text höchstens {MAX_TEXT} Zeichen.')
-    text = text or KINDS[kind]
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
-        begin = start(store)                               # in der Transaktion lesen (gleichzeitige Änderung des Beginns)
+        k = eine(store, data.get('kasse'))                 # in der Transaktion lesen (gleichzeitige Änderung des Beginns)
+        begin, label = k['start'], kinds(k)[kind]
         if not begin:
             raise ValueError('Zuerst den Anfangsbestand der Kasse festlegen.')
         if day < begin:
             raise ValueError(f'Kassenbelege erst ab Beginn des Kassenbuchs ({begin}).')
-        _check(store, {'day': day, 'amount': amount})
-        number = next_number(store, day[:4])
+        _check(store, k, {'day': day, 'amount': amount})
+        number = next_number(store, day[:4], k)
         filename = f'{number}{attachment_suffix}' if attachment_suffix else None
-        bid = store.db.execute("INSERT INTO bank(booked,amount,name,reference,bank_ref,source,fingerprint,ledger,attachment) "
-                               "VALUES(?,?,?,?,?,?,?,'cash',?)", (day, amount, name or None, text, number, f'{SOURCE} · {KINDS[kind]}', f'kasse:{number}',
-                                                                  filename)).lastrowid
+        bid = store.db.execute("INSERT INTO bank(booked,amount,name,reference,bank_ref,source,fingerprint,ledger,attachment,kasse) "
+                               "VALUES(?,?,?,?,?,?,?,'cash',?,?)", (day, amount, name or None, text or label, number,
+                                                                    f"{k['name'] if k['id'] else SOURCE} · {label}", f'kasse:{number}', filename, k['id'])).lastrowid
         store.audit(actor, 'Kassenbeleg erfasst', {'id': bid, 'number': number, 'kind': kind, 'cents': amount, 'tag': day})
         if kind in ('withdraw', 'deposit'):      # Geldtransit: in derselben Transaktion gegen 2380 – scheitert das, gibt es keinen Beleg
             store._book(bid, [{'amount': f'{amount / 100:.2f}', 'account': TRANSIT, 'kv': 'LV'}], actor, confirm_no_bill=True)
@@ -202,18 +318,18 @@ def void(store, bid, reason, actor):
         if b['state'] != 'open':
             raise ValueError('Nur offene Kassenbelege lassen sich für ungültig erklären – einen verbuchten zuerst stornieren.')
         store.db.execute("UPDATE bank SET state='void',note=? WHERE id=?", (reason[:MAX_TEXT], b['id']))
-        _check(store)
+        _check(store, eine(store, b['kasse']))
         store.audit(actor, 'Kassenbeleg ungültig', {'id': b['id'], 'number': b['bank_ref'], 'grund': reason[:MAX_TEXT]})
 
 
 def summary(store):
-    """Kurzüberblick für die Oberfläche: Beginn, Bestand heute, offene Belege, Geldtransit."""
-    begin = start(store)
-    if not begin:
-        return {'start': None}
-    return {'start': begin, 'balance': balance(store, date.today().isoformat()), 'transit': transit_open(store),
-            'open': store.db.execute("SELECT COUNT(*) FROM bank WHERE ledger='cash' AND state='open'").fetchone()[0],
-            'opening': opening(store)}
+    """Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand; dazu offene Belege aller
+    Kassen, Geldtransit (ein Konto für alle) und der Kontovorschlag für eine weitere Kasse."""
+    open_ = dict(store.db.execute("SELECT kasse,COUNT(*) FROM bank WHERE ledger='cash' AND state='open' GROUP BY kasse").fetchall())
+    kassen = [{**k, 'balance': balance_today(store, k) if k['start'] else 0, 'open': open_.get(k['id'], 0),
+               'opening': opening(store, k) if k['start'] else None} for k in liste(store)]
+    return {'kassen': kassen, 'open': sum(k['open'] for k in kassen), 'next_account': free_account(store),
+            'transit': transit_open(store) if any(k['start'] for k in kassen) else 0}
 
 
 def transit_open(store, until=None):
@@ -229,13 +345,14 @@ def _round(source):
     return int(tail.split('/')[1]) if '/' in tail else 0
 
 
-def book(store, year):
-    """Kassenbuch eines Jahres: Übertrag, Bewegungen mit Beleg, Kontierung und Bestand; ungültige Belege nur zur Information.
-    Reihenfolge nach Tag und Buchung (ein Storno steht unter seiner Buchung); Summen netto je Beleg, Anfangsbestand eigens."""
+def book(store, year, kasse=0):
+    """Kassenbuch einer Kasse für ein Jahr: Übertrag, Bewegungen mit Beleg, Kontierung und Bestand; ungültige Belege nur zur
+    Information. Reihenfolge nach Tag und Buchung (ein Storno steht unter seiner Buchung); Summen netto je Beleg, Anfangsbestand eigens."""
     from core import bank_source
+    k = eine(store, kasse)
     year = int(year)
     first, last = f'{year}-01-01', f'{year}-12-31'
-    rows = {b['id']: b for b in store.rows("SELECT * FROM bank WHERE ledger='cash'")}
+    rows = {b['id']: b for b in store.rows("SELECT * FROM bank WHERE ledger='cash' AND kasse=?", (k['id'],))}
     by_source = {}
     for b in rows.values():
         for r in range(b['reversals'] + 1):
@@ -243,9 +360,9 @@ def book(store, year):
                 by_source[bank_source(kind, {'id': b['id'], 'reversals': r})] = b
     accounts = {}
     for e in store.rows("SELECT j.source,e.account,e.kv,e.title,e.credit-e.debit amount FROM entries e JOIN journals j ON j.id=e.journal_id "
-                        "WHERE e.account NOT IN (?,'1370') AND (j.source LIKE 'bank:%' OR j.source LIKE 'resolve:%')", (ACCOUNT,)):
+                        "WHERE e.account NOT IN (?,'1370') AND (j.source LIKE 'bank:%' OR j.source LIKE 'resolve:%')", (k['account'],)):
         accounts.setdefault(e['source'], []).append(e)
-    moves = timeline(store)
+    moves = timeline(store, kasse=k)
     carry = sum(m['amount'] for m in moves if m['day'] < first)
     shown = sorted((m for m in moves if first <= m['day'] <= last),
                    key=lambda m: (m['day'], m.get('journal') or 10 ** 12, m.get('bank_id') or 0))   # offene Belege am Tagesende
@@ -262,7 +379,7 @@ def book(store, year):
             kind = 'beleg'
             net[('beleg', b['id'])] = net.get(('beleg', b['id']), 0) + m['amount']
         else:
-            kind = 'bank'                                      # Buchung auf 1400 aus dem Kontoauszug
+            kind = 'bank'                                      # Buchung auf das Kassenkonto aus dem Kontoauszug
             net[('bank', source)] = net.get(('bank', source), 0) + m['amount']
         storno = bool(source and source.startswith('reverse-bank:'))
         if b is None or not source:
@@ -284,31 +401,31 @@ def book(store, year):
                       'storno': storno})
     voided = [b for b in rows.values() if b['state'] == 'void' and b['booked'][:4] == str(year)]
     in_year = [b for b in rows.values() if b['booked'][:4] == str(year)]
-    return {'year': year, 'start': start(store), 'opening': opening(store), 'carry': carry, 'opening_in_year': opening_sum, 'lines': lines,
+    return {'year': year, 'kasse': k, 'start': k['start'], 'opening': opening(store, k), 'carry': carry, 'opening_in_year': opening_sum, 'lines': lines,
             'end': balance, 'income': sum(v for v in net.values() if v > 0), 'expense': -sum(v for v in net.values() if v < 0),
-            'void': sorted(voided, key=lambda b: b['booked']), 'today': balance_today(store),
+            'void': sorted(voided, key=lambda b: b['booked']), 'today': balance_today(store, k),
             'transit': transit_open(store, min(last, date.today().isoformat())),
             'open': sum(1 for b in in_year if b['state'] == 'open'), 'parked': sum(1 for b in in_year if b['state'] == 'parked'),
             'missing_receipt': sum(1 for b in in_year if b['state'] != 'void' and not b['attachment'] and b['amount'] < 0 and not is_transit(b))}
 
 
-def balance_today(store):
-    return balance(store, date.today().isoformat())
+def balance_today(store, kasse=0):
+    return balance(store, date.today().isoformat(), kasse)
 
 
 def is_transit(b):
-    """Geldtransit (Abhebung/Einzahlung) – braucht keinen eigenen Beleg; die Gegenseite steht im Kontoauszug."""
-    return str(b['source'] or '').endswith((KINDS['withdraw'], KINDS['deposit']))
+    """Geldtransit (Abhebung/Einzahlung bzw. Umbuchung) – braucht keinen eigenen Beleg; die Gegenseite steht im Kontoauszug."""
+    return str(b['source'] or '').endswith(tuple(x[kind] for x in (KINDS, KINDS_OTHER) for kind in ('withdraw', 'deposit')))
 
 
 STATES = {'open': 'offen', 'parked': 'geparkt', 'booked': 'verbucht', 'reversed': 'verbucht, später storniert', 'storno': 'Storno'}
 
 
-def csv(store, year):
-    """Kassenbuch als CSV (Kassenprüfung)."""
+def csv(store, year, kasse=0):
+    """Kassenbuch einer Kasse als CSV (Kassenprüfung)."""
     import berichte
     from formate import german_date
-    b = book(store, year)
+    b = book(store, year, kasse)
     rows = [['', f'01.01.{year}', 'Übertrag', '', '', '', '', berichte._eur(b['carry']), '', '']]
     for x in b['lines']:
         rows.append([x['number'] or '', german_date(x['day']), {'anfang': 'Anfangsbestand', 'bank': 'aus Kontoauszug'}.get(x['kind'], 'Kassenbeleg'),

@@ -14,7 +14,7 @@ export const store = {
   household: null,   // /api/haushalt: Gesamthaushalt Plan/Ist
   workflow: null,    // /api/workflow: KV-Budgets, Parkkonto, Lernbeispiele
   bank: { filter: 'open', search: '', selected: null },
-  cash: { filter: 'open', search: '', selected: null },   // Kasse (Kassenbelege, ab 0.25)
+  cash: { filter: 'open', search: '', selected: null, kasse: null },   // Kasse (Kassenbelege, ab 0.25); kasse: gewählte Kasse (ab 0.57, null = erste eingerichtete)
   budgets: { mode: 'household', onlyDeviations: false, kvSearch: '', kvAttention: false, kvSelected: null, kvKey: null, kvData: null },
   journal: { limit: 300, search: '' },
   konten: { search: '', onlyUsed: false, selected: null, kv: '', list: null, listKey: null, sheet: null, sheetKey: null, error: '' },
@@ -56,6 +56,7 @@ export function go(page, options = {}) {
     store.cash.filter = options.cashFilter;
     store.cash.selected = null;
   }
+  if (options.kasse !== undefined) store.cash.kasse = options.kasse;   // Seite Kasse: diese Kasse zeigen
   if (options.rpjAssign) store.rpjAssign = true;   // RPJ-Seite öffnet „RPJ zuordnen“
   if (options.openSide) store.openSide = options.openSide;   // Offene Posten: Reiter (dues | receivables | payables)
   if (options.opKv !== undefined) store.opKv = options.opKv;  // … und Kreisverband der OP-Liste
@@ -75,8 +76,17 @@ export const titleLabel = (id) => {
   return t ? `${t.code ? t.code + ' · ' : ''}${t.label}` : id || '';
 };
 
-/** Umsätze des gewählten Haushaltsjahres (nach Datum): Kontoauszug ('bank') oder Kassenbelege ('cash'). */
-export const ledgerRows = (ledger) => store.data.bank.filter((b) => (b.ledger || 'bank') === ledger && b.booked.startsWith(String(store.year)));
+/** Gewählte Kasse der Seite Kasse (ab 0.57 mehrere: Bargeld, PayPal …) – ohne Wahl die erste eingerichtete. */
+export function currentKasse() {
+  const all = store.data?.cash?.kassen || [];
+  return all.find((k) => k.id === store.cash.kasse) || all.find((k) => k.start) || all[0];
+}
+/** Gegenkonto eines Umsatzes: Bank 1420 bzw. das Konto seiner Kasse (wie kasse.ledger_account). */
+export const ownAccount = (b) => (b.ledger === 'cash' ? store.data.cash.kassen.find((k) => k.id === (b.kasse || 0))?.account : '1420');
+/** Gehört der Umsatz zum Kontoauszug ('bank') bzw. zur gewählten Kasse ('cash')? */
+export const inLedger = (b, ledger) => (b.ledger || 'bank') === ledger && (ledger !== 'cash' || (b.kasse || 0) === currentKasse()?.id);
+/** Umsätze des gewählten Haushaltsjahres (nach Datum): Kontoauszug ('bank') oder Belege der gewählten Kasse ('cash'). */
+export const ledgerRows = (ledger) => store.data.bank.filter((b) => inLedger(b, ledger) && b.booked.startsWith(String(store.year)));
 /** Bankumsätze des gewählten Haushaltsjahres (nach Bankdatum). */
 export const yearBank = () => ledgerRows('bank');
 

@@ -1211,6 +1211,64 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   const cashPdf = await page.evaluate(async () => (await fetch(document.querySelector('a[href^="/api/kasse.pdf"]').href)).headers.get('content-type'));
   check(cashPdf === 'application/pdf', 'Kassenbuch als PDF');
 
+  // Weitere Kasse (0.57): PayPal einrichten, Beleg erfassen und verbuchen, Umbuchung auf die Bank, eigenes Kassenbuch, zurück zur Bargeldkasse
+  check(await page.locator('main [data-kasse]').count() === 0, 'Eine Kasse: kein Umschalter');
+  await page.click('[data-add-kasse]');
+  check(await page.inputValue('#cash-add input[name=account]') === '1430', 'Weitere Kasse: freies Konto vorgeschlagen');
+  await page.fill('#cash-add input[name=name]', 'PayPal');
+  await page.fill('#cash-add input[name=account]', '1420');
+  await page.fill('#cash-add input[name=prefix]', 'pp');
+  await page.fill('#cash-add input[name=amount]', '40');
+  await page.click('#cash-add button[type=submit]');
+  check((await toast()).includes('1420 gibt es schon'), 'Weitere Kasse: vorhandenes Konto abgewiesen');
+  await page.fill('#cash-add input[name=account]', '1430');
+  await page.click('#cash-add button[type=submit]');
+  check((await toast()).includes('PayPal ist eingerichtet'), 'Weitere Kasse eingerichtet');
+  check(await page.locator('main [data-kasse]').count() === 2 && (await page.locator('main [data-kasse][aria-pressed=true]').textContent()).includes('PayPal'), 'Umschalter zeigt beide Kassen, PayPal gewählt');
+  check((await page.locator('main .cards').textContent()).includes('Bestand PayPal heute') && (await page.locator('main .cards .card').first().textContent()).includes('40,00'), 'PayPal mit eigenem Anfangsbestand');
+  await page.click('[data-new-cash]');
+  const ppForm = await page.locator('#modal').textContent();
+  check(ppForm.includes('Beleg erfassen') && ppForm.includes('Umbuchung auf die Bank') && !ppForm.includes('Abhebung') && !ppForm.includes('Kassenbon'), 'PayPal: Wörter ohne Bargeld');
+  await page.fill('#cash-form input[name=amount]', '1,50');
+  await page.fill('#cash-form input[name=text]', 'PayPal-Gebühr');
+  await page.click('#cash-form button[type=submit]');
+  check(/PP-\d{4}-0001 erfasst – jetzt verbuchen/.test(await toast()), 'PayPal-Beleg mit eigenem Nummernkreis erfasst');
+  await page.waitForSelector('#book-form');
+  await page.locator('.part [data-account]').first().click();
+  await page.fill('#account-query', '14');
+  check(!(await page.locator('#preview').textContent()).includes('PayPal') && !(await page.locator('#preview').textContent()).includes('1400'), 'PayPal-Beleg: Kassenkonten nicht als Kontierung wählbar');
+  await page.keyboard.press('Escape');
+  await pick('.part [data-account]', '4225');
+  await page.click('#book-submit');
+  check((await toast()).includes('verbucht'), 'PayPal-Beleg wie Kontoumsatz verbucht');
+  await page.click('[data-new-cash]');
+  await page.check('#cash-form input[value=deposit]');
+  await page.fill('#cash-form input[name=amount]', '20');
+  await page.click('#cash-form button[type=submit]');
+  check(/PP-\d{4}-0002 erfasst und auf Geldtransit 2380 gebucht/.test(await toast()), 'PayPal: Umbuchung auf die Bank über 2380');
+  await page.waitForSelector('[data-cash-csv]');
+  const ppBook = await page.locator('[data-custom]').textContent();
+  check(ppBook.includes('Kassenbuch PayPal') && ppBook.includes('18,50') && ppBook.includes('4225') && ppBook.includes('2380') && ppBook.includes('auf 1430') && !/K-\d{4}-/.test(ppBook),
+    'Kassenbuch PayPal mit Kontierung, Umbuchung und Bestand – ohne Bargeldbelege');
+  const ppJournal = await page.evaluate(async () => (await (await fetch('/api/data?year=' + new Date().getFullYear())).json()).journal.filter((j) => /PayPal-Gebühr/.test(j.description)).map((j) => j.account).sort().join());
+  check(ppJournal === '1430,4225', 'PayPal-Beleg bucht 1430 statt 1400/1420');
+  const ppPdf = await page.evaluate(async () => { const r = await fetch(document.querySelector('a[href^="/api/kasse.pdf"]').href); return r.headers.get('content-type') + ' ' + r.headers.get('content-disposition'); });
+  check(ppPdf.startsWith('application/pdf') && ppPdf.includes('Kassenbuch-PayPal-'), 'Kassenbuch PayPal als PDF');
+  await shot('38b-kasse-paypal');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(150);
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'Kasse mit Umschalter auf dem Handy ohne seitliches Scrollen');
+  await shot('38c-kasse-paypal-handy');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.click('main [data-kasse="0"]');
+  await page.waitForSelector('[data-cash-csv]');
+  const barBook = await page.locator('[data-custom]').textContent();
+  check((await page.locator('main .cards').textContent()).includes('Kassenbestand heute') && barBook.includes('137,50') && !barBook.includes('PP-') && !barBook.includes('PayPal'),
+    'Zurück zur Bargeldkasse: Kassenbuch und Bestand unverändert');
+  await page.click('[data-page=overview]');
+  await page.click('[data-page=cash]');
+  check((await page.locator('main [data-kasse][aria-pressed=true]').textContent()).includes('Bargeldkasse'), 'Gewählte Kasse bleibt beim Seitenwechsel');
+
   // Eingangsrechnung erfassen → Zahlungsvorschlag (Kopieren, GiroCode) → Kontoauszug → Abgleich
   const billNo = `E-${new Date().getFullYear()}-00001`;
   await page.click('[data-page=bills]');
@@ -1918,8 +1976,8 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await login();
   check(true, 'Abmelden und Anmelden');
 
-  // 6 bisherige + doppelte OV-Nummer + geschützte Datei (Kennwort fehlt, Kennwort falsch)
-  const expected = 7 + (existsSync(lockedPath) ? 2 : 0);
+  // 6 bisherige + doppelte OV-Nummer + vorhandenes Konto für eine weitere Kasse (0.57) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
+  const expected = 8 + (existsSync(lockedPath) ? 2 : 0);
   check(rejected === expected, `Nur die ${expected} absichtlich falschen Eingaben abgelehnt (${rejected})`);
   check(errors.length === 0, 'Keine Fehler in der Browser-Konsole' + (errors.length ? ': ' + errors.join(' | ') : ''));
 } catch (e) {

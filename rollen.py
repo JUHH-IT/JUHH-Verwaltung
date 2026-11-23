@@ -116,7 +116,7 @@ POST = {
     **{path: _w(_B) for path in (
         '/api/sepa-vorschau', '/api/sepa-begleitzettel', '/api/sepa-mandat-vergessen', '/api/sepa-aufteilen', '/api/beitrag-zuordnen',
         '/api/klaerfall-melden', '/api/member-target', '/api/beitraege-vorschlaege', '/api/einvoice', '/api/bill', '/api/kasse-beleg',
-        '/api/kasse-anfang', '/api/kasse-ungueltig', '/api/bill-cancel', '/api/bill-transferred', '/api/abgleich', '/api/bill-release',
+        '/api/kasse-anfang', '/api/kasse-neu', '/api/kasse-ungueltig', '/api/bill-cancel', '/api/bill-transferred', '/api/abgleich', '/api/bill-release',
         '/api/mandate', '/api/mandate-revoke', '/api/sepa-batch', '/api/sepa-batch-status', '/api/sepa-debit-remove',
         '/api/sepa-debit-reject', '/api/debit-notice', '/api/bill-approve', '/api/bill-approval-revoke', '/api/quarter-review',
         '/api/bill-writeoff', '/api/series-preview', '/api/series', '/api/mail-send', '/api/mail-cancel', '/api/dues', '/api/invoice',
