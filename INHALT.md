@@ -744,11 +744,12 @@ Tests: test_kasse.py, test_klaerfaelle.py, test_rpj.py, test_umsatz_ungueltig.py
 - `next_number(store, year, kasse=…)` – Belegnummer <Kürzel>-JJJJ-nnnn (Bargeld: K-JJJJ-nnnn), fortlaufend je Kasse und Jahr.
 - `timeline(store, extra=…, kasse=…)` – Bewegungen einer Kasse in zeitlicher Folge mit Bestand: Buchungen auf ihrem Konto (Kassenbelege, Kontoauszug, Anfangsbestand)
 - `balance(store, until=…, kasse=…)` – Bestand einer Kasse am Ende eines Tages (Standard: alles).
+- `plus_frage(k)` – Frage zum Bestand im Plus (`k`: Kasse mit `balance`), sonst '' – nur beim Zahlungsdienst (PayPal): er zieht jede Zahlung
 - `check_parts(store, b, parts)` – Vor dem Verbuchen: Kontierung direkt auf ein Kassenkonto (z. B. Bareinzahlung im Kontoauszug auf 1400) – nur aus dem
 - `check_after_booking(store, entries, storno=…)` – Nach einer Buchung auf ein Kassenkonto (Kassenbeleg, Kontoauszug, Storno): der Bestand dieser Kasse darf nie negativ werden
 - `create(store, data, actor, attachment_suffix=…)` – Kassenbeleg erfassen. Einnahme/Ausgabe bleiben offen und werden im Buchungsplatz der Kasse verbucht; Geldtransit wird sofort
 - `void(store, bid, reason, actor)` – Offenen Kassenbeleg mit Grund für ungültig erklären (Tippfehler, doppelt erfasst) – er bleibt sichtbar, zählt aber nicht.
-- `summary(store)` – Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand und ihre offenen Posten im
+- `summary(store)` – Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand, ihre offenen Posten im
 - `transit_open(store, until=…)` – Saldo des Durchlaufkontos 2380 am Ende eines Tages – nur eine Zahl: gegenläufige offene Posten heben sich darin auf.
 - `transit(store, until=…)` – Offene Posten des Geldtransits 2380 am Ende eines Tages – zugeordnet, nicht saldiert. Ein Posten ist ein Beleg einer Kasse
 - `book(store, year, kasse=…)` – Kassenbuch einer Kasse für ein Jahr: Übertrag, Bewegungen mit Beleg, Kontierung und Bestand; ungültige Belege nur zur

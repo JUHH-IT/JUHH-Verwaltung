@@ -47,6 +47,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,bank_id INTEGER REFERENCES bank(id),invoice_id INTEGER REFERENCES invoices(id),amount INTEGER NOT NULL,UNIQUE(bank_id,invoice_id));
         CREATE TABLE IF NOT EXISTS journals(id INTEGER PRIMARY KEY,day TEXT,description TEXT,source TEXT UNIQUE NOT NULL,reversal_of INTEGER UNIQUE REFERENCES journals(id));
         CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY,journal_id INTEGER REFERENCES journals(id),account TEXT REFERENCES accounts(code),kv TEXT REFERENCES kv(code),debit INTEGER NOT NULL DEFAULT 0 CHECK(debit>=0),credit INTEGER NOT NULL DEFAULT 0 CHECK(credit>=0),title TEXT, CHECK((debit>0 AND credit=0) OR (credit>0 AND debit=0)));
+        CREATE INDEX IF NOT EXISTS entries_journal ON entries(journal_id);
         CREATE TABLE IF NOT EXISTS budgets(year INTEGER,kv TEXT REFERENCES kv(code),amount INTEGER CHECK(amount>=0),PRIMARY KEY(year,kv));
         CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,time TEXT,actor TEXT,action TEXT,detail TEXT);
         CREATE TABLE IF NOT EXISTS mailings(id INTEGER PRIMARY KEY,invoice_id INTEGER NOT NULL REFERENCES invoices(id),time TEXT NOT NULL,recipient TEXT NOT NULL,subject TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('sent','failed','unknown')),error TEXT,message_id TEXT,actor TEXT);

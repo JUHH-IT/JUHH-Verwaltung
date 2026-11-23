@@ -20,13 +20,17 @@ ARTEN = ('.pdf', '.png', '.jpg', '.jpeg')
 _RUNDE = "b.id||CASE WHEN b.reversals>0 THEN '/'||b.reversals ELSE '' END"   # geltende Zuordnungsrunde, wie core.bank_source
 # Ausgabe ohne Beleg: verbuchter Ausgang im Kontoauszug, an dem keine Datei hängt und der keiner Eingangsrechnung mit Datei
 # zugeordnet ist (bei Teilbeträgen genügt eine). Offene, geparkte und ungültige Umsätze zählen nicht – sie sind noch nicht verbucht.
-# Ab 0.60 zählt auch nicht, was ausschließlich auf eigene Geldkonten geht (Konto einer Kasse – Bargeld, PayPal … – oder Geldtransit
-# 2380): das ist eine Umbuchung, keine Ausgabe; den Beleg trägt der Kassenbeleg. Sobald ein Teilbetrag woandershin geht, zählt der Umsatz.
+# Ab 0.60 gilt eine Ausnahme: Der Umsatz zählt nicht, wenn die geltende Zuordnungsrunde Buchungszeilen hat und alle auf eigenen
+# Geldkonten liegen (Konto einer Kasse – Bargeld, PayPal … – oder Geldtransit 2380): das ist eine Umbuchung, keine Ausgabe; den Beleg
+# trägt der Kassenbeleg. Sobald ein Teilbetrag woandershin geht, zählt der Umsatz – und ebenso, wenn die Buchung der Runde fehlt:
+# Unbekanntes soll auffallen, nicht verschwinden. Beide Abfragen brauchen den Index entries(journal_id) (core.py), sonst läuft
+# je verbuchter Ausgabe die ganze Tabelle `entries` durch.
+_ZEILEN = f"FROM journals j JOIN entries e ON e.journal_id=j.id WHERE j.source IN ('bank:'||{_RUNDE},'resolve:'||{_RUNDE})"
 OHNE_BELEG = ("b.ledger='bank' AND b.state='booked' AND b.amount<0 "
               "AND NOT EXISTS(SELECT 1 FROM umsatz_belege u WHERE u.bank_id=b.id) "
               "AND NOT EXISTS(SELECT 1 FROM bill_payments p JOIN bills x ON x.id=p.bill_id WHERE p.bank_id=b.id AND x.attachment IS NOT NULL) "
-              f"AND EXISTS(SELECT 1 FROM journals j JOIN entries e ON e.journal_id=j.id WHERE j.source IN ('bank:'||{_RUNDE},'resolve:'||{_RUNDE}) "
-              f"AND e.account NOT IN ('1420','1370','{kasse.TRANSIT}','{kasse.ACCOUNT}') AND e.account NOT IN (SELECT account FROM kassen))")
+              f"AND (NOT EXISTS(SELECT 1 {_ZEILEN}) OR EXISTS(SELECT 1 {_ZEILEN} "
+              f"AND e.account NOT IN ('1420','1370','{kasse.TRANSIT}','{kasse.ACCOUNT}') AND e.account NOT IN (SELECT account FROM kassen)))")
 
 
 def init(db):

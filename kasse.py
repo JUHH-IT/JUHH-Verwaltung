@@ -354,6 +354,13 @@ def balance(store, until=None, kasse=0):
     return sum(m['amount'] for m in timeline(store, kasse=kasse) if m['day'] <= until)
 
 
+def plus_frage(k):
+    """Frage zum Bestand im Plus (`k`: Kasse mit `balance`), sonst '' – nur beim Zahlungsdienst (PayPal): er zieht jede Zahlung
+    selbst vom Bankkonto ein, Guthaben liegt dort gewöhnlich keins. Steht der Bestand im Buch im Plus, ist der Einzug gebucht, aber
+    der Beleg der Zahlung fehlt (dann fehlt die Ausgabe im Haushalt) – oder es liegt wirklich Guthaben dort. Hinweis, kein Fehler."""
+    return f"Fehlt ein Beleg für eine Zahlung, oder liegt Guthaben bei {k['name']}?" if k['art'] == 'dienst' and k['balance'] > 0 else ''
+
+
 def _check(store, k, extra=None, storno=False):
     if k['art'] != 'bar':      # Zahlungsdienst (PayPal): der Einzug vom Bankkonto folgt der Zahlung – im Buch bis dahin im Minus
         return
@@ -385,13 +392,15 @@ def check_parts(store, b, parts):
 
 def check_after_booking(store, entries, storno=False):
     """Nach einer Buchung auf ein Kassenkonto (Kassenbeleg, Kontoauszug, Storno): der Bestand dieser Kasse darf nie negativ werden
-    (Art „bar“, nur bei eingerichteter Kasse); eine stillgelegte Kasse nimmt keine Buchung an."""
+    (Art „bar“, nur bei eingerichteter Kasse); eine stillgelegte Kasse nimmt keine Buchung an – auch kein Storno auf 2380, nach dem
+    einer ihrer Belege im Geldtransit wieder ohne Kontoumsatz dastünde (stillgelegt heißt: kein offener Geldtransit)."""
     hit = {e['account'] for e in entries}
+    offen = transit(store)['kassen'] if storno and TRANSIT in hit else {}
     for k in liste(store):
-        if k['account'] in hit:
+        if k['account'] in hit or offen.get(k['id']):
             _aktiv(k)
-            if k['start']:
-                _check(store, k, storno=storno)
+        if k['account'] in hit and k['start']:
+            _check(store, k, storno=storno)
 
 
 def create(store, data, actor, attachment_suffix=None):
@@ -455,13 +464,15 @@ def void(store, bid, reason, actor):
 
 
 def summary(store):
-    """Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand und ihre offenen Posten im
-    Geldtransit (`transit`); dazu offene Belege aller Kassen, die Kontoumsätze auf 2380 ohne Kassenbeleg mit dem Saldo 2380 und
-    der Kontovorschlag für eine weitere Kasse."""
+    """Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand, ihre offenen Posten im
+    Geldtransit (`transit`) und `plus` (`plus_frage`); dazu offene Belege aller Kassen, die Kontoumsätze auf 2380 ohne Kassenbeleg
+    mit dem Saldo 2380 und der Kontovorschlag für eine weitere Kasse."""
     open_ = dict(store.db.execute("SELECT kasse,COUNT(*) FROM bank WHERE ledger='cash' AND state='open' GROUP BY kasse").fetchall())
     t = transit(store)
     kassen = [{**k, 'balance': balance_today(store, k) if k['start'] else 0, 'open': open_.get(k['id'], 0),
                'opening': opening(store, k) if k['start'] else None, 'transit': t['kassen'].get(k['id'], [])} for k in liste(store)]
+    for k in kassen:
+        k['plus'] = plus_frage(k)
     return {'kassen': kassen, 'open': sum(k['open'] for k in kassen), 'next_account': free_account(store),
             'transit': {'saldo': t['saldo'], 'bank': t['bank']}}
 

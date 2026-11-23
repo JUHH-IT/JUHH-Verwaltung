@@ -1536,6 +1536,37 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.click('[data-page=cash]');
   check((await gewaehlt()).includes('PayPal') && await page.locator('main [data-minus]').count() === 0 && (await page.locator('main .cards .card').first().textContent()).includes('0,00'),
     'PayPal: nach dem Einzug Bestand 0, Hinweis weg');
+  // Bestand im Plus (0.60): bei einem Zahlungsdienst liegt gewöhnlich kein Guthaben – ruhiger Hinweis auf der Seite Kasse und auf dem
+  // Start (fehlt ein Beleg, oder liegt Guthaben dort?). Hier über eine Einnahme; der Beleg wird danach für ungültig erklärt.
+  await page.click('[data-new-cash]');
+  await page.check('#cash-form input[name=kind][value=in]');
+  await page.fill('#cash-form input[name=amount]', '4');
+  await page.fill('#cash-form input[name=text]', 'Teilnahmebeitrag über PayPal');
+  await page.click('#cash-form button[type=submit]');
+  check(/^PayPal: PP-\d{4}-0003 erfasst/.test(await toast()), 'PayPal: Einnahme erfasst');
+  const plus = await page.locator('main [data-plus]').textContent();
+  check(plus.includes('Bestand im Buch +4,00') && plus.includes('Fehlt ein Beleg für eine Zahlung, oder liegt Guthaben bei PayPal?') && await page.locator('main [data-minus]').count() === 0,
+    'PayPal: Bestand im Plus mit ruhigem Hinweis (Beleg fehlt oder Guthaben)');
+  await shot('38j-kasse-paypal-im-plus');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(150);
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'PayPal im Plus auf dem Handy ohne seitliches Scrollen');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.click('[data-page=overview]');
+  const plusZeile = page.locator('.task-row:has-text("PayPal: Bestand im Buch im Plus")');
+  check((await plusZeile.textContent()).includes('liegt Guthaben bei PayPal?') && (await plusZeile.locator('.zahl').textContent()).includes('+4,00') && await plusZeile.locator('.punkt').count() === 0,
+    'Start: Bestand im Plus bei PayPal als Zeile ohne Punkt');
+  await plusZeile.scrollIntoViewIfNeeded();
+  await shot('38j-start-paypal-im-plus');
+  await plusZeile.click();
+  check((await gewaehlt()).includes('PayPal') && await page.locator('main [data-plus]').count() === 1, 'Start → Kasse PayPal mit dem Hinweis');
+  await page.click('main [data-filter=open]');
+  await page.waitForSelector('main [data-void]');
+  await page.click('main [data-void]');
+  await page.fill('#cash-void input[name=reason]', 'nur zur Probe');
+  await page.click('#cash-void button[type=submit]');
+  check(/PP-\d{4}-0003 ist ungültig/.test(await toast()) && await page.locator('main [data-plus]').count() === 0 && (await page.locator('main .cards .card').first().textContent()).includes('0,00'),
+    'PayPal: Beleg ungültig, Bestand 0, Hinweis weg');
   await page.click('main [data-filter=book]');
   await page.waitForSelector('[data-cash-csv]');
   const ppBook = await page.locator('[data-custom]').textContent();

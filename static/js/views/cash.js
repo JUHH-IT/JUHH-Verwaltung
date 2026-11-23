@@ -44,6 +44,7 @@ function head() {
       <button type="button" data-kasse="${x.id}" aria-pressed="${x.id === k.id}">${x.name}<span class="zahl">${x.start ? eur(x.balance) : 'nicht eingerichtet'}</span></button>`)}</div>` : ''}
     ${dienst(k) && k.balance < 0 ? html`<p class="notice" data-minus><strong>Bestand im Minus:</strong> Der Einzug vom Bankkonto über ${eur(-k.balance)} fehlt noch –
       im Kontoauszug auf Konto ${k.account} buchen.</p>` : ''}
+    ${k.plus ? html`<p class="notice" data-plus><strong>Bestand im Buch ${signed(k.balance)}.</strong> ${k.plus}</p>` : ''}
     ${k.start ? html`<section class="cards" aria-label="Kasse">
       <div class="card"><span class="label">${w.bestand} heute</span><span class="value">${eur(k.balance)}</span>
         <span class="note">Anfangsbestand ${eur(k.opening?.amount || 0)} am ${date(k.start)} · Konto ${k.account}</span></div>

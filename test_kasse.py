@@ -683,6 +683,28 @@ class ArtUndPflegeTests(Base):
         self.abgelehnt('Beginn des Kassenbuchs', kasse.create, self.s, {'kind': 'out', 'amount': '1', 'day': f'{YEAR - 1}-12-30', 'text': 'x', 'kasse': pp}, 'Test')
         self.abgelehnt('negativ', kasse.set_opening, self.s, START, '-5', 'Test', pp)  # ein Kontostand zu Beginn ist nie negativ
 
+    def test_zahlungsdienst_im_plus_ist_ein_hinweis(self):
+        """Der Einzug vom Bankkonto ist gebucht, der Beleg der Zahlung wurde nie erfasst: Bestand im Buch im Plus, keine Ausgabe im
+        Haushalt. Das steht als ruhiger Hinweis in den Gesamtdaten (Seite Kasse, Start), im Monatsbericht und im Prüfpaket – bei
+        Bargeld nie, dort ist ein Bestand im Plus normal."""
+        kasse.set_opening(self.s, START, '50', 'Test')
+        pp = self.neu()
+        self.neu('Handkasse', '1431', 'HK', art='bar', amount='20')
+        plus = lambda: [k['plus'] for k in self.s.snapshot(YEAR)['cash']['kassen']]  # noqa: E731
+        self.assertEqual((self.hinweise(), plus()), ([], ['', '', '']))
+        self.auf_konto('-80', 2)                                                       # Abbuchung im Kontoauszug → PayPal, kein Beleg
+        frage = 'Fehlt ein Beleg für eine Zahlung, oder liegt Guthaben bei PayPal?'
+        self.assertEqual((kasse.balance(self.s, kasse=pp), plus()), (8000, ['', frage, '']))
+        self.assertEqual(self.hinweise(), [f'PayPal: Bestand im Buch +80,00 €. {frage}'])
+        self.assertFalse(any('PayPal' in t for t in berichte.monthly(self.s, TODAY)['tasks']))   # Hinweis, keine Aufgabe und kein Fehler
+        for pdf in (berichte.monthly_pdf(self.s, TODAY), self.paket()['00-Uebersicht.pdf']):
+            text = self.text(pdf)
+            self.assertIn(f'Hinweis – PayPal: Bestand im Buch +80,00 €. {frage}', text)
+            self.assertNotIn('PayPal?.', text)
+        aus = self.beleg(pp, 'out', '80', text='Plakate')                              # Beleg nachgetragen: Bestand 0, Hinweis weg
+        self.s.book(aus, [{'amount': '-80', 'account': '4220', 'kv': 'LV'}], 'Test')
+        self.assertEqual((kasse.balance(self.s, kasse=pp), self.hinweise(), plus()), (0, [], ['', '', '']))
+
     def test_zahlungsdienst_ohne_geldtransit(self):
         pp = self.neu(amount='100')
         self.assertEqual(list(kasse.kinds(kasse.eine(self.s, pp))), ['in', 'out'])
@@ -764,6 +786,23 @@ class ArtUndPflegeTests(Base):
         self.beleg(pp, 'in', '5', offset=3)
         self.assertEqual([r['action'] for r in self.s.rows("SELECT action FROM audit WHERE action LIKE 'Kasse %' AND action NOT LIKE 'Kasse eing%' ORDER BY id")],
                          ['Kasse stillgelegt', 'Kasse umbenannt', 'Kasse wieder aktiviert'])
+
+    def test_storno_oeffnet_keinen_geldtransit_einer_stillgelegten_kasse(self):
+        """Stillgelegt heißt: kein offener Geldtransit. Das Storno des Kontoumsatzes auf 2380, der einen Beleg der stillgelegten Kasse
+        ausgleicht, wird deshalb abgewiesen wie jedes Storno bei einer stillgelegten Kasse – zuerst wieder aktivieren."""
+        hand = self.neu('Handkasse', '1431', 'HK', art='bar', amount='10')
+        kasse.create(self.s, {'kind': 'deposit', 'amount': '10', 'day': self.day(10), 'kasse': hand}, 'Test')
+        gegen = self.auf_konto('10', 10, '2380')
+        kasse.set_active(self.s, hand, False, 'Test')
+        self.abgelehnt('Handkasse ist stillgelegt – zuerst wieder aktivieren', self.s.reverse_bank, gegen, 'Test')
+        zustand = lambda: (kasse.transit(self.s)['kassen'], self.s.db.execute('SELECT state FROM bank WHERE id=?', (gegen,)).fetchone()[0])  # noqa: E731
+        self.assertEqual(zustand(), ({}, 'booked'))
+        fremd = self.auf_konto('25', 11, '2380')                                       # anderer Durchlaufposten: bleibt stornierbar
+        self.s.reverse_bank(fremd, 'Test')
+        kasse.set_active(self.s, hand, True, 'Test')
+        self.s.reverse_bank(gegen, 'Test')                                             # aktiv: Storno geht, der Beleg ist wieder offen
+        self.assertEqual(([x['number'] for x in zustand()[0][hand]], zustand()[1]), ([f'HK-{YEAR}-0001'], 'open'))
+        self.abgelehnt('Geldtransit 2380', kasse.set_active, self.s, hand, False, 'Test')
 
     def test_loeschen_nur_ohne_beleg_und_buchung(self):
         leer = self.neu()

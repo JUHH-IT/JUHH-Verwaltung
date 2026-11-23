@@ -66,17 +66,21 @@ def _cash(store, day):
     stillgelegte Kasse steht nur in den Jahren, in denen sie Bewegungen hatte."""
     import kasse
     t = kasse.transit(store, day)
-    kassen = [{'id': k['id'], 'name': k['name'], 'account': k['account'], 'balance': kasse.balance(store, day, k), 'transit': t['kassen'].get(k['id'], []),
+    kassen = [{'id': k['id'], 'name': k['name'], 'account': k['account'], 'art': k['art'], 'balance': kasse.balance(store, day, k), 'transit': t['kassen'].get(k['id'], []),
                'open': store.db.execute("SELECT COUNT(*) FROM bank WHERE ledger='cash' AND kasse=? AND state IN ('open','parked') AND booked<=?",
                                         (k['id'], day)).fetchone()[0]} for k in kasse.liste(store) if k['start'] and (k['aktiv'] or kasse.bewegt(store, k, day[:4]))]
     return {'kassen': kassen, 'transit': t['saldo'], 'transit_bank': t['bank']} if kassen else None
 
 
 def _minus_notes(cash, only=None):
-    """Hinweis aus `_cash` je Kasse mit Bestand im Minus – das gibt es nur bei einem Zahlungsdienst (PayPal): der Einzug vom
-    Bankkonto ist noch nicht gebucht. Kein Fehler. only: nur diese Kassen (Kennungen)."""
-    return [f"{k['name']}: Bestand im Minus ({euro(k['balance'])}) – der Einzug vom Bankkonto über {euro(-k['balance'])} fehlt noch "
-            f"(im Kontoauszug auf Konto {k['account']} buchen)" for k in cash['kassen'] if k['balance'] < 0 and (only is None or k['id'] in only)]
+    """Hinweise aus `_cash` zum Bestand eines Zahlungsdienstes (PayPal), kein Fehler: im Minus (nur dort möglich) ist der Einzug vom
+    Bankkonto noch nicht gebucht; im Plus fehlt ein Beleg oder es liegt Guthaben dort (`kasse.plus_frage`). only: nur diese Kassen
+    (Kennungen)."""
+    import kasse
+    kassen = [k for k in cash['kassen'] if only is None or k['id'] in only]
+    return ([f"{k['name']}: Bestand im Minus ({euro(k['balance'])}) – der Einzug vom Bankkonto über {euro(-k['balance'])} fehlt noch "
+             f"(im Kontoauszug auf Konto {k['account']} buchen)" for k in kassen if k['balance'] < 0]
+            + [f"{k['name']}: Bestand im Buch +{euro(k['balance'])}. {kasse.plus_frage(k)}" for k in kassen if kasse.plus_frage(k)])
 
 
 def _transit_sum(posten):
@@ -272,7 +276,7 @@ def monthly_pdf(store, day=None):
                     + (f'Im Kontoauszug stehen {len(bank_open)} Buchung(en) auf 2380 ohne Kassenbeleg ({_transit_sum(bank_open)}). ' if bank_open else '')
                     + f"Saldo des Kontos 2380: {euro(m['cash']['transit'])}. Bestand laut Kassenbuch (Anfangsbestand + Kassenbelege + Buchungen auf "
                     'dem Konto der Kasse) – mit der Zählung der Kasse bzw. dem Kontostand (z. B. PayPal) abgleichen.', 'small')]
-        story += [p(f'Hinweis – {n}.', 'small') for n in _minus_notes(m['cash'])]
+        story += [p(f"Hinweis – {n}{'' if n.endswith('?') else '.'}", 'small') for n in _minus_notes(m['cash'])]
     story += [
              p(f"Im {m['month']}", 'h2'),
              _table([['Eingänge Konto', 'Ausgänge Konto', 'Einnahmen gebucht', 'Ausgaben gebucht'],

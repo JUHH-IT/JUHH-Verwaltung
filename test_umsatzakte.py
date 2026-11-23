@@ -6,6 +6,7 @@ import csv
 import http.cookiejar
 import io
 import json
+import re
 import tempfile
 import threading
 import unittest
@@ -241,6 +242,26 @@ class OhneBelegTests(Basis):
         self.s.book(ausgabe, [{'amount': '-50', 'account': '1430', 'kv': 'LV'}], 'Test')
         self.assertEqual(ohne(), {transit, gemischt})
         self.assertEqual(umsatzakte.ohne_beleg(self.s, 2026), 2)
+
+    def test_fehlt_die_buchung_zaehlt_der_umsatz(self):
+        """Die Ausnahme gilt nur, wenn die geltende Zuordnungsrunde Buchungszeilen hat und alle auf eigenen Geldkonten liegen. Ein
+        verbuchter Ausgang ohne Buchung dieser Runde zählt – Unbekanntes soll auffallen, nicht verschwinden."""
+        kasse.add(self.s, {'name': 'PayPal', 'account': '1430', 'prefix': 'PP', 'art': 'dienst', 'day': '2026-01-01', 'amount': '0'}, 'Test')
+        umbuchung, verwaist = self.gebucht('-12,50', '1430'), self.gebucht('-9', '1430')
+        ohne = lambda: {b['id'] for b in self.s.snapshot(2026)['bank'] if b['ohne_beleg']}  # noqa: E731
+        self.assertEqual((ohne(), umsatzakte.ohne_beleg(self.s, 2026)), (set(), 0))
+        self.s.db.execute("UPDATE journals SET source='alt:'||id WHERE source=?", (f'bank:{verwaist}',))   # gedachte Altdaten: Buchung nicht auffindbar
+        self.assertEqual((ohne(), umsatzakte.ohne_beleg(self.s, 2026)), ({verwaist}, 1))
+        self.assertNotIn(umbuchung, ohne())
+
+    def test_abfrage_ohne_durchlauf_der_buchungszeilen(self):
+        """Die Regel fragt je verbuchter Ausgabe nach den Buchungszeilen ihrer Runde, bei jedem Laden der Gesamtdaten. Ohne den Index
+        entries(journal_id) lief dabei jedes Mal die ganze Tabelle durch (3 000 Ausgaben: rund 13 Sekunden je Seitenaufbau)."""
+        for abfrage in (f'SELECT b.id FROM bank b WHERE {umsatzakte.OHNE_BELEG}',
+                        f"SELECT COUNT(*) FROM bank b WHERE {umsatzakte.OHNE_BELEG} AND substr(b.booked,1,4)='2026'"):
+            plan = [r[3] for r in self.s.db.execute('EXPLAIN QUERY PLAN ' + abfrage)]
+            self.assertTrue(any(re.match(r'SEARCH (TABLE )?e\b', z) for z in plan), plan)
+            self.assertEqual([z for z in plan if re.match(r'SCAN (TABLE )?(e|j)\b', z)], [], plan)
 
     def test_bezug_beitrag(self):
         eins, zwei = (self.s.member({'number': f'M{i}', 'first_name': v, 'last_name': 'Muster', 'street': 'Weg 1', 'zip': '20001', 'city': 'Hamburg',
