@@ -13,7 +13,7 @@ export const store = {
   data: null,        // /api/data: Mitglieder, Rechnungen, Bank, Konten, Journal, Einstellungen …
   household: null,   // /api/haushalt: Gesamthaushalt Plan/Ist
   workflow: null,    // /api/workflow: KV-Budgets, Parkkonto, Lernbeispiele
-  bank: { filter: 'open', search: '', selected: null },
+  bank: { filter: 'open', search: '', selected: null, modus: 'liste' },   // Kontoumsätze: 'liste' oder 'verbuchen' (Maske, ab 0.60)
   cash: { filter: 'open', search: '', selected: null },   // Kasse (Kassenbelege, ab 0.25)
   budgets: { mode: 'household', onlyDeviations: false, kvSearch: '', kvAttention: false, kvSelected: null, kvKey: null, kvData: null },
   journal: { limit: 300, search: '' },
@@ -48,6 +48,7 @@ export async function refresh() {
 
 export function go(page, options = {}) {
   store.page = page;
+  if (page === 'bank') store.bank.modus = options.bankFilter ? 'verbuchen' : 'liste';   // Kontoumsätze: Liste; mit Filter (Aufgabe vom Start) gleich die Maske
   if (options.bankFilter) {
     store.bank.filter = options.bankFilter;
     store.bank.selected = null;

@@ -12,7 +12,8 @@ import { rpjField, bindRpj, rpjKind, rpjValue, rpjMissing } from '../rpj-field.j
 
 const option = (value, label, selected) => html`<option value="${value}" ${selected ? 'selected' : ''}>${label}</option>`;
 
-export function bookingEditor(container, b, { onBooked, onPark }) {
+/** zusatz: eigenes Markup der Seite zwischen Kontierung und Knöpfen (Kontoumsätze: Notiz und Belege, ab 0.60). */
+export function bookingEditor(container, b, { onBooked, onPark, zusatz = '' }) {
   const kind = b.amount > 0 ? 'income' : 'expense';
   // alle Konten des Kontenrahmens; 8100 nur mit Mitglied – bei Ausgängen als Rückzahlung bzw. Rücklastschrift eines Beitrags;
   // 1592 bei Ausgängen als Rückzahlung von RPJ-Mitteln (mit Mittelabruf)
@@ -37,6 +38,7 @@ export function bookingEditor(container, b, { onBooked, onPark }) {
         <span class="difference" id="difference" role="status"></span>
       </div>
       <label class="check" style="margin-top:12px"><input type="checkbox" id="learn"> Als Lernbeispiel merken (nur Konten, keine Rechnungen)</label>
+      ${zusatz}
       <div class="detail-actions" style="margin-top:14px">
         <p class="keys"><kbd>J</kbd>/<kbd>K</kbd> nächster/voriger · <kbd>↵</kbd> verbuchen${b.state === 'open' ? html` · <kbd>P</kbd> parken` : ''}</p>
         <div class="buttons">

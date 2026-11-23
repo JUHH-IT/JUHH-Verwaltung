@@ -1,5 +1,6 @@
-// Buchungsplatz (Richtung B): Arbeitsliste links, ausgewählter Umsatz mit Kontierung rechts – für den Kontoauszug (bank) und,
-// ab 0.25, gleich für die Kasse (cash, views/cash.js): dieselbe Kontierung, nur das Gegenkonto ist 1400 statt 1420.
+// Buchungsplatz (Richtung B): Arbeitsliste links, ausgewählter Umsatz mit Kontierung rechts – ab 0.25 für die Kasse (cash,
+// views/cash.js): dieselbe Kontierung, nur das Gegenkonto ist 1400 statt 1420. Der Kontoauszug steht ab 0.60 auf eigenen Seiten
+// (views/umsaetze.js Liste, views/verbuchen.js Maske) und nutzt von hier Parken, Ungültig und den Hinweis auf ein Storno.
 import { api } from '../api.js';
 import { html, mount } from '../html.js';
 import { eur, signed, date, shortDate, findIban, bookingKind } from '../format.js';
@@ -22,7 +23,7 @@ const OWN = { bank: '1420', cash: '1400' };   // Gegenkonto des Umsatzes (nicht 
 let L = { ledger: 'bank', state: store.bank, head: null, empty: '' };
 export function useLedger(ctx) { L = ctx; }
 /** Journal-Quellen eines Umsatzes in einer Zuordnungsrunde (wie core.bank_source: bank:7, nach Storno bank:7/1). */
-const roundSources = (b, round = b.reversals || 0) => new Set(['bank', 'resolve'].map((k) => `${k}:${b.id}${round ? '/' + round : ''}`));
+export const roundSources = (b, round = b.reversals || 0) => new Set(['bank', 'resolve'].map((k) => `${k}:${b.id}${round ? '/' + round : ''}`));
 
 let editor = null;
 
@@ -70,7 +71,7 @@ const lineList = (lines) => html`<div class="booked-lines">${lines.map((j) => ht
   <span class="muted"> · ${eur(j.credit - j.debit)}</span></div>`)}</div>`;
 
 /** Hinweis auf eine stornierte frühere Zuordnung mit deren Kontierung (zum Vergleich beim Neuzuordnen). */
-function reversedNote(b) {
+export function reversedNote(b) {
   if (!b.reversals || b.state === 'booked') return '';
   const before = bookedLines(b, b.reversals - 1);
   return html`<div class="notice"><strong>Frühere Zuordnung storniert${b.reversals > 1 ? ` (${b.reversals}×)` : ''}.</strong>
@@ -128,7 +129,7 @@ function move(step) {
   document.querySelector(`.bank-item[data-id="${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
 }
 
-function parkForm(b, box) {
+export function parkForm(b, box, done = afterChange) {
   box.hidden = false;
   mount(box, html`<form class="park" id="park-form">
     <label class="field">Was muss geklärt werden?<input name="reason" required placeholder="z. B. Beleg fehlt, Kreisverband unklar"></label>
@@ -142,7 +143,7 @@ function parkForm(b, box) {
     e.preventDefault();
     safe(async () => {
       await api('/api/park', { id: b.id, reason: e.target.reason.value });
-      await afterChange(b);
+      await done(b);
       toast('Auf Parkkonto 1370 gebucht – bleibt als Klärungsfall sichtbar.');
     });
   };
@@ -237,7 +238,7 @@ function renderBank(main, { keepScroll = false } = {}) {
 }
 
 /** Kontoumsatz für ungültig erklären (0.55, z. B. doppelt importiert) – workflow.ungueltig; Kassenbelege: views/cash.js. */
-function voidBankDialog(b) {
+export function voidBankDialog(b) {
   const el = dialog('Umsatz ungültig', html`<form id="bank-void" style="display:flex;flex-direction:column;gap:14px">
     <p class="muted">${date(b.booked)}, ${signed(b.amount)}, ${b.name || 'ohne Zahlungspartner'}. Der Umsatz bleibt unter „Alle“ mit dem Grund sichtbar und steht im Protokoll,
       zählt aber nicht mehr. Mit „Wieder gültig“ lässt sich das zurücknehmen.</p>
@@ -254,11 +255,6 @@ function voidBankDialog(b) {
       toast('Umsatz ist ungültig und zählt nicht mehr.');
     });
   };
-}
-
-export function bank(main) {
-  useLedger({ ledger: 'bank', state: store.bank, head: null, empty: '', voidDialog: voidBankDialog });
-  renderBank(main);
 }
 
 /** Arbeitsbereich mit eigener Kopfzeile, z. B. die Kasse (views/cash.js). */

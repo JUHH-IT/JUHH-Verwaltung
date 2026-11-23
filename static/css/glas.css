@@ -276,4 +276,15 @@ html.compact[data-design="glas"] .main { padding: 20px 20px 56px; }
 [data-design="glas"] .aw-gross .wert { font-family: var(--g-titel); }
 [data-design="glas"] .aw-sprung, [data-design="glas"] .aw-wahl { border-radius: 20px; }
 
+/* ---------- Kontoumsätze und Verbuchen (0.60): gewählte Zeile als Linse, Felder als Glas ---------- */
+[data-design="glas"] .ku-zeile[aria-pressed="true"], [data-design="glas"] .vb-zeile[aria-current="true"] { background: var(--g-linse); box-shadow: var(--g-linse-schatten); }
+[data-design="glas"] .ku-menu { background: var(--g-dicht); border-color: transparent; border-radius: 16px; box-shadow: var(--g-rand), var(--shadow-float); }
+[data-design="glas"] .ku-menu button:hover, [data-design="glas"] .ku-monat button:hover:not(:disabled), [data-design="glas"] .ua-weg:hover { background: var(--g-hover); }
+[data-design="glas"] .ua-teil textarea { background: var(--g-knopf); }
+[data-design="glas"] .ua-ablage:hover, [data-design="glas"] .ua-ablage.ist-ziel { background: var(--g-hover); }
+[data-design="glas"] .ku-titel h2, [data-design="glas"] .ku-titel .ku-betrag, [data-design="glas"] .vb-kopf h2, [data-design="glas"] .vb-kopf .vb-betrag, [data-design="glas"] .vb-stand h2 { font-family: var(--g-titel); }
+[data-design="glas"] .vb-maske .suggestion { background: none; border-color: var(--line); }
+[data-design="glas"] .search input:focus-visible { box-shadow: none !important; }   /* den Ring zeigt das Suchfeld selbst (:focus-within) */
+@media (max-width: 640px) { [data-design="glas"] .ku-zeile[aria-pressed="true"] { border-radius: 14px; } }
+
 }
