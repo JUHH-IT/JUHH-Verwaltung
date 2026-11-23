@@ -235,6 +235,7 @@ def report(store, stichtag=None, kv=None, ov=None, today=None):
 
     # Entwicklung: höchstens die letzten 10 Jahre bis zum Stichtag; Bestand am 31.12. bzw. am Stichtag
     first = min((_day(m['joined']).year for m in pool if _day(m['joined'])), default=year)
+    first = min(first, year)   # Stichtag vor dem ersten Eintritt der Auswahl: trotzdem das Jahr des Stichtags zeigen (sonst leere Entwicklung)
     development = []
     for y in range(max(first, year - 9), year + 1):
         end = min(date(y, 12, 31), day)
@@ -318,9 +319,10 @@ def report(store, stichtag=None, kv=None, ov=None, today=None):
 def redact(r, amounts=True, names=True):
     """Auswertung für eine Rolle (rollen.py, ab 0.34): ohne Buchhaltung keine Beitragsbeträge, ohne Mitgliederverwaltung
     keine Listen mit Namen und in den Kreuztabellen nach Geschlecht (Alter, Kreis- und Ortsverband, Eintritte, unter/ab 25), beim Alter je
-    Ortsverband sowie bei Geschlecht und Vereinigungen keine Werte, die auf weniger als SMALL Personen beruhen (None = „< 3“). Die
-    Zahlen zur Bindung (Kohorten, Austritte nach Dauer, Altersgrenze, geworben) und der Vergleich mit dem Vorjahr enthalten keine Merkmale
-    einzelner Personen und bleiben stehen; die Kohorten nennen von sich aus keinen Anteil unter SMALL Eintritten. `amounts` in der Antwort sagt der Oberfläche, ob Beträge enthalten sind."""
+    Ortsverband, bei Geschlecht und Vereinigungen sowie bei Austritten nach Dauer, Altersgrenze der nächsten Jahre und geworbenen Eintritten
+    keine Werte, die auf weniger als SMALL Personen beruhen (None = „< 3“ – sonst verriete „2027 wird 1 Mitglied 35“ in einem kleinen
+    Ortsverband das Alter einer Person). Kohorten und der Vergleich mit dem Vorjahr bleiben; die Kohorten nennen von sich aus keinen
+    Anteil unter SMALL Eintritten. `amounts` in der Antwort sagt der Oberfläche, ob Beträge enthalten sind."""
     r = {**r, 'amounts': bool(amounts)}
     if not amounts:
         r['kv_rows'] = [{**k, 'soll': 0, 'paid': 0, 'paid_share': None, 'arrears': 0, 'arrears_count': 0} for k in r['kv_rows']]
@@ -332,6 +334,9 @@ def redact(r, amounts=True, names=True):
         r['joined_gender'] = veil(r['joined_gender'], 'wmx')
         r['women_age'] = [{**a, 'share': _women(a['w'], a['m'])} for a in (veil(a, 'wmx') for a in r['women_age'])]
         r['gender'], r['clubs'] = ([veil(x, ('count',)) for x in r[key]] for key in ('gender', 'clubs'))   # wie im PDF: Merkmale einzelner Personen
+        r['age_limit_ahead'] = [veil(a, ('count',)) for a in r['age_limit_ahead']]
+        r['left_tenure'] = {**veil(r['left_tenure'], ('age_limit',)), 'groups': [veil(g, ('count',)) for g in r['left_tenure']['groups']]}
+        r['recruited'] = (lambda w: {**w, 'share': None if w['count'] is None else w['share']})(veil(r['recruited'], ('count',)))
         r['cards'] = {**r['cards'], 'joined_women_share': _women(r['joined_gender']['w'], r['joined_gender']['m'])}
         r['kv_rows'] = [{**k, 'women_share': _women(k['w'], k['m'])} for k in (veil(k, 'wmx') for k in r['kv_rows'])]
         r['ov_rows'] = [{**o, 'women_share': _women(o['w'], o['m']), 'avg_age': _age(o['active'], o['avg_age']), 'bands': _bands(n, True),

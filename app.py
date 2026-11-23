@@ -892,7 +892,7 @@ class Handler(BaseHTTPRequestHandler):
                     saved=sicherung.named_backup(DB,backups_dir()/'Vor Änderungen','vor-zusammenfuehren')
                     doppelte.zusammenfuehren(store,data.get('keep'),data.get('drop'),actor,bh);result={'backup':saved.name}
                 else: result={k:v for k,v in doppelte.vorschau(store,data.get('keep'),data.get('drop'),bh).items() if k!='neu'}
-            elif path=='/api/kenntnis-abhaken': result=__import__('kenntnis').abhaken(store,data.get('ids'),data.get('bis'),actor)   # 0.54
+            elif path=='/api/kenntnis-abhaken': result=__import__('kenntnis').abhaken(store,data.get('punkte'),data.get('bis'),actor)   # 0.54
             elif path=='/api/ov-gebiet': result={'stadtteile':__import__('ovabgleich').gebiet_speichern(store,DATA,data.get('id'),data.get('stadtteile'),actor)}
             elif path=='/api/ov-abgleich':   # ausgewählte Vorschläge übernehmen – vorher sichern (viele Mitglieder auf einmal)
                 __import__('ovabgleich').auswahl(data.get('aendern',[]),data.get('fest',[]))   # ungültige oder leere Auswahl: keine Sicherung

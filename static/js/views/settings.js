@@ -67,14 +67,15 @@ function schalter(s) {
       <div class="switch-text"><h2>Änderungen an Mitgliedern zur Kenntnis nehmen</h2>
         <p class="muted"><strong>An:</strong> Jede Änderung an den Stammdaten gilt sofort und erscheint zusätzlich unter Mitgliederverwaltung → Zur Kenntnis, bis sie
           abgehakt ist. Dafür merkt sich das Programm den Wert vorher – bis zum Abhaken und danach 30 Tage. Beträge und die Notiz werden nie festgehalten.
-          <strong>Aus:</strong> Das Programm hält nichts fest, die Seite „Zur Kenntnis“ verschwindet. Was schon festgehalten ist, bleibt bis zum Einschalten unsichtbar.</p></div>
+          <strong>Aus:</strong> Das Programm hält nichts fest, die Seite „Zur Kenntnis“ verschwindet. Was schon festgehalten ist, wird innerhalb einer Stunde gelöscht.</p></div>
       <label class="switch"><input type="checkbox" name="kenntnis" role="switch" aria-label="Änderungen an Mitgliedern zur Kenntnis nehmen" ${s.kenntnis === 'yes' ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
         <span class="switch-label" data-switch-label>${s.kenntnis === 'yes' ? 'An' : 'Aus'}</span></label>
     </div>
     <div class="switch-row">
       <div class="switch-text"><h2>Eigene Änderungen der Mitgliederverwaltung gelten als gesehen</h2>
-        <p class="muted"><strong>An:</strong> Ändert jemand mit dem Recht „Mitglieder ändern“ selbst ein Mitglied, ist das sofort abgehakt. Offen bleiben nur Änderungen
-          anderer Personen. <strong>Aus:</strong> Jede Änderung wird abgehakt, auch die eigene.</p></div>
+        <p class="muted"><strong>An:</strong> Jede Änderung durch eine Person mit dem Recht „Mitglieder ändern“ ist sofort abgehakt. Weil nur diese Personen Mitglieder
+          ändern können, bleibt dann nichts offen – „Zur Kenntnis“ zeigt unter „Abgehakt“ nur noch 30 Tage lang, wer was geändert hat.
+          <strong>Aus:</strong> Jede Änderung wird abgehakt, auch die eigene.</p></div>
       <label class="switch"><input type="checkbox" name="kenntnis_eigene" role="switch" aria-label="Eigene Änderungen der Mitgliederverwaltung gelten als gesehen" ${s.kenntnis_eigene === 'yes' ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
         <span class="switch-label" data-switch-label>${s.kenntnis_eigene === 'yes' ? 'An' : 'Aus'}</span></label>
     </div>

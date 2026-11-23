@@ -301,12 +301,13 @@ Der Ortsverband richtet sich nach dem Stadtteil der Anschrift. Dafür braucht je
 - **Cockpit** (Mitgliederverwaltung → Cockpit, früher „Überblick“): oben steht die Lage in einem Satz, darunter die Kennzahlen. „Vorjahr bis heute“ vergleicht mit demselben Tag des Vorjahres. Es folgen die offenen Änderungen, die Anlässe der Woche (Geburtstage, Jubiläen, neue Mitglieder), der Arbeitsvorrat nach Themen – jede Zeile öffnet die passende Liste –, die nächsten Termine, die Kreisverbände und die Ein- und Austritte je Monat. Die Seite zeigt keine Beträge.
 - **Zur Kenntnis** (Mitgliederverwaltung → Zur Kenntnis): Jede Änderung an den Stammdaten eines Mitglieds gilt sofort. Zusätzlich erscheint das Mitglied hier als ein Punkt, bis jemand mit dem Recht „Mitglieder ändern“ ihn abhakt. Ein Klick auf das Mitglied zeigt je geänderter Angabe den Wert **vorher** (durchgestrichen) und **jetzt**, darunter alle Angaben. Die Zahl im Menü nennt die offenen Punkte.
   - Mehrere Änderungen an einem Mitglied stehen zusammen: gezeigt wird der erste alte und der letzte neue Wert. Wird eine Angabe zurückgeändert, verschwindet der Punkt.
-  - Ein **Import** der Mitgliederliste und der **Abgleich der Ortsverbände** ändern oft viele Mitglieder. Sie stehen unter einer Überschrift und lassen sich einzeln oder mit „Alle abhaken“ gemeinsam erledigen.
+  - Ein **Import** der Mitgliederliste und der **Abgleich der Ortsverbände** ändern oft viele Mitglieder. Sie stehen unter einer Überschrift und lassen sich einzeln oder mit „Alle abhaken“ gemeinsam erledigen. Wurde dasselbe Mitglied zusätzlich von Hand geändert, steht es auch unter „Einzeln geändert“ – „Alle abhaken“ erledigt nur die Änderungen des Imports.
+  - Die IBAN steht hier gekürzt (Anfang und Ende). Die volle IBAN zeigt „Mitglied öffnen“.
   - Neu angelegte Mitglieder erscheinen als „Neu angelegt“.
   - „Abgehakt“ zeigt, was in den letzten 30 Tagen erledigt wurde und von wem. Danach löscht das Programm die alten Werte.
   - Beträge (Jahresbeitrag) und die Notiz werden nie festgehalten.
   - Die Liste „Änderung offen“ in der Mitgliederliste zeigt dieselben Mitglieder.
-- **Einstellen** (Einstellungen → Schalter): „Änderungen an Mitgliedern zur Kenntnis nehmen“ schaltet das Ganze aus – dann hält das Programm nichts fest. „Eigene Änderungen der Mitgliederverwaltung gelten als gesehen“ erspart das Abhaken der eigenen Änderungen.
+- **Einstellen** (Einstellungen → Schalter): „Änderungen an Mitgliedern zur Kenntnis nehmen“ schaltet das Ganze aus – dann hält das Programm nichts fest und löscht innerhalb einer Stunde, was schon festgehalten war. „Eigene Änderungen der Mitgliederverwaltung gelten als gesehen“: jede Änderung durch eine Person mit dem Recht „Mitglieder ändern“ ist sofort abgehakt. Weil nur diese Personen Mitglieder ändern können, bleibt dann nichts offen; „Abgehakt“ zeigt weiter 30 Tage lang, wer was geändert hat.
 
 ### Mitgliederstatus und Wahlberechtigung (ab 0.37)
 

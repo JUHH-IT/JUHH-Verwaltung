@@ -36,7 +36,7 @@ class Basis(unittest.TestCase):
         """Alles Bisherige abhaken – die Tests beginnen danach mit leerer Liste."""
         offen = kenntnis.liste(self.s)
         if offen['offen']:
-            kenntnis.abhaken(self.s, [p['id'] for p in offen['offen']], offen['stand'], 'Test')
+            kenntnis.abhaken(self.s, [{'id': p['id'], 'sammel': p['sammel']} for p in offen['offen']], offen['stand'], 'Test')
 
     def offen(self):
         return kenntnis.liste(self.s)['offen']
@@ -65,7 +65,7 @@ class FesthaltenTests(Basis):
         self.aendern(mid, 'Clara', city='Bremen')
         [p] = self.offen()
         self.assertEqual([(f['alt'], f['neu']) for f in p['felder']], [('Hamburg', 'Bremen')])
-        self.assertEqual(p['actor'], 'Clara')
+        self.assertEqual(p['actor'], 'Bernd, Clara')
 
     def test_hin_und_zurueck_ist_kein_punkt(self):
         mid = self.member()
@@ -73,7 +73,7 @@ class FesthaltenTests(Basis):
         self.aendern(mid, 'Bernd', city='Kiel')
         self.aendern(mid, 'Bernd', city='Hamburg')
         self.assertEqual(self.offen(), [])
-        self.assertEqual(kenntnis.offen_ids(self.s.db), [])
+        self.assertEqual(kenntnis.kurz(self.s.db), {'an': True, 'offen': [], 'punkte': 0})
         kenntnis.bereinigen(self.s)
         self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM mitglied_aenderungen WHERE gesehen_am IS NULL').fetchone()[0], 0)
 
@@ -98,7 +98,7 @@ class FesthaltenTests(Basis):
         self.assertEqual(werte['guest'], ('nein', 'ja'))
         self.assertEqual(werte['left_on'], ('', '31.12.2026'))
         self.assertIn('K-1', werte['geworben_von'][1])
-        self.assertEqual(werte['iban'][1], 'DE02 1203 0000 0000 2020 51')
+        self.assertEqual(werte['iban'][1], 'DE02 •••• 2051')
 
     def test_austritt_und_andere_wege_werden_erfasst(self):
         mid = self.member()
@@ -113,6 +113,8 @@ class FesthaltenTests(Basis):
         self.gesehen()
         self.s.db.execute("UPDATE members SET city='Kiel' WHERE id=?", (mid,))
         self.s.db.commit()
+        Store(Path(self.tmp.name) / 't.db').db.close()   # nächste Verbindung: gespeicherte Zeile ohne Person bekommt das Programm
+        self.assertEqual(self.s.db.execute('SELECT actor,anlass FROM mitglied_aenderungen WHERE gesehen_am IS NULL').fetchall()[0][:], ('Programm', 'programm'))
         [p] = self.offen()
         self.assertEqual((p['actor'], p['anlass']), ('Programm', 'programm'))
 
@@ -160,7 +162,7 @@ class AbhakenTests(Basis):
         self.aendern(mid, 'Bernd', city='Kiel')
         stand = kenntnis.liste(self.s)['stand']
         self.aendern(mid, 'Clara', zip='24103')   # kommt dazu, nachdem die Liste geladen wurde
-        self.assertEqual(kenntnis.abhaken(self.s, [mid], stand, 'Lena'), {'mitglieder': 1})
+        self.assertEqual(kenntnis.abhaken(self.s, [{'id': mid}], stand, 'Lena'), {'mitglieder': 1})
         [p] = self.offen()
         self.assertEqual([f['feld'] for f in p['felder']], ['zip'])
         [a] = [x for x in kenntnis.liste(self.s)['abgehakt'] if x['gesehen_von'] == 'Lena']
@@ -170,13 +172,15 @@ class AbhakenTests(Basis):
         mid = self.member()
         self.gesehen()
         self.aendern(mid, 'Bernd', city='Kiel', street='Geheimweg 9')
-        kenntnis.abhaken(self.s, [mid], kenntnis.liste(self.s)['stand'], 'Lena')
+        kenntnis.abhaken(self.s, [{'id': mid}], kenntnis.liste(self.s)['stand'], 'Lena')
         row = self.s.db.execute("SELECT detail FROM audit WHERE action='Änderungen zur Kenntnis genommen' ORDER BY id DESC").fetchone()
         self.assertEqual(row[0], '{"mitglieder": 1, "angaben": 2}')
         self.assertNotIn('Geheimweg', ' '.join(r[0] for r in self.s.db.execute('SELECT detail FROM audit')))
 
     def test_ungueltige_auswahl(self):
-        for ids, bis in (([], 5), ('1', 5), ([True], 5), ([1.5], 5), ([1], None), ([1], 0), (list(range(1, kenntnis.MAX_AUSWAHL + 2)), 5)):
+        P = lambda *ids: [{'id': i} for i in ids]
+        for ids, bis in (([], 5), ('1', 5), ([1], 5), (P(True), 5), (P(1.5), 5), (P(1), None), (P(1), 0), (P(1), 2 ** 70), ([{'id': 1, 'sammel': 'hand|x|2026-01-01'}], 5),
+                         ([{'id': 1, 'sammel': 'import||2026-01-01'}], 5), ([{'id': 1, 'sammel': 7}], 5), (P(*range(1, kenntnis.MAX_AUSWAHL + 2)), 5)):
             with self.assertRaises(ValueError, msg=(str(ids)[:20], bis)):
                 kenntnis.abhaken(self.s, ids, bis, 'Lena')
 
@@ -184,7 +188,7 @@ class AbhakenTests(Basis):
         mid = self.member()
         self.gesehen()
         vorher = self.s.db.execute('SELECT COUNT(*) FROM audit').fetchone()[0]
-        self.assertEqual(kenntnis.abhaken(self.s, [mid], 99, 'Lena'), {'mitglieder': 0})
+        self.assertEqual(kenntnis.abhaken(self.s, [{'id': mid}], 99, 'Lena'), {'mitglieder': 0})
         self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM audit').fetchone()[0], vorher)
 
     def test_abgehaktes_wird_nach_der_frist_geloescht(self):
@@ -195,6 +199,57 @@ class AbhakenTests(Basis):
         self.assertEqual(kenntnis.liste(self.s, spaeter)['abgehakt'], [])
         self.assertEqual(kenntnis.bereinigen(self.s, spaeter), 1)
         self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM mitglied_aenderungen WHERE member_id=?', (mid,)).fetchone()[0], 0)
+
+
+class HerkunftTests(Basis):
+    """Prüfbefund 0.54: Was von Hand geändert wurde, darf nie unter fremdem Namen in einem Sammelpunkt verschwinden."""
+
+    def importieren(self, actor, *ids, **neu):
+        with self.s.db:
+            for mid in ids:
+                self.s.db.execute(f"UPDATE members SET {','.join(k + '=?' for k in neu)} WHERE id=?", (*neu.values(), mid))
+            self.s.audit(actor, 'Mitgliederliste importiert', {'datei': 'liste.xlsx', 'neu': 0, 'aktualisiert': len(ids), 'ortsverbaende_neu': 0})
+
+    def test_von_hand_und_import_am_selben_mitglied_sind_zwei_punkte(self):
+        mid = self.member()
+        self.gesehen()
+        self.aendern(mid, 'Anna', iban='DE02120300000000202051')
+        self.importieren('Bernd', mid, street='Importweg 3')
+        punkte = {p['sammel'] is not None: p for p in self.offen()}
+        self.assertEqual((punkte[False]['actor'], punkte[False]['anlass'], [f['feld'] for f in punkte[False]['felder']]), ('Anna', 'hand', ['iban']))
+        self.assertEqual((punkte[True]['actor'], punkte[True]['anlass'], [f['feld'] for f in punkte[True]['felder']]), ('Bernd', 'import', ['street']))
+        self.assertEqual(kenntnis.kurz(self.s.db), {'an': True, 'offen': [mid], 'punkte': 2})                                   # ein Mitglied, zwei Punkte
+        stand = kenntnis.liste(self.s)['stand']
+        kenntnis.abhaken(self.s, [{'id': mid, 'sammel': punkte[True]['sammel']}], stand, 'Lena')   # „Alle abhaken“ im Sammelpunkt
+        [rest] = self.offen()
+        self.assertEqual((rest['actor'], [f['feld'] for f in rest['felder']]), ('Anna', ['iban']))   # Annas Änderung bleibt offen
+        kenntnis.abhaken(self.s, [{'id': mid}], stand, 'Lena')
+        self.assertEqual(self.offen(), [])
+        self.assertEqual({(a['actor'], a['anlass']) for a in kenntnis.liste(self.s)['abgehakt'] if a['gesehen_von'] == 'Lena'}, {('Anna', 'hand'), ('Bernd', 'import')})
+
+    def test_mehrere_personen_stehen_alle_am_punkt(self):
+        mid = self.member()
+        self.gesehen()
+        self.aendern(mid, 'Anna', city='Kiel')
+        self.aendern(mid, 'Bernd', zip='24103')
+        [p] = self.offen()
+        self.assertEqual(p['actor'], 'Anna, Bernd')
+
+    def test_loeschen_des_werbers_gehoert_der_loeschenden_person(self):
+        werber = self.member()
+        mid = self.member(geworben_von=werber)
+        self.gesehen()
+        mitglieder.delete(self.s, werber, 'Clara', arrears_ok=True)
+        [p] = self.offen()
+        self.assertEqual((p['id'], p['actor'], p['anlass'], [f['feld'] for f in p['felder']]), (mid, 'Clara', 'hand', ['geworben_von']))
+        self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM mitglied_aenderungen WHERE actor IS NULL').fetchone()[0], 0)
+
+    def test_iban_steht_in_der_liste_nur_verkuerzt(self):
+        mid = self.member()
+        self.gesehen()
+        self.aendern(mid, 'Anna', iban='DE02120300000000202051')
+        [f] = self.offen()[0]['felder']
+        self.assertEqual((f['alt'], f['neu']), ('', 'DE02 •••• 2051'))
 
 
 class EinstellungTests(Basis):
@@ -212,7 +267,15 @@ class EinstellungTests(Basis):
         self.aendern(mid, 'Bernd', city='Kiel')
         self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM mitglied_aenderungen').fetchone()[0], 0)
         self.assertEqual(kenntnis.liste(self.s), {'an': False, 'offen': [], 'abgehakt': [], 'stand': 0, 'frist': kenntnis.FRIST})
-        self.assertEqual(self.s.snapshot(2026)['kenntnis'], {'an': False, 'offen': []})
+        self.assertEqual(self.s.snapshot(2026)['kenntnis'], {'an': False, 'offen': [], 'punkte': 0})
+
+    def test_ausschalten_loescht_festgehaltenes(self):
+        mid = self.member()
+        self.gesehen()
+        self.aendern(mid, 'Bernd', iban='DE02120300000000202051')
+        self.einstellen(kenntnis='no')
+        self.assertEqual(kenntnis.bereinigen(self.s), self.n + 1)   # je Mitglied „angelegt“ und die offene Änderung
+        self.assertEqual(self.s.db.execute('SELECT COUNT(*) FROM mitglied_aenderungen').fetchone()[0], 0)
 
     def test_eigene_aenderungen_gelten_als_gesehen(self):
         rechte = mock.patch.object(rollen, 'rights_of', lambda db, name: {'mitglieder': 'schreiben' if name == 'Lena' else 'lesen'})
@@ -229,9 +292,9 @@ class EinstellungTests(Basis):
 
     def test_gesamtdaten_nennen_nur_kennungen(self):
         mid = self.member()
-        self.assertEqual(self.s.snapshot(2026)['kenntnis'], {'an': True, 'offen': [mid]})
+        self.assertEqual(self.s.snapshot(2026)['kenntnis'], {'an': True, 'offen': [mid], 'punkte': 1})
         ohne = rollen.filter_snapshot(self.s.snapshot(2026), {'buchhaltung': 'schreiben'})
-        self.assertEqual(ohne['kenntnis'], {'an': False, 'offen': []})
+        self.assertEqual(ohne['kenntnis'], {'an': False, 'offen': [], 'punkte': 0})
 
 
 class SammelTests(Basis):

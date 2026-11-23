@@ -9,7 +9,7 @@ Abschalten: Einstellungen → Schalter (`kenntnis` = no): dann hält die Datenba
 from datetime import date, datetime, timedelta
 
 import mitglieder
-from formate import german_date, iban_pretty
+from formate import german_date
 
 FELDER = tuple(f for f in mitglieder.FIELDS if f not in ('dues', 'external_balance'))   # ohne Beträge (Mitgliederverwaltung arbeitet ohne)
 JA_NEIN = ('dues_free', 'guest', 'no_mail', 'ov_fest')
@@ -18,7 +18,8 @@ ANGELEGT = 'angelegt'   # Feldname der Zeile „Mitglied neu angelegt“
 AUSLOESER = 'mitglied_aenderung_v1'   # bei geänderter Feldliste hochzählen – init entfernt die alten
 # Vorgänge des Protokolls, die Mitglieder ändern → Herkunft der Änderung (alles andere ordnet nichts zu)
 ANLASS = {'Mitglied angelegt': 'hand', 'Mitglied geändert': 'hand', 'Austritt eingetragen': 'hand', 'Austritt zurückgenommen': 'hand',
-          'Mitgliederliste importiert': 'import', 'Mitglieder zusammengeführt': 'zusammen'}
+          'Mitgliederliste importiert': 'import', 'Mitglieder zusammengeführt': 'zusammen',
+          'Mitglied gelöscht': 'hand'}   # Löschen nimmt bei den Geworbenen den Verweis „geworben von“ weg
 SAMMEL = {'import': 'Import der Mitgliederliste', 'abgleich': 'Abgleich der Ortsverbände'}   # viele Mitglieder auf einmal: ein Sammelpunkt
 HERKUNFT = {'hand': 'von Hand', 'import': 'Import der Mitgliederliste', 'abgleich': 'Abgleich der Ortsverbände', 'zusammen': 'Zusammenführen',
             'programm': 'Programm'}
@@ -83,13 +84,24 @@ def _gleich(feld, a, b):
     return (leer if a is None else a) == (leer if b is None else b)
 
 
-def _punkte(rows):
-    """Zeilen (nach id) zu Punkten je Schlüssel: je Angabe der erste alte und der letzte neue Wert; ohne Unterschied entfällt die Angabe."""
+def _sammel(r):
+    """Sammelschlüssel einer Zeile: Import und Abgleich je Person und Tag; alles andere (von Hand, Zusammenführen, Programm) = einzeln."""
+    return f"{r['anlass']}|{r['actor']}|{r['zeit'][:10]}" if r['anlass'] in SAMMEL else None
+
+
+def _punkte(rows, schluessel=lambda r: ()):
+    """Zeilen (nach id) zu Punkten je Mitglied und Herkunft: was von Hand geändert wurde, steht nie in einem Sammelpunkt und umgekehrt.
+    Je Angabe der erste alte und der letzte neue Wert; ohne Unterschied entfällt die Angabe. Mehrere Personen stehen alle am Punkt."""
     punkte = {}
     for r in rows:
-        p = punkte.setdefault(r['schluessel'], {'id': r['member_id'], 'felder': {}, 'neu': False, 'bis': 0})
-        p['bis'], p['zeit'], p['actor'], p['anlass'] = r['id'], r['zeit'], r['actor'], r['anlass']
+        sammel = _sammel(r)
+        p = punkte.setdefault((r['member_id'], sammel, *schluessel(r)), {'id': r['member_id'], 'sammel': sammel, 'felder': {}, 'neu': False,
+                                                                        'bis': 0, 'personen': [], 'anlaesse': []})
+        p['bis'], p['zeit'] = r['id'], r['zeit']
         p['gesehen_am'], p['gesehen_von'] = r['gesehen_am'], r['gesehen_von']
+        for liste, wert in ((p['personen'], r['actor'] or 'Programm'), (p['anlaesse'], r['anlass'] or 'programm')):
+            if wert not in liste:
+                liste.append(wert)
         if r['feld'] == ANGELEGT:
             p['neu'] = True
         elif r['feld'] in p['felder']:
@@ -102,13 +114,14 @@ def _punkte(rows):
 
 
 def _offen(db):
-    rows = db.execute('SELECT *,member_id AS schluessel FROM mitglied_aenderungen WHERE gesehen_am IS NULL ORDER BY id').fetchall()
-    return _punkte(rows)
+    return _punkte(db.execute('SELECT * FROM mitglied_aenderungen WHERE gesehen_am IS NULL ORDER BY id').fetchall())
 
 
-def offen_ids(db):
-    """Kennungen der Mitglieder mit offener Änderung – für die Gesamtdaten (Zahl im Menü, Liste „Änderung offen“)."""
-    return sorted(p['id'] for p in _offen(db)) if an(db) else []
+def kurz(db):
+    """Für die Gesamtdaten: eingeschaltet?, Kennungen der Mitglieder mit offener Änderung (Liste „Änderung offen“, Lage im Cockpit) und
+    Zahl der offenen Punkte (Menü – dieselbe Zahl wie „Offen“ auf der Seite; ein Mitglied kann einzeln und in einem Sammelpunkt stehen)."""
+    punkte = _offen(db) if an(db) else []
+    return {'an': an(db), 'offen': sorted({p['id'] for p in punkte}), 'punkte': len(punkte)}
 
 
 def _wert(store, feld, value, cache):
@@ -125,8 +138,9 @@ def _wert(store, feld, value, cache):
     if feld == 'geworben_von':
         w = store.db.execute('SELECT name,number FROM members WHERE id=?', (value,)).fetchone()
         return f"{w['name']} ({w['number']})" if w else 'gelöschtes Mitglied'
-    if feld == 'iban':
-        return iban_pretty(value)
+    if feld == 'iban':   # volle IBAN nur im geöffneten Mitglied (REGELN Nr. 34 b) – hier wie bei den Mandaten verkürzt
+        import lastschrift
+        return lastschrift.masked(value)
     return str(value)
 
 
@@ -140,11 +154,11 @@ def _fertig(store, punkte):
         m = store.db.execute('SELECT name,number,kv,ov_id FROM members WHERE id=?', (p['id'],)).fetchone()
         if not m:
             continue
-        anlass = p['anlass'] or 'programm'
+        anlass = p['anlaesse'][-1]
         out.append({'id': p['id'], 'name': m['name'], 'number': m['number'], 'kv': m['kv'], 'ov': cache['ov'].get(m['ov_id'], ''),
-                    'zeit': p['zeit'], 'actor': p['actor'] or 'Programm', 'anlass': anlass, 'herkunft': HERKUNFT.get(anlass, anlass),
-                    'sammel': f"{anlass}|{p['actor']}|{p['zeit'][:10]}" if anlass in SAMMEL else None,
-                    'sammel_titel': SAMMEL.get(anlass), 'neu': p['neu'], 'bis': p['bis'],
+                    'zeit': p['zeit'], 'actor': ', '.join(p['personen']), 'anlass': anlass,
+                    'herkunft': ', '.join(HERKUNFT.get(a, a) for a in p['anlaesse']),
+                    'sammel': p['sammel'], 'sammel_titel': SAMMEL.get(anlass) if p['sammel'] else None, 'neu': p['neu'], 'bis': p['bis'],
                     'gesehen_am': p['gesehen_am'], 'gesehen_von': p['gesehen_von'],
                     'felder': [{'feld': f, 'titel': mitglieder.LABELS.get(f, f), 'alt': _wert(store, f, v[0], cache),
                                 'neu': _wert(store, f, v[1], cache)} for f, v in p['felder'].items()] if not p['neu'] else []})
@@ -156,43 +170,62 @@ def liste(store, today=None):
     if not an(store.db):
         return {'an': False, 'offen': [], 'abgehakt': [], 'stand': 0, 'frist': FRIST}
     ab = ((today or date.today()) - timedelta(days=FRIST)).isoformat()
-    rows = store.db.execute("SELECT *,member_id||'|'||gesehen_am||'|'||gesehen_von AS schluessel FROM mitglied_aenderungen WHERE gesehen_am>=? ORDER BY id", (ab,)).fetchall()
+    rows = store.db.execute('SELECT * FROM mitglied_aenderungen WHERE gesehen_am>=? ORDER BY id', (ab,)).fetchall()
     stand = store.db.execute('SELECT COALESCE(MAX(id),0) FROM mitglied_aenderungen').fetchone()[0]
-    return {'an': True, 'offen': _fertig(store, _offen(store.db)), 'abgehakt': _fertig(store, _punkte(rows)), 'stand': stand, 'frist': FRIST}
+    return {'an': True, 'offen': _fertig(store, _offen(store.db)), 'abgehakt': _fertig(store, _punkte(rows, lambda r: (r['gesehen_am'], r['gesehen_von']))), 'stand': stand, 'frist': FRIST}
 
 
-def _kennungen(ids):
-    if not isinstance(ids, list) or not ids or len(ids) > MAX_AUSWAHL:
+def _auswahl(punkte):
+    """Eingabe prüfen: [{id: Mitglied, sammel: Sammelschlüssel oder None}] → [(id, None | (anlass, actor, tag))]."""
+    if not isinstance(punkte, list) or not punkte or len(punkte) > MAX_AUSWAHL:
         raise ValueError('Bitte mindestens ein Mitglied auswählen.')
-    if any(not isinstance(x, int) or isinstance(x, bool) or not 0 < x < 2 ** 62 for x in ids):
-        raise ValueError('Ungültige Auswahl.')
-    return sorted(set(ids))
+    out = []
+    for p in punkte:
+        mid, sammel = (p.get('id'), p.get('sammel')) if isinstance(p, dict) else (None, None)
+        if not isinstance(mid, int) or isinstance(mid, bool) or not 0 < mid < 2 ** 62 or not (sammel is None or isinstance(sammel, str)):
+            raise ValueError('Ungültige Auswahl.')
+        teile = None
+        if sammel is not None:
+            anlass, _, rest = sammel.partition('|')
+            actor, _, tag = rest.rpartition('|')
+            if anlass not in SAMMEL or not actor or len(tag) != 10:
+                raise ValueError('Ungültige Auswahl.')
+            teile = (anlass, actor, tag)
+        out.append((mid, teile))
+    return out
 
 
-def abhaken(store, ids, bis, actor):
-    """Offene Änderungen der Mitglieder `ids` zur Kenntnis nehmen – nur Zeilen bis `bis` (der Stand, den die Person gesehen hat)."""
-    ids = _kennungen(ids)
-    if not isinstance(bis, int) or isinstance(bis, bool) or bis < 1:
+def abhaken(store, punkte, bis, actor):
+    """Offene Punkte zur Kenntnis nehmen – je Mitglied genau den gezeigten Ausschnitt (einzeln geändert oder ein Sammelpunkt) und nur
+    Zeilen bis `bis` (der Stand, den die Person gesehen hat)."""
+    punkte = _auswahl(punkte)
+    if not isinstance(bis, int) or isinstance(bis, bool) or not 0 < bis < 2 ** 62:
         raise ValueError('Bitte die Liste neu laden.')
-    jetzt, zeilen, mitgliederzahl = _jetzt(), 0, 0
+    jetzt, zeilen, mitgliederzahl = _jetzt(), 0, set()
+    einzeln = f"COALESCE(anlass,'') NOT IN ({','.join('?' * len(SAMMEL))})"
     with store.db:
-        for mid in ids:
-            n = store.db.execute('UPDATE mitglied_aenderungen SET gesehen_am=?,gesehen_von=? WHERE member_id=? AND gesehen_am IS NULL AND id<=?',
-                                 (jetzt, actor, mid, bis)).rowcount
+        for mid, sammel in punkte:
+            wo, werte = ('anlass=? AND actor=? AND substr(zeit,1,10)=?', sammel) if sammel else (einzeln, tuple(SAMMEL))
+            n = store.db.execute(f'UPDATE mitglied_aenderungen SET gesehen_am=?,gesehen_von=? WHERE member_id=? AND gesehen_am IS NULL AND id<=? AND {wo}',
+                                 (jetzt, actor, mid, bis, *werte)).rowcount
             zeilen += n
-            mitgliederzahl += 1 if n else 0
-        if mitgliederzahl:
-            store.audit(actor, 'Änderungen zur Kenntnis genommen', {'mitglieder': mitgliederzahl, 'angaben': zeilen})
-    return {'mitglieder': mitgliederzahl}
+            if n:
+                mitgliederzahl.add(mid)
+        if zeilen:
+            store.audit(actor, 'Änderungen zur Kenntnis genommen', {'mitglieder': len(mitgliederzahl), 'angaben': zeilen})
+    return {'mitglieder': len(mitgliederzahl)}
 
 
 def bereinigen(store, today=None):
-    """Abgehakte Zeilen nach `FRIST` Tagen löschen; offene Zeilen ohne Unterschied (hin und zurück geändert) als erledigt löschen."""
+    """Abgehakte Zeilen nach `FRIST` Tagen löschen; offene Zeilen ohne Unterschied (hin und zurück geändert) löschen; ist die
+    Kenntnisnahme ausgeschaltet, alles löschen (dann soll das Programm keine alten Werte aufbewahren)."""
     ab = ((today or date.today()) - timedelta(days=FRIST)).isoformat()
     with store.db:
+        if not an(store.db):
+            return store.db.execute('DELETE FROM mitglied_aenderungen').rowcount
         n = store.db.execute('DELETE FROM mitglied_aenderungen WHERE gesehen_am IS NOT NULL AND gesehen_am<?', (ab,)).rowcount
-        sichtbar = {p['id'] for p in _offen(store.db)}
-        for (mid,) in store.db.execute('SELECT DISTINCT member_id FROM mitglied_aenderungen WHERE gesehen_am IS NULL AND actor IS NOT NULL').fetchall():
-            if mid not in sichtbar:
-                n += store.db.execute('DELETE FROM mitglied_aenderungen WHERE member_id=? AND gesehen_am IS NULL', (mid,)).rowcount
+        sichtbar = {(p['id'], p['sammel']) for p in _offen(store.db)}
+        for r in store.db.execute('SELECT * FROM mitglied_aenderungen WHERE gesehen_am IS NULL AND actor IS NOT NULL').fetchall():
+            if (r['member_id'], _sammel(r)) not in sichtbar:
+                n += store.db.execute('DELETE FROM mitglied_aenderungen WHERE id=?', (r['id'],)).rowcount
     return n

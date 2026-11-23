@@ -9,7 +9,8 @@ import { pageHead, icon, safe, toast } from '../ui.js';
 import { account } from './members.js';
 
 const sicht = { ansicht: 'offen', key: null };
-const schluessel = (p) => `${p.id}|${p.gesehen_am || ''}|${p.bis}`;
+const schluessel = (p) => `${p.id}|${p.sammel || ''}|${p.gesehen_am || ''}|${p.bis}`;
+const punkt = (p) => ({ id: p.id, sammel: p.sammel });   // genau dieser Ausschnitt wird abgehakt (kenntnis.abhaken)
 const mehrzahl = (n, eins, viele) => `${n} ${n === 1 ? eins : viele}`;
 
 /** Zeitpunkt kurz: „heute 14:20“, „gestern 17:48“, sonst „20.11. 09:12“. */
@@ -50,15 +51,15 @@ function draw(main, d) {
       <span class="${offen ? 'punkt' : 'punkt aus'}" aria-hidden="true"></span>
       <span><strong>${p.name}</strong><span class="was">${wasGeaendert(p)}</span>
         <span class="meta">${p.actor}, ${wann(p.zeit)}</span></span></button>
-    ${offen && schreiben ? html`<button type="button" class="kn-haken" data-ab="${p.id}" aria-label="Änderung bei ${p.name} zur Kenntnis nehmen">${icon('check', 18)}</button>` : ''}
+    ${offen && schreiben ? html`<button type="button" class="kn-haken" data-ab="${schluessel(p)}" aria-label="Änderung bei ${p.name} zur Kenntnis nehmen">${icon('check', 18)}</button>` : ''}
   </div>`;
 
   mount(main, html`<div class="page wide kn-page">
     ${pageHead('Mitgliederverwaltung', 'Zur Kenntnis', html`<div class="segmented" role="group" aria-label="Ansicht">
       <button type="button" data-ansicht="offen" aria-pressed="${offen ? 'true' : 'false'}">Offen <span class="zahl">${d.offen.length}</span></button>
       <button type="button" data-ansicht="abgehakt" aria-pressed="${offen ? 'false' : 'true'}">Abgehakt <span class="zahl">${d.abgehakt.length}</span></button></div>`)}
-    <p class="kn-einleitung">Jede Änderung an den Stammdaten gilt sofort. Hier siehst du je Mitglied, was sich geändert hat, und hakst es ab.
-      Abgehaktes bleibt ${d.frist} Tage sichtbar.</p>
+    <p class="kn-einleitung">Jede Änderung an den Stammdaten gilt sofort. Hier steht je Mitglied, was sich geändert hat.
+      ${schreiben ? 'Du hakst es ab, wenn du es gesehen hast.' : 'Abhaken kann, wer Mitglieder ändern darf.'} Abgehaktes bleibt ${d.frist} Tage sichtbar.</p>
     <div class="blatt"><div class="blatt-reihe kn-reihe">
       <section class="blatt-teil kn-liste" aria-label="Mitglieder mit Änderungen">
         ${liste.length ? '' : html`<p class="muted kn-leer">${offen ? 'Keine offenen Änderungen.' : `In den letzten ${d.frist} Tagen wurde nichts abgehakt.`}</p>`}
@@ -77,8 +78,8 @@ function draw(main, d) {
       </section>
     </div></div></div>`);
 
-  const abhaken = (ids, text) => safe(async () => {
-    const r = await api('/api/kenntnis-abhaken', { ids, bis: d.stand });
+  const abhaken = (punkte, text) => safe(async () => {
+    const r = await api('/api/kenntnis-abhaken', { punkte: punkte.map(punkt), bis: d.stand });
     sicht.key = null;
     toast(r.mitglieder ? text : 'Diese Änderungen waren schon abgehakt.');
     await refresh();
@@ -89,10 +90,10 @@ function draw(main, d) {
     draw(main, d);
     if (window.matchMedia('(max-width: 900px)').matches) main.querySelector('[data-detail]')?.scrollIntoView({ block: 'start' });
   }));
-  main.querySelectorAll('[data-ab]').forEach((b) => (b.onclick = () => abhaken([Number(b.dataset.ab)], 'Zur Kenntnis genommen.')));
+  main.querySelectorAll('[data-ab]').forEach((b) => (b.onclick = () => abhaken(liste.filter((p) => schluessel(p) === b.dataset.ab), 'Zur Kenntnis genommen.')));
   main.querySelectorAll('[data-alle]').forEach((b) => (b.onclick = () => {
-    const ids = sammel.get(b.dataset.alle).map((p) => p.id);
-    abhaken(ids, `${mehrzahl(ids.length, 'Mitglied', 'Mitglieder')} zur Kenntnis genommen.`);
+    const punkte = sammel.get(b.dataset.alle);
+    abhaken(punkte, `${mehrzahl(punkte.length, 'Mitglied', 'Mitglieder')} zur Kenntnis genommen.`);
   }));
   main.querySelector('[data-akte]')?.addEventListener('click', () => account(sel.id));
   if (sel) alleAngaben(main, sel);
@@ -112,7 +113,7 @@ function detail(p, offen, schreiben) {
         <span class="kn-alt">${f.alt === '' ? leer : html`<s>${f.alt}</s>`}</span>
         <span class="kn-neu">${f.neu === '' ? leer : f.neu}</span></div>`)}</div>`}
     <div class="kn-aktionen">
-      ${offen && schreiben ? html`<button type="button" class="btn primary" data-ab="${p.id}">${icon('check', 16)} Zur Kenntnis genommen</button>` : ''}
+      ${offen && schreiben ? html`<button type="button" class="btn primary" data-ab="${schluessel(p)}">${icon('check', 16)} Zur Kenntnis genommen</button>` : ''}
       <button type="button" class="btn" data-akte>Mitglied öffnen</button>
     </div>
     <div class="kn-alle"><h3>Alle Angaben</h3><div data-angaben><p class="small muted">Wird geladen …</p></div></div>`;

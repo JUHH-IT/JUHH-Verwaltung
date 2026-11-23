@@ -403,10 +403,10 @@ Tests: test_kenntnis.py
 - `init(db)` – Tabelle und Auslöser (additiv). Nach `mitglieder.init` aufrufen – die Auslöser nennen alle Spalten der Stammdaten.
 - `an(db)` – Ist die Kenntnisnahme eingeschaltet (Einstellung `kenntnis`, Vorgabe an)?
 - `zuordnen(db, actor, action, detail=…)` – Frisch festgehaltene Änderungen dieser Verbindung der Person und dem Vorgang zuordnen – ruft `Store.audit` bei jedem Eintrag.
-- `offen_ids(db)` – Kennungen der Mitglieder mit offener Änderung – für die Gesamtdaten (Zahl im Menü, Liste „Änderung offen“).
+- `kurz(db)` – Für die Gesamtdaten: eingeschaltet?, Kennungen der Mitglieder mit offener Änderung (Liste „Änderung offen“, Lage im Cockpit) und
 - `liste(store, today=…)` – Offene und in den letzten `FRIST` Tagen abgehakte Änderungen je Mitglied; `stand` = letzte gesehene Zeile (für `abhaken`).
-- `abhaken(store, ids, bis, actor)` – Offene Änderungen der Mitglieder `ids` zur Kenntnis nehmen – nur Zeilen bis `bis` (der Stand, den die Person gesehen hat).
-- `bereinigen(store, today=…)` – Abgehakte Zeilen nach `FRIST` Tagen löschen; offene Zeilen ohne Unterschied (hin und zurück geändert) als erledigt löschen.
+- `abhaken(store, punkte, bis, actor)` – Offene Punkte zur Kenntnis nehmen – je Mitglied genau den gezeigten Ausschnitt (einzeln geändert oder ein Sammelpunkt) und nur
+- `bereinigen(store, today=…)` – Abgehakte Zeilen nach `FRIST` Tagen löschen; offene Zeilen ohne Unterschied (hin und zurück geändert) löschen; ist die
 
 ### klaerfaelle.py
 

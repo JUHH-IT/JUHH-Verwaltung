@@ -297,8 +297,10 @@ function bindung(r) {
   const zelle = (k, i) => (i >= k.kept.length ? html`<td class="num leer"></td>`
     : k.kept[i] === null ? html`<td class="num alt" title="${k.joined ? 'unter 3 Eintritte: kein Anteil' : 'keine Eintritte'}">${k.joined ? '< 3' : '—'}</td>`
       : html`<td class="num aw-ton" style="--a:${ton(k.kept[i])}" title="Eintritte ${k.year}: nach ${mz(i + 1, 'Jahr', 'Jahren')} noch ${pct(k.kept[i])} Mitglied"><span>${pct(k.kept[i])}</span></td>`);
-  const l = r.left_tenure, lMax = Math.max(1, ...l.groups.map((g) => g.count)), ohne = l.total - l.groups.reduce((s, g) => s + g.count, 0);
-  const aMax = Math.max(1, ...r.age_limit_ahead.map((a) => a.count)), w = r.recruited;
+  const l = r.left_tenure, lMax = Math.max(1, ...l.groups.map((g) => g.count || 0));
+  const verdeckt = l.groups.some((g) => g.count === null);   // ohne Mitgliederrecht: Gruppen unter 3 nennt der Server nicht
+  const ohne = verdeckt ? 0 : l.total - l.groups.reduce((s, g) => s + g.count, 0);
+  const aMax = Math.max(1, ...r.age_limit_ahead.map((a) => a.count || 0)), w = r.recruited;
   return html`<div class="blatt-teil" aria-labelledby="aw-t-bindung">
       ${kopf('Bindung', aussageBindung(r), 'aw-t-bindung')}
       ${tab(['Eintrittsjahr', N('Eintritte'), ...alle.map((j) => N(j === 1 ? 'nach 1 Jahr' : `${j} Jahren`))],
@@ -307,15 +309,15 @@ function bindung(r) {
     </div>
     <div class="blatt-teil schmal" aria-label="Austritte, Altersgrenze und Werbung">
       <div class="blatt-kopf"><h3>Wann Mitglieder gehen</h3><span class="small">${mz(l.total, 'Austritt', 'Austritte')} ${r.year}</span></div>
-      <ul class="aw-reihen">${l.groups.map((g) => html`<li title="${g.label}: ${mz(g.count, 'Austritt', 'Austritte')}"><span class="name">${g.label}</span>${strich(g.count / lMax)}
-        <span class="n">${zahl(g.count)}</span><span class="p">${l.total ? pct(g.count / l.total) : ''}</span></li>`)}</ul>
-      <p class="aw-notiz eng">Mitgliedsdauer am Austrittstag.${l.total ? ` ${l.age_limit === 0 ? 'Kein Austritt fiel' : l.age_limit === 1 ? '1 Austritt fiel' : `${zahl(l.age_limit)} Austritte fielen`} auf die Altersgrenze von 35 Jahren${ohne > 0 ? `, bei ${zahl(ohne)} fehlt das Eintrittsdatum` : ''}.` : ''}</p>
+      <ul class="aw-reihen">${l.groups.map((g) => html`<li title="${g.label}: ${g.count === null ? 'unter 3 Austritte' : mz(g.count, 'Austritt', 'Austritte')}"><span class="name">${g.label}</span>${strich((g.count || 0) / lMax)}
+        <span class="n">${few(g.count)}</span><span class="p">${l.total && g.count !== null ? pct(g.count / l.total) : ''}</span></li>`)}</ul>
+      <p class="aw-notiz eng">Mitgliedsdauer am Austrittstag.${l.total ? ` ${l.age_limit === null ? 'Unter 3 Austritte fielen' : l.age_limit === 0 ? 'Kein Austritt fiel' : l.age_limit === 1 ? '1 Austritt fiel' : `${zahl(l.age_limit)} Austritte fielen`} auf die Altersgrenze von 35 Jahren${ohne > 0 ? `, bei ${zahl(ohne)} fehlt das Eintrittsdatum` : ''}.` : ''}</p>
       <div class="blatt-kopf aw-zwischen"><h3>Altersgrenze in den nächsten Jahren</h3></div>
-      <ul class="aw-reihen kurz">${r.age_limit_ahead.map((a, i) => html`<li title="${a.year}: ${mitglieder(a.count)} werden 35"><span class="name">${i ? a.year : `noch ${a.year}`}</span>${strich(a.count / aMax)}
-        <span class="n">${zahl(a.count)}</span></li>`)}</ul>
+      <ul class="aw-reihen kurz">${r.age_limit_ahead.map((a, i) => html`<li title="${a.year}: ${a.count === null ? 'unter 3 Mitglieder' : mitglieder(a.count)} werden 35"><span class="name">${i ? a.year : `noch ${a.year}`}</span>${strich((a.count || 0) / aMax)}
+        <span class="n">${few(a.count)}</span></li>`)}</ul>
       <p class="aw-notiz eng">So viele der heutigen Mitglieder werden im jeweiligen Jahr 35. Wer die Grenze schon erreicht hat, steht in der Liste „Altersgrenze 35“.</p>
       <div class="blatt-kopf aw-zwischen"><h3>Geworben</h3></div>
-      ${gross(w.share, `${zahl(w.count)} von ${mz(w.joined, 'Eintritt', 'Eintritten')} ${r.year} mit eingetragenem Werber`, `${r.year} gab es bis zum Stichtag keinen Eintritt, also auch keinen Anteil mit eingetragenem Werber.`)}
+      ${gross(w.share, `${few(w.count)} von ${mz(w.joined, 'Eintritt', 'Eintritten')} ${r.year} mit eingetragenem Werber`, `${r.year} gab es bis zum Stichtag keinen Eintritt, also auch keinen Anteil mit eingetragenem Werber.`)}
     </div>`;
 }
 
@@ -506,8 +508,8 @@ function laden(main) {
     try {
       const r = await api(`/api/auswertung?${q}`);
       stichtag = r.stichtag;
-      good = { stichtag, kvFilter, ovFilter };
       draw(main, r, q);
+      good = { stichtag, kvFilter, ovFilter };   // erst nach gelungenem Aufbau: sonst gälte eine Auswahl als gültig, die die Seite nicht zeigen kann
     } catch (err) {
       ({ stichtag, kvFilter, ovFilter } = good || { stichtag: '', kvFilter: '', ovFilter: '' });
       if (!main.querySelector('.aw-page')) {

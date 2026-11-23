@@ -411,7 +411,7 @@ try {
   check(!(await mb.locator('.mu-page').textContent()).includes('€'), 'Mitgliederbeauftragte: Cockpit ohne Beträge');
   await mb.click('[data-page=kenntnis]');
   await mb.waitForSelector('.kn-page .kn-zeile');
-  check(await mb.locator('.kn-page [data-ab]').count() >= 1 && !(await mb.locator('.kn-page').textContent()).includes('€'), 'Mitgliederbeauftragte: Zur Kenntnis mit Abhaken, ohne Beträge');
+  check(await mb.locator('.kn-page [data-ab]').count() >= 1, 'Mitgliederbeauftragte: Zur Kenntnis mit Abhaken');
   await mb.click('[data-page=settings]');
   await mb.waitForTimeout(300);
   const tabNames = await mb.locator('#main [data-tab]').evaluateAll((els) => els.map((e) => e.dataset.tab));

@@ -94,7 +94,7 @@ function renderShell() {
   const openCount = yearBank().filter((b) => b.state === 'open').length;
   const cashOpen = store.data?.cash?.open || 0;
   const rpjOpen = store.data?.rpj?.open || 0;
-  const counts = { bank: [openCount, 'offen'], cash: [cashOpen, 'offen'], rpj: [rpjOpen, 'ohne Zuordnung'], cases: [store.data?.cases?.active || 0, 'zu klären'], kenntnis: [store.data?.kenntnis?.offen?.length || 0, 'zur Kenntnis'],
+  const counts = { bank: [openCount, 'offen'], cash: [cashOpen, 'offen'], rpj: [rpjOpen, 'ohne Zuordnung'], cases: [store.data?.cases?.active || 0, 'zu klären'], kenntnis: [store.data?.kenntnis?.punkte || 0, 'zur Kenntnis'],
     dues: [store.data?.dues_open_all || 0, 'ohne Mitglied'] };
   mount(root, html`<div class="shell">
     <header class="topbar">

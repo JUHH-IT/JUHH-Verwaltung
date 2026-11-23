@@ -37,16 +37,18 @@ export function mitgliederUeberblick(main) {
 /** Geburtstage und Jubiläen der nächsten 7 Tage und Eintritte der letzten 14 Tage – aus den Gesamtdaten, ohne weitere Abfrage. */
 export function anlaesse(members, today) {
   const bis = plus(today, 7), seit = plus(today, -14), jahr = Number(today.slice(0, 4));
-  const naechster = (md) => (`${jahr}-${md}` >= today ? `${jahr}-${md}` : `${jahr + 1}-${md}`);
+  const schalt = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const tagIm = (y, md) => (md === '02-29' && !schalt(y) ? `${y}-03-01` : `${y}-${md}`);   // 29.2. ohne Schaltjahr: 1.3. (wie auswertung._birthday)
+  const naechster = (md) => (tagIm(jahr, md) >= today ? tagIm(jahr, md) : tagIm(jahr + 1, md));
   const out = [];
   for (const m of members.filter((x) => isActive(x, today))) {
-    if (m.birth && m.birth.slice(5) !== '02-29') {
+    if (m.birth) {
       const am = naechster(m.birth.slice(5));
       if (am <= bis) out.push({ am, name: m.name, text: `wird ${Number(am.slice(0, 4)) - Number(m.birth.slice(0, 4))}`, id: m.id });
     }
     if (m.joined) {
       const am = naechster(m.joined.slice(5)), jahre = Number(am.slice(0, 4)) - Number(m.joined.slice(0, 4));
-      if (am <= bis && JUBILAEEN.includes(jahre) && m.joined.slice(5) !== '02-29') out.push({ am, name: m.name, text: `${jahre} Jahre Mitglied`, id: m.id });
+      if (am <= bis && JUBILAEEN.includes(jahre)) out.push({ am, name: m.name, text: `${jahre} Jahre Mitglied`, id: m.id });
       if (m.joined >= seit && m.joined <= today) out.push({ am: m.joined, neu: true, name: m.name, text: `eingetreten am ${shortDate(m.joined)}${m.ov_id ? '' : ', noch ohne Ortsverband'}`, id: m.id });
     }
   }
@@ -66,6 +68,8 @@ function draw(main, extra) {
 
   // Zur Kenntnis: einzelne Punkte zuerst, Sammelpunkte je Vorgang als eine Zeile
   const k = extra.kenntnis, kAn = !!k?.an, offen = kAn ? k.offen : [];
+  const geaendert = store.data.kenntnis?.offen?.length || 0;   // Mitglieder mit offener Änderung (aus den Gesamtdaten: stimmt auch, wenn die Vorschau nicht lädt)
+  const kPunkte = store.data.kenntnis?.punkte || 0;            // offene Punkte – dieselbe Zahl wie im Menü und auf der Seite „Zur Kenntnis“
   const einzeln = offen.filter((p) => !p.sammel), sammel = new Map();
   for (const p of offen) if (p.sammel) sammel.set(p.sammel, [...(sammel.get(p.sammel) || []), p]);
   const zeilen = [...einzeln.map((p) => ({ p })), ...[...sammel.values()].map((punkte) => ({ punkte }))];
@@ -115,10 +119,10 @@ function draw(main, extra) {
   const hoechst = Math.max(1, ...monate.map((m) => Math.max(m.ein, m.aus)));
   const maxEin = Math.max(...monate.map((m) => m.ein)), maxAus = Math.max(...monate.map((m) => m.aus));
 
-  const kopf = offen.length ? `${mehrzahl(offen.length, 'Ein Mitglied wurde', 'Mitglieder wurden')} geändert${punkte ? `, ${mehrzahl(punkte, 'ein Punkt ist', 'Punkte sind')} offen` : ''}.`
-    : punkte ? `${mehrzahl(punkte, 'Ein Punkt ist', 'Punkte sind')} offen.` : 'Alles erledigt.';
-  const untertitel = offen.length ? 'Jede Änderung gilt bereits, du hakst sie nur ab.'
-    : punkte ? 'Der Arbeitsvorrat zeigt, wo Daten fehlen, etwas abzugleichen ist oder eine Frist ansteht.' : 'Keine offenen Änderungen und keine offenen Punkte.';
+  const kopf = geaendert ? `${mehrzahl(geaendert, 'Ein Mitglied wurde', 'Mitglieder wurden')} geändert${punkte ? `, ${mehrzahl(punkte, 'ein Thema im Arbeitsvorrat ist', 'Themen im Arbeitsvorrat sind')} offen` : ''}.`
+    : punkte ? `${mehrzahl(punkte, 'Ein Thema im Arbeitsvorrat ist', 'Themen im Arbeitsvorrat sind')} offen.` : 'Alles erledigt.';
+  const untertitel = geaendert ? (schreiben ? 'Jede Änderung gilt bereits, du hakst sie nur ab.' : 'Jede Änderung gilt bereits. Abhaken kann, wer Mitglieder ändern darf.')
+    : punkte ? 'Der Arbeitsvorrat zeigt, wo Daten fehlen, etwas abzugleichen ist oder eine Frist ansteht.' : 'Keine offenen Änderungen, der Arbeitsvorrat ist leer.';
   const vorzeichen = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0');
 
   mount(main, html`<div class="page wide mu-page ck-page">
@@ -128,12 +132,12 @@ function draw(main, extra) {
     <div class="blatt">
       <section class="blatt-teil ck-lage" aria-label="Lage">
         <div><h2 class="blatt-aussage gross">${kopf}</h2><p class="blatt-text">${untertitel}</p></div>
-        ${offen.length ? html`<button type="button" class="btn" data-kenntnis>Änderungen ansehen</button>` : ''}
+        ${geaendert ? html`<button type="button" class="btn" data-kenntnis>Änderungen ansehen</button>` : ''}
       </section>
 
       <section class="kz-band" aria-label="Kennzahlen">
         <div class="kz"><span class="label">Aktive Mitglieder</span><span class="wert">${active.length.toLocaleString('de-DE')}</span>
-          <span class="note">${ein - aus === 0 ? 'so viele wie am 1. Januar' : `${Math.abs(ein - aus)} ${ein > aus ? 'mehr' : 'weniger'} als am 1. Januar`}</span></div>
+          <span class="note">${ein - aus === 0 ? `so viele wie Ende ${vorjahr}` : `${Math.abs(ein - aus)} ${ein > aus ? 'mehr' : 'weniger'} als Ende ${vorjahr}`}</span></div>
         <div class="kz"><span class="label">Eintritte ${jahr}</span><span class="wert">${ein}</span><span class="note">Vorjahr bis heute ${einVor}</span></div>
         <div class="kz"><span class="label">Austritte ${jahr}</span><span class="wert">${aus}</span><span class="note">Vorjahr bis heute ${ausVor}</span></div>
         ${wahl ? html`<div class="kz"><span class="label">Wahlberechtigt</span><span class="wert">${pct(allowed, active.length)} %</span>
@@ -147,7 +151,7 @@ function draw(main, extra) {
 
       <div class="blatt-reihe">
         <section class="blatt-teil" aria-labelledby="ck-kenntnis">
-          <div class="blatt-kopf"><h2 id="ck-kenntnis">Zur Kenntnis</h2>${kAn && offen.length ? html`<span class="ck-offen">${offen.length} offen</span>` : ''}</div>
+          <div class="blatt-kopf"><h2 id="ck-kenntnis">Zur Kenntnis</h2>${kPunkte ? html`<span class="ck-offen">${kPunkte} offen</span>` : ''}</div>
           ${!k ? html`<p class="muted">Die Änderungen konnten nicht geladen werden.</p>`
             : !kAn ? html`<p class="muted">Die Kenntnisnahme von Änderungen ist ausgeschaltet (Einstellungen, Reiter „Schalter“).</p>`
             : !zeilen.length ? html`<p class="muted">Keine offenen Änderungen.</p>`
@@ -225,7 +229,7 @@ function draw(main, extra) {
   main.querySelector('[data-import]')?.addEventListener('click', importMembersDialog);
   main.querySelectorAll('[data-kenntnis]').forEach((b) => (b.onclick = () => go('kenntnis')));
   main.querySelectorAll('[data-ab]').forEach((b) => (b.onclick = () => safe(async () => {
-    await api('/api/kenntnis-abhaken', { ids: [Number(b.dataset.ab)], bis: k.stand });
+    await api('/api/kenntnis-abhaken', { punkte: [{ id: Number(b.dataset.ab), sammel: null }], bis: k.stand });
     toast('Zur Kenntnis genommen.');
     await refresh();
   })));

@@ -121,6 +121,13 @@ class AuswertungTests(unittest.TestCase):
         self.assertIn('Monat 2026-06;;;;;0;0;', auswertung.csv(self.s, DAY, kv='5800').decode('utf-8-sig'))
         self.assertEqual(auswertung.report(self.s, '2026-01-01', today=DAY)['months'], [0])   # Stichtag im Januar: ein Monat
 
+    def test_stichtag_vor_erstem_eintritt(self):
+        """Stichtag vor dem ersten Eintritt der Auswahl (Prüfung #30): die Entwicklung zeigt das Jahr des Stichtags statt leer zu sein –
+        die Oberfläche greift auf den letzten Eintrag zu."""
+        r = auswertung.report(self.s, '2005-06-30', today=DAY)
+        self.assertEqual(r['development'], [{'year': 2005, 'joined': 0, 'left': 0, 'end': 0, 'until': '2005-06-30'}])
+        self.assertEqual((r['cards']['active'], r['months']), (0, [0] * 6))
+
     def test_redact_small_groups(self):
         import json
         r = auswertung.report(self.s, DAY, today=DAY)
@@ -177,8 +184,13 @@ class AuswertungTests(unittest.TestCase):
         self.assertEqual([(a['w'], a['m'], a['x'], a['share']) for a in red['women_age']], [(None, 0, 0, None), (0, None, None, None)])
         self.assertEqual(({g['label']: g['count'] for g in red['gender']}, {g['label']: g['count'] for g in red['clubs']}),
                          ({'männlich': None, 'weiblich': None, 'ohne Angabe': None}, {'JU': None, 'CDU': None}))
-        for key in ('vergleich', 'cohorts', 'left_tenure', 'age_limit_ahead', 'recruited'):    # reine Zahlen: unverändert
+        for key in ('vergleich', 'cohorts'):                                                   # reine Zahlen: unverändert
             self.assertEqual(red[key], r[key], key)
+        # Bindung: unter SMALL Personen kein Wert, sonst stünde „1 Mitglied wird 2026 35“ für eine Rolle ohne Mitgliederrecht da
+        self.assertEqual(([g['count'] for g in red['left_tenure']['groups']], red['left_tenure']['age_limit'], red['left_tenure']['total']), ([0, 0, 0, None], 0, 1))
+        self.assertEqual(([a['count'] for a in red['age_limit_ahead']], red['recruited']), ([None, 0, 0, 0, 0, 0], r['recruited']))
+        self.assertEqual(auswertung.redact({**r, 'recruited': {'joined': 4, 'count': 2, 'share': 0.5}}, names=False)['recruited'], {'joined': 4, 'count': None, 'share': None})
+        self.assertEqual(tuple(auswertung.redact(r)[k] for k in ('left_tenure', 'age_limit_ahead', 'recruited')), tuple(r[k] for k in ('left_tenure', 'age_limit_ahead', 'recruited')))
         self.assertEqual((auswertung.redact(r)['gender'], auswertung.redact(r)['women_age']), (r['gender'], r['women_age']))   # mit Mitgliederrecht alles
         self.assertNotRegex(json.dumps({k: red[k] for k in ('vergleich', 'cohorts', 'left_tenure', 'age_limit_ahead', 'recruited', 'women_age')}, ensure_ascii=False),
                             r'Test|T\d|example')
