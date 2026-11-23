@@ -230,10 +230,35 @@ class HttpTests(unittest.TestCase):
         book=json.load(request(f'/api/kasse?year={y}&kasse={pp}'));self.assertEqual((book['end'],book['kasse']['name']),(3850,'PayPal'))
         self.assertEqual(json.load(request(f'/api/kasse?year={y}'))['end'],10000)                              # ohne Angabe: Bargeldkasse wie bisher
         antwort=request(f'/api/kasse.csv?year={y}&kasse={pp}')
-        self.assertIn(f'Kassenbuch-PayPal-{y}.csv',antwort.headers['Content-Disposition']);self.assertIn(f'PP-{y}-0001',antwort.read().decode('utf-8-sig'))
+        self.assertIn(f'Kassenbuch-PayPal-{konto}-{y}.csv',antwort.headers['Content-Disposition']);self.assertIn(f'PP-{y}-0001',antwort.read().decode('utf-8-sig'))
         self.assertTrue(request(f'/api/kasse.pdf?year={y}&kasse={pp}').read().startswith(b'%PDF'))
         with self.assertRaises(urllib.error.HTTPError) as cm: request(f'/api/kasse?year={y}&kasse=99')
         self.assertEqual(cm.exception.code,400)
+        # K1 (Prüfung 0.57): von außen zählt nur die Kennung einer vorhandenen Kasse – Objekt, Liste, unbekannte Zahl, Text: „Kasse nicht gefunden“, nichts geschrieben
+        def stand():
+            db=sqlite3.connect(app.DB)
+            try: return ([db.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0] for t in ('journals','entries','bank','kassen')],db.execute("SELECT value FROM settings WHERE key='cash_start'").fetchall(),
+                         sorted(str(f.relative_to(app.DATA.parent)) for f in app.DATA.parent.rglob('*.pdf')))
+            finally: db.close()
+        vorher=stand();heute=_d.today().isoformat()
+        fremd={'id':0,'name':'x','account':'1420','prefix':'../../ausbruch','start':'2000-01-01'}
+        for wert in (fremd,{**fremd,'id':pp,'prefix':'R'},{'id':pp},[pp],[],{},99,-1,True,1.5,'abc',' 0 ','1;x'):
+            for path,payload in (('/api/kasse-anfang',{'day':start,'amount':'5000','kasse':wert}),
+                                 ('/api/kasse-beleg',{'kind':'in','amount':'1','day':heute,'text':'x','kasse':wert,'file':{'name':'a.pdf','content':b64.b64encode(pdf_bytes).decode()}}),
+                                 ('/api/kasse-beleg',{'kind':'withdraw','amount':'1','day':'2001-05-05','kasse':wert})):
+                with self.assertRaises(urllib.error.HTTPError) as cm: request(path,payload,csrf)
+                self.assertEqual((cm.exception.code,json.load(cm.exception)['error']),(400,'Kasse nicht gefunden.'),(path,wert))
+        for wert in ('99','-1','abc','1.5','0x1','%200','%7B%22id%22%3A0%7D'):
+            for path in ('/api/kasse','/api/kasse.pdf','/api/kasse.csv'):
+                with self.assertRaises(urllib.error.HTTPError) as cm: request(f'{path}?year={y}&kasse={wert}')
+                self.assertEqual((cm.exception.code,json.load(cm.exception)['error']),(400,'Kasse nicht gefunden.'),(path,wert))
+        probe=Store(app.DB)   # der Belegspeicher bildet nie einen Pfad aus einer ungeprüften Nummer
+        try:
+            for nummer,datei,endung in (('../../ausbruch-2026-0001','../../ausbruch-2026-0001.pdf','.pdf'),(f'K-{y}-0009','../x.pdf','.pdf'),(f'K-{y}-0009',f'K-{y}-0009.exe','.exe')):
+                with self.assertRaises(ValueError): app.save_receipt(probe,'bank',k['id'],nummer,datei,endung,pdf_bytes)
+        finally: probe.db.close()
+        self.assertEqual(stand(),vorher)
+        self.assertEqual(json.load(request(f'/api/kasse?year={y}&kasse={pp}'))['kasse']['name'],'PayPal')   # die Kennung als Text gilt weiter
         with self.assertRaises(urllib.error.HTTPError) as cm: request('/api/kasse-datei?id=999999')
         self.assertEqual(cm.exception.code,400)
         with self.assertRaises(urllib.error.HTTPError) as cm: request(f'/api/kasse-datei?id={bid}')            # Kontoumsatz, kein Kassenbeleg

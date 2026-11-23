@@ -1237,11 +1237,11 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   check((await page.locator('main .cards').textContent()).includes('Bestand PayPal heute') && (await page.locator('main .cards .card').first().textContent()).includes('40,00'), 'PayPal mit eigenem Anfangsbestand');
   await page.click('[data-new-cash]');
   const ppForm = await page.locator('#modal').textContent();
-  check(ppForm.includes('Beleg erfassen') && ppForm.includes('Umbuchung auf die Bank') && !ppForm.includes('Abhebung') && !ppForm.includes('Kassenbon'), 'PayPal: Wörter ohne Bargeld');
+  check(ppForm.includes('Beleg erfassen – PayPal') && ppForm.includes('Umbuchung auf die Bank') && !ppForm.includes('Abhebung') && !ppForm.includes('Kassenbon'), 'PayPal: Dialog nennt die Kasse, Wörter ohne Bargeld');
   await page.fill('#cash-form input[name=amount]', '1,50');
   await page.fill('#cash-form input[name=text]', 'PayPal-Gebühr');
   await page.click('#cash-form button[type=submit]');
-  check(/PP-\d{4}-0001 erfasst – jetzt verbuchen/.test(await toast()), 'PayPal-Beleg mit eigenem Nummernkreis erfasst');
+  check(/^PayPal: PP-\d{4}-0001 erfasst – jetzt verbuchen/.test(await toast()), 'PayPal-Beleg mit eigenem Nummernkreis erfasst, Meldung nennt die Kasse');
   await page.waitForSelector('#book-form');
   await page.locator('.part [data-account]').first().click();
   await page.fill('#account-query', '14');
@@ -1262,21 +1262,46 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   const ppJournal = await page.evaluate(async () => (await (await fetch('/api/data?year=' + new Date().getFullYear())).json()).journal.filter((j) => /PayPal-Gebühr/.test(j.description)).map((j) => j.account).sort().join());
   check(ppJournal === '1430,4225', 'PayPal-Beleg bucht 1430 statt 1400/1420');
   const ppPdf = await page.evaluate(async () => { const r = await fetch(document.querySelector('a[href^="/api/kasse.pdf"]').href); return r.headers.get('content-type') + ' ' + r.headers.get('content-disposition'); });
-  check(ppPdf.startsWith('application/pdf') && ppPdf.includes('Kassenbuch-PayPal-'), 'Kassenbuch PayPal als PDF');
+  check(ppPdf.startsWith('application/pdf') && ppPdf.includes('Kassenbuch-PayPal-1430-'), 'Kassenbuch PayPal als PDF (Dateiname mit Konto)');
+  // Geldtransit zugeordnet statt saldiert: PayPal-Umbuchung (20) und Bargeld-Abhebung (50) haben beide noch keinen Kontoumsatz – jede Kasse zeigt ihren Posten
+  const ppTransit = await page.locator('main [data-transit]').textContent();
+  check(ppTransit.includes('20,00') && /1 Beleg ohne Gegenseite im Kontoauszug: PP-\d{4}-0002/.test(ppTransit) && !/K-\d{4}/.test(ppTransit), 'Geldtransit PayPal: eigener offener Posten mit Belegnummer');
   await shot('38b-kasse-paypal');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(150);
   check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'Kasse mit Umschalter auf dem Handy ohne seitliches Scrollen');
   await shot('38c-kasse-paypal-handy');
   await page.setViewportSize({ width: 1440, height: 900 });
+  const gewaehlt = () => page.locator('main [data-kasse][aria-pressed=true]').textContent();
+  await page.click('[data-page=overview]');
+  const transitTasks = await page.locator('main').textContent();
+  check(transitTasks.includes('Geldtransit 2380: PayPal') && transitTasks.includes('Geldtransit 2380: Bargeldkasse'), 'Start: offener Geldtransit je Kasse');
+  await page.click('[data-page=cash]');
+  check((await gewaehlt()).includes('PayPal'), 'Gewählte Kasse (PayPal) bleibt beim Seitenwechsel');
+  await page.reload();
+  await page.waitForSelector('.sidebar');
+  await page.click('[data-page=cash]');
+  check((await gewaehlt()).includes('PayPal') && (await page.locator('main .cards').textContent()).includes('Bestand PayPal heute'), 'Gewählte Kasse (PayPal) bleibt nach dem Neuladen der Seite');
+  await page.click('[data-opening]');
+  check((await page.locator('#modal .dialog-head').textContent()).includes('Anfangsbestand PayPal'), 'Anfangsbestand: Dialog nennt die Kasse');
+  await dialogClose();
   await page.click('main [data-kasse="0"]');
+  await page.click('main [data-filter=book]');   // nach dem Neuladen steht wieder die Arbeitsliste vorn
   await page.waitForSelector('[data-cash-csv]');
   const barBook = await page.locator('[data-custom]').textContent();
   check((await page.locator('main .cards').textContent()).includes('Kassenbestand heute') && barBook.includes('137,50') && !barBook.includes('PP-') && !barBook.includes('PayPal'),
     'Zurück zur Bargeldkasse: Kassenbuch und Bestand unverändert');
-  await page.click('[data-page=overview]');
+  const barTransit = await page.locator('main [data-transit]').textContent();
+  check(barTransit.includes('50,00') && /K-\d{4}-0002/.test(barTransit) && !barTransit.includes('PP-'), 'Geldtransit Bargeldkasse: nur der eigene Posten');
+  await page.click('[data-new-cash]');
+  check((await page.locator('#modal .dialog-head').textContent()).includes('Kassenbeleg erfassen – Bargeldkasse'), 'Belegdialog der Bargeldkasse nennt die Kasse');
+  await dialogClose();
+  await page.evaluate(() => localStorage.setItem('ju-finanzen-kasse', '99'));   // gemerkte Kasse gibt es nicht (mehr)
+  await page.reload();
+  await page.waitForSelector('.sidebar');
   await page.click('[data-page=cash]');
-  check((await page.locator('main [data-kasse][aria-pressed=true]').textContent()).includes('Bargeldkasse'), 'Gewählte Kasse bleibt beim Seitenwechsel');
+  check((await gewaehlt()).includes('Bargeldkasse'), 'Gemerkte Kasse gibt es nicht: Bargeldkasse');
+  await page.click('main [data-kasse="0"]');
 
   // Eingangsrechnung erfassen → Zahlungsvorschlag (Kopieren, GiroCode) → Kontoauszug → Abgleich
   const billNo = `E-${new Date().getFullYear()}-00001`;

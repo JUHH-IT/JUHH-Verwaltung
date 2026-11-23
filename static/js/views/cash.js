@@ -4,7 +4,7 @@
 import { api, fileToBase64, download } from '../api.js';
 import { html, mount } from '../html.js';
 import { eur, signed, date, toInput, todayIso } from '../format.js';
-import { store, refresh, ledgerRows, currentKasse, kvName, titleLabel } from '../store.js';
+import { store, refresh, ledgerRows, currentKasse, setKasse, kvName, titleLabel } from '../store.js';
 import { pageHead, icon, empty, dialog, safe, toast, table, badge } from '../ui.js';
 import { renderLedger } from './bank.js';
 
@@ -23,6 +23,8 @@ function head() {
   const k = currentKasse();
   const w = words(k);
   const year = ledgerRows('cash');
+  const offen = k.transit || [];   // Belege DIESER Kasse auf 2380, zu denen der Kontoumsatz fehlt (kasse.transit)
+  const ohneBeleg = c.transit.bank.length;
   return html`${pageHead(`Haushaltsjahr ${store.year}`, 'Kasse', html`
       <button type="button" class="btn" data-add-kasse>Weitere Kasse einrichten</button>
       <button type="button" class="btn" data-opening>${k.start ? 'Anfangsbestand' : 'Anfangsbestand festlegen'}</button>
@@ -36,15 +38,16 @@ function head() {
         <span class="note">${w.inNote}</span></div>
       <div class="card"><span class="label">Ausgaben ${store.year}</span><span class="value">${eur(-year.filter((b) => b.amount < 0 && b.state !== 'void').reduce((s, b) => s + b.amount, 0))}</span>
         <span class="note">${w.outNote}</span></div>
-      <div class="card"><span class="label">Geldtransit 2380</span><span class="value ${c.transit ? 'over' : ''}">${eur(Math.abs(c.transit))}</span>
-        <span class="note">${c.transit ? 'offen – Gegenseite fehlt noch (Kasse oder Kontoauszug) oder anderer Durchlaufposten' : 'ausgeglichen'}${c.kassen.length > 1 ? ' · alle Kassen zusammen' : ''}</span></div>
+      <div class="card" data-transit><span class="label">Geldtransit 2380 offen</span><span class="value ${offen.length ? 'over' : ''}">${eur(offen.reduce((s, x) => s + Math.abs(x.amount), 0))}</span>
+        <span class="note">${offen.length ? `${offen.length} ${offen.length === 1 ? 'Beleg' : 'Belege'} ohne Gegenseite im Kontoauszug: ${offen.slice(0, 3).map((x) => `${x.number} vom ${date(x.day)}`).join(', ')}${offen.length > 3 ? ' …' : ''} – den Kontoumsatz auf 2380 buchen`
+          : 'kein Beleg dieser Kasse offen'}${ohneBeleg ? ` · Kontoauszug: ${ohneBeleg} ${ohneBeleg === 1 ? 'Buchung' : 'Buchungen'} auf 2380 ohne Kassenbeleg` : ''}${c.transit.saldo ? ` · Saldo 2380: ${signed(c.transit.saldo)}` : ''}</span></div>
     </section>` : html`<p class="notice">Die Kasse ist noch nicht eingerichtet. Zuerst den <strong>Anfangsbestand</strong> festlegen (z. B. Bargeld am 01.01.2026) –
       danach lassen sich Kassenbelege erfassen und wie Kontoumsätze verbuchen.</p>`}`;
 }
 
 function openingDialog() {
   const k = currentKasse();
-  const el = dialog(k.id ? `Anfangsbestand ${k.name}` : 'Anfangsbestand der Kasse', html`<form id="cash-opening" style="display:flex;flex-direction:column;gap:14px">
+  const el = dialog(`Anfangsbestand ${k.name}`, html`<form id="cash-opening" style="display:flex;flex-direction:column;gap:14px">
     <p class="muted">${k.id ? `Bestand von ${k.name} zu Beginn des Kassenbuchs. Gebucht wird ${k.name} ${k.account}` : 'Bargeld in der Kasse zu Beginn des Kassenbuchs. Gebucht wird Kasse 1400'} an 9100 Eröffnungsbilanz – das zählt nicht im Haushalt.
       ${k.start ? 'Eine Änderung bucht den bisherigen Anfangsbestand gegen.' : ''}</p>
     <div class="formgrid"><label class="field">Tag<input name="day" type="date" required value="${k.start || `${store.year >= 2026 ? store.year : 2026}-01-01`}"></label>
@@ -57,7 +60,7 @@ function openingDialog() {
       await api('/api/kasse-anfang', { ...Object.fromEntries(new FormData(e.target)), kasse: k.id });
       el.close();
       await refresh();
-      toast(k.id ? `Anfangsbestand ${k.name} gespeichert.` : 'Anfangsbestand der Kasse gespeichert.');
+      toast(`Anfangsbestand ${k.name} gespeichert.`);
     });
   };
 }
@@ -85,7 +88,8 @@ function addDialog() {
       const data = Object.fromEntries(new FormData(e.target));
       const r = await api('/api/kasse-neu', data);
       el.close();
-      Object.assign(store.cash, { kasse: r.id, filter: 'open', selected: null });
+      Object.assign(store.cash, { filter: 'open', selected: null });
+      setKasse(r.id);
       await refresh();
       toast(`${data.name.trim()} ist eingerichtet.`);
     });
@@ -96,7 +100,7 @@ function newDialog() {
   const k = currentKasse();
   const w = words(k);
   const kinds = [['out', 'Ausgabe'], ['in', 'Einnahme'], ['withdraw', w.von], ['deposit', w.auf]];
-  const el = dialog(`${w.beleg} erfassen`, html`<form id="cash-form" style="display:flex;flex-direction:column;gap:14px">
+  const el = dialog(`${w.beleg} erfassen – ${k.name}`, html`<form id="cash-form" style="display:flex;flex-direction:column;gap:14px">
     <div class="kv-chips" role="radiogroup" aria-label="Art">${kinds.map(([id, label], i) => html`<label class="check"><input type="radio" name="kind" value="${id}" ${i ? '' : 'checked'}> ${label}</label>`)}</div>
     <div class="formgrid">
       <label class="field">Datum<input name="day" type="date" required min="${k.start}" max="${today()}" value="${today()}"></label>
@@ -130,7 +134,7 @@ function newDialog() {
       store.cash.filter = transit ? 'book' : 'open';
       store.cash.selected = r.id;
       await refresh();
-      toast(transit ? `${r.number} erfasst und auf Geldtransit 2380 gebucht.` : `${r.number} erfasst – jetzt verbuchen.`);
+      toast(`${k.name}: ${transit ? `${r.number} erfasst und auf Geldtransit 2380 gebucht.` : `${r.number} erfasst – jetzt verbuchen.`}`);
     });
   };
 }
@@ -179,7 +183,7 @@ function bookView(box) {
         k.void.map((v) => html`<tr><td>${date(v.booked)}</td><td>${v.bank_ref}</td><td>${v.reference || ''}</td><td class="num">${signed(v.amount)}</td><td class="small">${v.note || ''}</td></tr>`))}` : ''}
       <p class="small muted">Bestand = Anfangsbestand + Kassenbelege + Buchungen auf ${cur.account} (auch aus dem Kontoauszug). Er darf an keinem Tag negativ sein.
         ${cur.id ? 'Umbuchung von der bzw. auf die Bank' : 'Abhebung/Einzahlung'}: Kassenbeleg und Kontoumsatz jeweils auf 2380 buchen.</p></section>`);
-    box.querySelector('[data-cash-csv]').onclick = () => safe(() => download('/api/kasse.csv?' + query, `${words(cur).buch.replaceAll(' ', '-')}-${store.year}.csv`));
+    box.querySelector('[data-cash-csv]').onclick = () => safe(() => download('/api/kasse.csv?' + query, `${words(cur).buch.replaceAll(' ', '-')}${cur.id ? `-${cur.account}` : ''}-${store.year}.csv`));
     box.querySelectorAll('[data-cash-row]').forEach((row) => {
       const open = () => { store.cash.filter = 'all'; store.cash.selected = Number(row.dataset.cashRow); cash(document.getElementById('main')); };
       row.onclick = open;
@@ -193,7 +197,8 @@ function bind(el) {
   el.querySelector('[data-opening]').onclick = openingDialog;
   el.querySelector('[data-new-cash]')?.addEventListener('click', newDialog);
   el.querySelectorAll('[data-kasse]').forEach((b) => (b.onclick = () => {
-    Object.assign(store.cash, { kasse: Number(b.dataset.kasse), selected: null });
+    store.cash.selected = null;
+    setKasse(Number(b.dataset.kasse));
     cash(document.getElementById('main'));
   }));
 }

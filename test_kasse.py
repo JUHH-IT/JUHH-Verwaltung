@@ -15,6 +15,7 @@ import mitgliederkonto
 import rollen
 import workflow
 from core import Store
+from formate import german_date
 
 YEAR = date.today().year
 TODAY = date.today().isoformat()
@@ -426,9 +427,9 @@ class MehrereKassenTests(Base):
         berichte.audit_package(self.s, YEAR, Path(self.tmp.name), buf)
         with zipfile.ZipFile(buf) as z:
             files = {n.split('/', 1)[1]: z.read(n) for n in z.namelist()}
-        for name in (f'Kassenbuch-{YEAR}.csv', f'Kassenbuch-{YEAR}.pdf', f'Kassenbuch-PayPal-{YEAR}.csv', f'Kassenbuch-PayPal-{YEAR}.pdf'):
+        for name in (f'Kassenbuch-{YEAR}.csv', f'Kassenbuch-{YEAR}.pdf', f'Kassenbuch-PayPal-1430-{YEAR}.csv', f'Kassenbuch-PayPal-1430-{YEAR}.pdf'):
             self.assertIn(name, files)
-        bar, online = files[f'Kassenbuch-{YEAR}.csv'].decode('utf-8-sig'), files[f'Kassenbuch-PayPal-{YEAR}.csv'].decode('utf-8-sig')
+        bar, online = files[f'Kassenbuch-{YEAR}.csv'].decode('utf-8-sig'), files[f'Kassenbuch-PayPal-1430-{YEAR}.csv'].decode('utf-8-sig')
         self.assertEqual((f'K-{YEAR}-0001' in bar, f'PP-{YEAR}' in bar, f'PP-{YEAR}-0002' in online, f'K-{YEAR}' in online), (True, False, True, False))
         self.assertFalse(any(f'PP-{YEAR}' in line for line in files[f'Kontoumsaetze-{YEAR}.csv'].decode('utf-8-sig').splitlines()))
 
@@ -438,7 +439,156 @@ class MehrereKassenTests(Base):
             self.assertTrue(rollen.allowed({'buchhaltung': 'schreiben'}, rollen.required('POST', path)), path)
         self.paypal()
         self.assertEqual(rollen.SNAPSHOT['cash'], 'buchhaltung')                      # ohne Buchhaltung: gleiche Form, kein Inhalt
-        self.assertEqual(rollen.blank(kasse.summary(self.s)), {'kassen': [], 'open': 0, 'next_account': '', 'transit': 0})
+        self.assertEqual(rollen.blank(kasse.summary(self.s)), {'kassen': [], 'open': 0, 'next_account': '', 'transit': {'saldo': 0, 'bank': []}})
+
+    # Befunde der unabhängigen Prüfung von 0.57: nur Kennungen von außen (K1), Geldtransit zugeordnet statt saldiert (W1),
+    # Kontonummer, Namen und Dateinamen (H1–H3)
+
+    def offen(self, until=None):
+        """Offene Posten des Geldtransits als (Belegnummern je Kasse, Beträge der Kontoumsätze ohne Beleg)."""
+        t = kasse.transit(self.s, until)
+        return {k: [p['number'] for p in v] for k, v in t['kassen'].items()}, [p['amount'] for p in t['bank']]
+
+    def auf_2380(self, amount, offset, ref='Umbuchung'):
+        bid = self.bank(amount, self.day(offset), ref)
+        self.s.book(bid, [{'amount': amount, 'account': '2380', 'kv': 'LV'}], 'Test')
+        return bid
+
+    def text(self, pdf):
+        from pypdf import PdfReader
+        return ' '.join(' '.join(page.extract_text().split()) for page in PdfReader(BytesIO(pdf)).pages)
+
+    def test_nur_kennungen_von_aussen(self):
+        kasse.set_opening(self.s, START, '100', 'Test')
+        pp = self.paypal('50')
+        self.assertEqual((kasse.eine(self.s)['account'], kasse.eine(self.s, '')['id'], kasse.eine(self.s, str(pp))['name'], kasse.eine(self.s, pp)['prefix']),
+                         ('1400', 0, 'PayPal', 'PP'))
+        vorher = self.s.rows('SELECT (SELECT COUNT(*) FROM journals) j,(SELECT COUNT(*) FROM bank) b')
+        fremd = {'id': 0, 'name': 'x', 'account': '1420', 'prefix': '../../x', 'start': '2000-01-01'}
+        for wert in (fremd, dict(kasse.eine(self.s, pp)), {'id': pp}, [pp], [], {}, 99, -1, True, False, 1.0, float('inf'), 'abc', ' 0 ', '1.0', b'1'):
+            for aufruf in (lambda: kasse.eine(self.s, wert), lambda: kasse.set_opening(self.s, START, '5000', 'Test', wert),
+                           lambda: kasse.create(self.s, {'kind': 'in', 'amount': '1', 'day': TODAY, 'text': 'x', 'kasse': wert}, 'Test'),
+                           lambda: kasse.create(self.s, {'kind': 'withdraw', 'amount': '1', 'day': '2001-05-05', 'kasse': wert}, 'Test'),
+                           lambda: kasse.book(self.s, YEAR, wert), lambda: kasse.csv(self.s, YEAR, wert), lambda: kasse.balance(self.s, kasse=wert),
+                           lambda: kasse.next_number(self.s, YEAR, wert), lambda: kasse.opening(self.s, wert), lambda: kasse.start(self.s, wert)):
+                with self.assertRaises(ValueError, msg=repr(wert)) as cm:
+                    aufruf()
+                self.assertEqual(str(cm.exception), 'Kasse nicht gefunden.', repr(wert))
+        self.assertEqual(self.s.rows('SELECT (SELECT COUNT(*) FROM journals) j,(SELECT COUNT(*) FROM bank) b'), vorher)
+        self.assertEqual(kasse.book(self.s, YEAR, kasse.eine(self.s, pp))['kasse']['name'], 'PayPal')      # intern: der Eintrag aus liste
+
+    def test_konto_und_namen(self):
+        gut = {'account': '1430', 'prefix': 'PP', 'day': START, 'amount': '0'}
+        for konto in ('14٣٠', '１４３０', '14३०'):                                    # Ziffern anderer Schriften sind keine Kontonummer
+            with self.assertRaises(ValueError) as cm:
+                kasse.add(self.s, {**gut, 'name': 'PayPal', 'account': konto}, 'Test')
+            self.assertIn('1401–1499', str(cm.exception), konto)
+        for name in ('..', '--', '+49', '1 2', '& +'):
+            with self.assertRaises(ValueError) as cm:
+                kasse.add(self.s, {**gut, 'name': name}, 'Test')
+            self.assertIn('mindestens einem Buchstaben', str(cm.exception), name)
+        for name, text in (('Kasse', 'eigenen Namen'), ('kasse', 'eigenen Namen'), ('Bank', 'eigenen Namen'), (' bank ', 'eigenen Namen'),
+                           ('Bargeldkasse', 'gibt es schon'), ('BARGELDKASSE', 'gibt es schon')):
+            with self.assertRaises(ValueError) as cm:
+                kasse.add(self.s, {**gut, 'name': name}, 'Test')
+            self.assertIn(text, str(cm.exception), name)
+        self.assertEqual((self.s.rows('SELECT * FROM kassen'), self.s.rows("SELECT * FROM accounts WHERE code='1430'")), ([], []))
+        self.assertEqual(kasse.add(self.s, {**gut, 'name': 'Bankkasse Nord'}, 'Test'), 1)       # nur der ganze Name ist gesperrt
+
+    def test_dateinamen_im_pruefpaket_eindeutig(self):
+        kasse.add(self.s, {'name': 'A&B', 'account': '1430', 'prefix': 'AB', 'day': START, 'amount': '1'}, 'Test')
+        kasse.add(self.s, {'name': 'A+B', 'account': '1431', 'prefix': 'AC', 'day': START, 'amount': '2'}, 'Test')
+        buf = BytesIO()
+        berichte.audit_package(self.s, YEAR, Path(self.tmp.name), buf)
+        with zipfile.ZipFile(buf) as z:
+            names = [n.split('/', 1)[1] for n in z.namelist()]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(sorted(n for n in names if n.startswith('Kassenbuch')),
+                         [f'Kassenbuch-A_B-1430-{YEAR}.csv', f'Kassenbuch-A_B-1430-{YEAR}.pdf', f'Kassenbuch-A_B-1431-{YEAR}.csv', f'Kassenbuch-A_B-1431-{YEAR}.pdf'])
+
+    def test_transit_gegenlaeufig_bleibt_offen(self):
+        """Gegenbeispiel der Prüfung: Bargeld-Abhebung 50 und PayPal-Umbuchung auf die Bank 50, beide ohne Kontoumsatz – der Saldo
+        2380 ist 0, offen sind zwei Posten."""
+        kasse.set_opening(self.s, START, '100', 'Test')
+        pp = self.paypal('50')
+        w = self.entry('withdraw', '50', offset=10, text='')
+        d = self.entry('deposit', '50', offset=10, text='', kasse_id=pp)
+        self.assertEqual(kasse.transit_open(self.s), 0)
+        self.assertEqual(self.offen(), ({0: [w['number']], pp: [d['number']]}, []))
+        s = kasse.summary(self.s)
+        self.assertEqual(([[(p['number'], p['amount']) for p in k['transit']] for k in s['kassen']], s['transit']),
+                         ([[(w['number'], 5000)], [(d['number'], -5000)]], {'saldo': 0, 'bank': []}))
+        m = berichte.monthly(self.s, TODAY)
+        aufgaben = [t for t in m['tasks'] if '2380' in t]
+        self.assertEqual(len(aufgaben), 2)
+        self.assertTrue(any('Bargeldkasse: 1 Beleg(e) ohne Gegenseite im Kontoauszug (50,00 €)' in t and w['number'] in t for t in aufgaben), aufgaben)
+        self.assertTrue(any('PayPal: 1 Beleg(e) ohne Gegenseite im Kontoauszug (50,00 €)' in t and d['number'] in t for t in aufgaben), aufgaben)
+        self.assertIn('1 · 50,00 €', self.text(berichte.monthly_pdf(self.s, TODAY)))
+        _, notes = berichte.audit_files(self.s, YEAR, Path(self.tmp.name))
+        self.assertEqual(sorted(n for n in notes if '2380' in n), sorted(aufgaben))
+        for kid, nummer in ((0, w['number']), (pp, d['number'])):
+            self.assertEqual([p['number'] for p in kasse.book(self.s, YEAR, kid)['transit']], [nummer])
+            self.assertIn(f'1 Beleg(e) dieser Kasse ohne Gegenseite im Kontoauszug (50,00 €): {nummer}', self.text(berichte.cash_pdf(self.s, YEAR, kasse_id=kid)))
+        # die Bankseite der Abhebung kommt: nur die Bargeldkasse ist ausgeglichen – ihr Kassenbuch meldet nichts mehr, PayPal bleibt offen
+        self.auf_2380('-50', 10, 'Barabhebung')
+        self.assertEqual((kasse.transit_open(self.s), self.offen()), (5000, ({pp: [d['number']]}, [])))
+        bar = self.text(berichte.cash_pdf(self.s, YEAR))
+        self.assertIn('bei dieser Kasse ausgeglichen', bar)
+        self.assertNotIn('ohne Gegenseite', bar)
+        self.assertIn('ohne Gegenseite', self.text(berichte.cash_pdf(self.s, YEAR, kasse_id=pp)))
+        self.auf_2380('50', 11, 'PayPal Auszahlung')
+        self.assertEqual((kasse.transit_open(self.s), self.offen()), (0, ({}, [])))
+        self.assertEqual([t for t in berichte.monthly(self.s, TODAY)['tasks'] if '2380' in t], [])
+
+    def test_transit_von_kasse_zu_kasse_ueber_die_bank(self):
+        """Geld von PayPal in die Bargeldkasse läuft über die Bank: zwei Belege, zwei Kontoumsätze. Die beiden Belege gleichen sich
+        nie gegenseitig aus – erst jeder mit seinem Kontoumsatz."""
+        kasse.set_opening(self.s, START, '100', 'Test')
+        pp = self.paypal('50')
+        d = self.entry('deposit', '10', offset=11, text='', kasse_id=pp)
+        w = self.entry('withdraw', '10', offset=11, text='')
+        self.assertEqual(self.offen(), ({0: [w['number']], pp: [d['number']]}, []))
+        self.auf_2380('10', 11, 'PayPal Auszahlung')
+        self.assertEqual(self.offen(), ({0: [w['number']]}, []))
+        self.auf_2380('-10', 12, 'Barabhebung')
+        self.assertEqual(self.offen(), ({}, []))
+
+    def test_transit_kontoumsatz_ohne_beleg_storno_und_naechster_tag(self):
+        kasse.set_opening(self.s, START, '100', 'Test')
+        pp = self.paypal('50')
+        frueh = self.bank('-7', f'{YEAR - 1}-12-30', 'vor Beginn des Kassenbuchs')
+        self.s.book(frueh, [{'amount': '-7', 'account': '2380', 'kv': 'LV'}], 'Test')
+        self.assertEqual(self.offen(), ({}, []))                                       # davor kann es keinen Kassenbeleg geben – nur im Saldo
+        self.assertEqual(kasse.summary(self.s)['transit'], {'saldo': 700, 'bank': []})
+        self.assertEqual([t for t in berichte.monthly(self.s, TODAY)['tasks'] if '2380' in t], ['Saldo des Kontos 2380 nicht ausgeglichen (7,00 €) – Kontenblatt 2380 prüfen'])
+        ohne = self.auf_2380('-30', 5, 'Durchlaufposten')                              # Kontoumsatz auf 2380, kein Kassenbeleg
+        self.assertEqual(self.offen(), ({}, [-3000]))
+        self.assertEqual(self.offen(self.day(4)), ({}, []))                            # zum Vortag gab es ihn noch nicht
+        m = berichte.monthly(self.s, TODAY)
+        self.assertEqual([t for t in m['tasks'] if '2380' in t],
+                         [f'Geldtransit 2380: 1 Buchung(en) aus dem Kontoauszug ohne Kassenbeleg (30,00 €) – {german_date(self.day(5))} -30,00 € – '
+                          'anderer Durchlaufposten oder Kassenbeleg fehlt'])
+        self.assertIn('1 Buchung(en) auf 2380 ohne Kassenbeleg (30,00 €)', self.text(berichte.monthly_pdf(self.s, TODAY)))
+        self.assertIn('bei dieser Kasse ausgeglichen', self.text(berichte.cash_pdf(self.s, YEAR)))       # das ist kein Posten der Bargeldkasse
+        w = self.entry('withdraw', '30', offset=5, text='')                            # der Beleg kommt nach: ausgeglichen
+        self.assertEqual(self.offen(), ({}, []))
+        self.s.reverse_bank(ohne, 'Test')                                              # Storno des Kontoumsatzes: der Beleg ist wieder offen
+        self.assertEqual(self.offen(), ({0: [w['number']]}, []))
+        self.auf_2380('-30', 5)
+        self.assertEqual(self.offen(), ({}, []))
+        self.s.reverse_bank(w['id'], 'Test')                                           # Storno des Belegs: der Kontoumsatz steht ohne Beleg da
+        self.assertEqual(self.offen(), ({}, [-3000]))
+        kasse.void(self.s, w['id'], 'doppelt', 'Test')                                 # ungültige Belege zählen nicht
+        self.assertEqual(self.offen(), ({}, [-3000]))
+        # zwei gleiche Belege, ein Kontoumsatz: ausgeglichen ist der zeitlich nächste; eine Ausgabe auf 2380 gebucht ist ebenfalls ein Posten
+        a = self.entry('withdraw', '30', offset=3, text='')
+        b = self.entry('withdraw', '30', offset=6, text='')
+        self.assertEqual(self.offen(), ({0: [a['number']]}, []))
+        aus = self.entry('out', '4', offset=7, text='an die Bank', kasse_id=pp)
+        self.s.book(aus['id'], [{'amount': '-4', 'account': '2380', 'kv': 'LV'}], 'Test')
+        self.assertEqual(self.offen(), ({0: [a['number']], pp: [aus['number']]}, []))
+        self.assertEqual(kasse.transit(self.s)['kassen'][pp][0]['amount'], -400)
+        self.assertNotIn(b['number'], str(kasse.transit(self.s)))
 
 
 if __name__ == '__main__':

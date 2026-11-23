@@ -2,7 +2,7 @@
 // Verwaltung. Jede Zeile führt in die Liste dazu; mit Rollen sieht später jede Person nur ihren Bereich. Darüber die Kennzahlen des Haushalts (ab 0.32).
 import { download } from '../api.js';
 import { html, mount } from '../html.js';
-import { eur, date, shortDate, todayIso } from '../format.js';
+import { eur, signed, date, shortDate, todayIso } from '../format.js';
 import { store, go, can, yearBank, openBills, daysOverdue } from '../store.js';
 import { pageHead, icon, safe, toast, dialog } from '../ui.js';
 import { reviewDialog } from './bills.js';
@@ -94,8 +94,10 @@ function tasks() {
     if (k.open) add('bh', k.id ? `${k.name}: Belege verbuchen` : 'Kassenbelege verbuchen', `${k.id ? 'Bestand' : 'Kassenbestand'} ${eur(k.balance)} – offene Belege wie Kontoumsätze kontieren`, k.open, 'warn', ['cash', { cashFilter: 'open', kasse: k.id }]);
     const cashParked = store.workflow.parked.filter((b) => b.ledger === 'cash' && (b.kasse || 0) === k.id);
     if (cashParked.length) add('bh', k.id ? `${k.name}: Belege im Parkkonto` : 'Kassenbelege im Parkkonto', cashParked[0].reason || 'Klärungsgrund fehlt', cashParked.length, '', ['cash', { cashFilter: 'parked', kasse: k.id }]);
+    if (k.transit.length) add('bh', `Geldtransit 2380: ${k.name}`, `${k.transit.slice(0, 3).map((x) => x.number).join(', ')}${k.transit.length > 3 ? ' …' : ''} ohne Gegenseite im Kontoauszug (${eur(k.transit.reduce((s, x) => s + Math.abs(x.amount), 0))}) – den Kontoumsatz auf 2380 buchen`, k.transit.length, '', ['cash', { cashFilter: 'book', kasse: k.id }]);
   }
-  if (cashInfo?.transit) add('bh', 'Geldtransit 2380 offen', 'Abhebung, Einzahlung oder Umbuchung fehlt auf einer Seite – Kassenbeleg bzw. Kontoumsatz auf 2380 buchen', eur(cashInfo.transit), '', ['cash', { cashFilter: 'book' }]);
+  const ohneBeleg = cashInfo?.transit?.bank || [];   // Kontoumsätze auf 2380, zu denen kein Beleg einer Kasse passt
+  if (ohneBeleg.length) add('bh', 'Kontoumsätze auf 2380 ohne Kassenbeleg', `${ohneBeleg.slice(0, 3).map((x) => `${date(x.day)} ${signed(x.amount)}`).join(', ')}${ohneBeleg.length > 3 ? ' …' : ''} – anderer Durchlaufposten oder der Kassenbeleg (Geldtransit) fehlt`, ohneBeleg.length, '', ['bank', { bankFilter: 'booked' }]);
   const payables = openBills();
   const payDue = payables.filter((b) => !b.transferred && !b.approval.missing.length && daysOverdue(b.due) >= -7);
   if (payDue.length) add('bh', 'Eingangsrechnungen bezahlen', `${eur(payDue.reduce((s, b) => s + b.open, 0))} fällig in den nächsten 7 Tagen oder überfällig – Zahlungsvorschlag`, payDue.length, 'warn', ['bills']);

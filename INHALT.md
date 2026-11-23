@@ -64,7 +64,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/mitglieder-listen.js`: anschriftVollstaendig, fehlt, gespeichert, isActive, listen, speichern
 - `static/js/ov-gebiete.js`: gebietFelder, gebietText, gebietVon, gebietVorschlaege, gebieteDialog → /api/ov-gebiet, /api/ov-gebiete
 - `static/js/rpj-field.js`: RPJ_CATEGORIES, bindRpj, categoryOptions, projectLabel, requestLabel, rpjCategory, rpjField, rpjKind, rpjMissing, rpjProjects, rpjRequests, rpjValue, targetOptions
-- `static/js/store.js`: accountName, can, currentKasse, daysOverdue, eligibleInvoices, go, inLedger, kvName, ledgerRows, onChange, openBills, ownAccount, refresh, render, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
+- `static/js/store.js`: accountName, can, currentKasse, daysOverdue, eligibleInvoices, go, inLedger, kvName, ledgerRows, onChange, openBills, ownAccount, refresh, render, setKasse, store, titleLabel, titleOf, yearBank → /api/data, /api/haushalt, /api/status, /api/workflow
 - `static/js/ui.js`: badge, closeDialog, closeTop, confirmAction, dialog, empty, icon, mailPreview, meter, overlay, pageHead, safe, table, toast, uploadProtected → /api/mail-preview, /api/preview.pdf
 - `static/js/views/auswertung.js`: aussageBestand, aussageBindung, aussageDichte, aussageGliederung, aussageStruktur, auswertung, flaecheKm2, klassen, skala, stufe, vorn → /api/auswertung, /api/auswertung.csv, /api/auswertung.pdf, /api/karte, /api/karte-gebiete
 - `static/js/views/bank.js`: bank, bankKeys, renderLedger, useLedger → /api/kasse-datei, /api/park, /api/reverse-bank, /api/umsatz-gueltig, /api/umsatz-ungueltig
@@ -108,7 +108,7 @@ JU Hamburg Finanzen – local authenticated pilot server.
 Tests: test_doppelte.py, test_http.py, test_karte.py, test_keycloak_app.py, test_mitgliederverwaltung.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_static.py, test_uebernahme.py
 
 - `backups_dir()`
-- `save_receipt(store, table, rid, number, filename, suffix, raw)` – Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
+- `save_receipt(store, table, rid, number, filename, suffix, raw)` – Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben. Der Dateiname
 - `keycloak_mode()`
 - `notzugang(db, name)` – Keycloak-Betrieb: Anmeldung mit lokalem Passwort nur als Notzugang – solange auf dem Server freigeschaltet
 - `kc_abmelden(db, name)` – Keycloak-Sitzungen der Person beenden – best effort: ein Fehler wird nur protokolliert (Meldung ohne Tokens).
@@ -222,7 +222,7 @@ Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte
 
 Geld- und Datumsformate. Alle Geldbeträge werden als ganze Cent geführt.
 
-Tests: test_import.py
+Tests: test_import.py, test_kasse.py
 
 - `money(value)` – Liest einen Betrag im deutschen oder englischen Format und liefert Cent.
 - `cents_from_number(value)` – Zahl aus einer Tabellenzelle (float) exakt in Cent umrechnen.
@@ -702,9 +702,11 @@ Tabellen: `kassen`
 
 Tests: test_kasse.py, test_klaerfaelle.py, test_rpj.py, test_umsatz_ungueltig.py
 
+- Klasse `Kasse` – Eintrag einer Kasse – entsteht nur in `liste`. Daten einer Anfrage (JSON) sind nie von diesem Typ.
 - `init(db)`
 - `liste(store)` – Alle Kassen, die Bargeldkasse zuerst: je Kasse {'id', 'name', 'account', 'prefix', 'start'} (start None = noch nicht eingerichtet).
-- `eine(store, kasse=…)` – Eine Kasse aus `liste` – aus ihrer Kennung (leer = Bargeldkasse) oder unverändert, wenn schon der Eintrag übergeben wird.
+- `kennung(wert)` – Kennung einer Kasse aus einer Eingabe: leer = Bargeldkasse (0), sonst eine ganze Zahl (auch als Ziffernfolge) – alles andere
+- `eine(store, kasse=…)` – Die Kasse zu einer Kennung (leer = Bargeldkasse) – gibt es sie nicht oder ist es keine Kennung: „Kasse nicht gefunden“.
 - `kinds(k)` – Arten eines Belegs mit den Wörtern der Kasse: Bargeld „Abhebung/Einzahlung“, sonst „Umbuchung von der/auf die Bank“.
 - `ledger_account(store, b)` – Gegenkonto eines Umsatzes: das Konto der Kasse für Kassenbelege, sonst Bank.
 - `start(store, kasse=…)` – Beginn des Kassenbuchs (Tag des Anfangsbestands) oder None, solange die Kasse nicht eingerichtet ist.
@@ -719,8 +721,9 @@ Tests: test_kasse.py, test_klaerfaelle.py, test_rpj.py, test_umsatz_ungueltig.py
 - `check_after_booking(store, entries, storno=…)` – Nach einer Buchung auf ein Kassenkonto (Kassenbeleg oder Kontoauszug): der Bestand dieser Kasse darf nie negativ werden – nur
 - `create(store, data, actor, attachment_suffix=…)` – Kassenbeleg erfassen. Einnahme/Ausgabe bleiben offen und werden im Buchungsplatz der Kasse verbucht; Geldtransit wird sofort
 - `void(store, bid, reason, actor)` – Offenen Kassenbeleg mit Grund für ungültig erklären (Tippfehler, doppelt erfasst) – er bleibt sichtbar, zählt aber nicht.
-- `summary(store)` – Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand; dazu offene Belege aller
-- `transit_open(store, until=…)` – Saldo des Durchlaufkontos 2380 (Geldtransit) am Ende eines Tages: ≠ 0, solange Abhebung/Einzahlung nur auf einer Seite
+- `summary(store)` – Kurzüberblick für die Oberfläche: je Kasse Beginn, Bestand heute, offene Belege, Anfangsbestand und ihre offenen Posten im
+- `transit_open(store, until=…)` – Saldo des Durchlaufkontos 2380 am Ende eines Tages – nur eine Zahl: gegenläufige offene Posten heben sich darin auf.
+- `transit(store, until=…)` – Offene Posten des Geldtransits 2380 am Ende eines Tages – zugeordnet, nicht saldiert. Ein Posten ist ein Beleg einer Kasse
 - `book(store, year, kasse=…)` – Kassenbuch einer Kasse für ein Jahr: Übertrag, Bewegungen mit Beleg, Kontierung und Bestand; ungültige Belege nur zur
 - `balance_today(store, kasse=…)`
 - `is_transit(b)` – Geldtransit (Abhebung/Einzahlung bzw. Umbuchung) – braucht keinen eigenen Beleg; die Gegenseite steht im Kontoauszug.
@@ -830,6 +833,7 @@ Tests: test_beitraege.py, test_berichte.py, test_erechnung.py, test_kasse.py, te
 - `member_pdf(store, member_id, today=…)` – Beitragskonto eines Mitglieds: je Jahr Soll, gezahlt, Stand und die Buchungen mit laufendem Saldo.
 - `rpj_pdf(store, year, today=…)` – RPJ-Jahresübersicht (Schattenhaushalt): Bescheid, Mittelabrufe, Projekte mit Plan und Ist, Kostenarten, Abstimmung.
 - `rpj_project_pdf(store, project_id, today=…)` – Einzelübersicht eines RPJ-Projekts: Plan und Ist je Kostenart und alle zugeordneten Buchungen.
+- `cash_name(k, year)` – Dateiname eines Kassenbuchs ohne Endung: „Kassenbuch-2026“ (Bargeldkasse, wie seit 0.25), sonst mit Name und Konto
 - `audit_package(store, year, data_dir, out)` – Kassenprüfer-Paket als ZIP in das Dateiobjekt out schreiben (Ordner Kassenpruefung-JJJJ) – Datei für Datei,
 - `audit_files(store, year, data_dir)` – Inhalt des Pakets als (Dateiname → Bytes, Prüfhinweise) – für Tests und kleine Bestände.
 

@@ -2,6 +2,14 @@
 // was der Server verbindlich entscheidet (Buchungen, Beiträge, Budgets).
 import { api } from './api.js';
 
+const KASSE_KEY = 'ju-finanzen-kasse';
+function gemerkteKasse() {
+  try {
+    const roh = localStorage.getItem(KASSE_KEY);
+    return /^[0-9]+$/.test(roh || '') ? Number(roh) : null;
+  } catch { return null; /* kein Speicher: ohne Wahl */ }
+}
+
 export const store = {
   user: '',
   version: '',
@@ -14,7 +22,7 @@ export const store = {
   household: null,   // /api/haushalt: Gesamthaushalt Plan/Ist
   workflow: null,    // /api/workflow: KV-Budgets, Parkkonto, Lernbeispiele
   bank: { filter: 'open', search: '', selected: null },
-  cash: { filter: 'open', search: '', selected: null, kasse: null },   // Kasse (Kassenbelege, ab 0.25); kasse: gewählte Kasse (ab 0.57, null = erste eingerichtete)
+  cash: { filter: 'open', search: '', selected: null, kasse: gemerkteKasse() },   // Kasse (Kassenbelege, ab 0.25); kasse: gewählte Kasse (ab 0.57, null = erste eingerichtete)
   budgets: { mode: 'household', onlyDeviations: false, kvSearch: '', kvAttention: false, kvSelected: null, kvKey: null, kvData: null },
   journal: { limit: 300, search: '' },
   konten: { search: '', onlyUsed: false, selected: null, kv: '', list: null, listKey: null, sheet: null, sheetKey: null, error: '' },
@@ -56,7 +64,7 @@ export function go(page, options = {}) {
     store.cash.filter = options.cashFilter;
     store.cash.selected = null;
   }
-  if (options.kasse !== undefined) store.cash.kasse = options.kasse;   // Seite Kasse: diese Kasse zeigen
+  if (options.kasse !== undefined) setKasse(options.kasse);   // Seite Kasse: diese Kasse zeigen
   if (options.rpjAssign) store.rpjAssign = true;   // RPJ-Seite öffnet „RPJ zuordnen“
   if (options.openSide) store.openSide = options.openSide;   // Offene Posten: Reiter (dues | receivables | payables)
   if (options.opKv !== undefined) store.opKv = options.opKv;  // … und Kreisverband der OP-Liste
@@ -76,7 +84,13 @@ export const titleLabel = (id) => {
   return t ? `${t.code ? t.code + ' · ' : ''}${t.label}` : id || '';
 };
 
-/** Gewählte Kasse der Seite Kasse (ab 0.57 mehrere: Bargeld, PayPal …) – ohne Wahl die erste eingerichtete. */
+/** Kasse wählen – die Wahl gilt je Browser weiter (localStorage, wie die Darstellung), auch nach dem Neuladen der Seite. */
+export function setKasse(id) {
+  store.cash.kasse = id;
+  try { localStorage.setItem(KASSE_KEY, String(id)); } catch { /* Speicher blockiert: gilt nur für diese Seite */ }
+}
+/** Gewählte Kasse der Seite Kasse (ab 0.57 mehrere: Bargeld, PayPal …) – ohne Wahl oder wenn es die gemerkte nicht (mehr) gibt,
+ *  die erste eingerichtete (Bargeldkasse zuerst). */
 export function currentKasse() {
   const all = store.data?.cash?.kassen || [];
   return all.find((k) => k.id === store.cash.kasse) || all.find((k) => k.start) || all[0];
