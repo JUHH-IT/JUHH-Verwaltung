@@ -41,7 +41,7 @@ import geheimnis
 import zugang
 import keycloak
 
-VERSION='0.60'
+VERSION='0.58'
 APP_NAME='JU Hamburg Finanzen'
 ROOT=Path(__file__).resolve().parent
 # Datenordner: --data, Umgebungsvariable JU_FINANZEN_DATEN oder (Altbestand) Daten neben dem Programm.
@@ -1126,7 +1126,9 @@ class Handler(BaseHTTPRequestHandler):
             elif path=='/api/park': workflow.park(store,int(data['id']),data.get('reason',''),actor)
             elif path=='/api/umsatz-notiz': result={'notiz':umsatzakte.notiz(store,data.get('id'),data.get('text'),actor)}
             elif path=='/api/umsatz-beleg':
-                f=data.get('file') or {};suffix,raw=umsatzakte.datei(f.get('name',''),f.get('content',''))
+                f=data.get('file')
+                if not isinstance(f,dict) or not isinstance(f.get('name'),str) or not isinstance(f.get('content'),str): raise ValueError('Bitte eine Datei auswählen.')
+                suffix,raw=umsatzakte.datei(f['name'],f['content'])
                 result={'id':umsatzakte.anheften(store,data.get('id'),f.get('name',''),suffix,len(raw),actor,
                                                  lambda rid,nummer,filename: save_receipt(store,'umsatz_belege',rid,nummer,filename,suffix,raw))}
             elif path=='/api/umsatz-beleg-entfernen': result={'bank_id':umsatzakte.entfernen(store,data.get('id'),DATA/'Belege',actor)}

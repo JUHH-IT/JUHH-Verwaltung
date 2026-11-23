@@ -346,7 +346,7 @@ class RollenHttpTests(unittest.TestCase):
         self.assertNotEqual(self.post(who, '/api/klaerfall-notiz', {})[0], 403)                        # darf (scheitert nur an den fehlenden Angaben)
 
     def test_umsatz_notiz_und_belege_nach_recht(self):
-        """0.60: Notiz und Belege am Kontoumsatz – ansehen mit „Buchhaltung lesen“, ändern nur mit „Buchhaltung ändern“, ohne Buchhaltung nichts."""
+        """0.58: Notiz und Belege am Kontoumsatz – ansehen mit „Buchhaltung lesen“, ändern nur mit „Buchhaltung ändern“, ohne Buchhaltung nichts."""
         import base64
         datei = {'name': 'quittung.pdf', 'content': base64.b64encode(b'%PDF-1.4 erfunden').decode()}
         schatz = self.person('Schatz-Person', 'Schatzmeister')

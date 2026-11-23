@@ -1,4 +1,4 @@
-"""Notiz und angeheftete Belege am Kontoumsatz (ab 0.60, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026).
+"""Notiz und angeheftete Belege am Kontoumsatz (ab 0.58, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026).
 
 Eigene Tabellen, damit `bank` bleibt, wie sie ist (`bank.note` trägt weiter den Grund für „ungültig“):
 - `umsatz_notizen`: eine Notiz je Umsatz, mit wer und wann.
@@ -38,7 +38,7 @@ def _jetzt():
 
 
 def _umsatz(store, bid):
-    if not isinstance(bid, int) or isinstance(bid, bool):
+    if not isinstance(bid, int) or isinstance(bid, bool) or not 0 < bid < 2 ** 62:   # auch zu große Zahlen: sonst Fehler der Datenbank statt Meldung
         raise ValueError('Ungültige Angaben.')
     b = store.db.execute("SELECT id FROM bank WHERE id=? AND ledger='bank'", (bid,)).fetchone()
     if not b:
@@ -86,7 +86,7 @@ def ergaenzen(store, rows):
 def stand(store):
     """Stand des Kontoauszugs für den Satz über der Liste: `am` = letzter Import (Zeitpunkt), `bis` = jüngster Buchungstag."""
     return {'am': store.db.execute('SELECT MAX(created) FROM imports').fetchone()[0] or '',
-            'bis': store.db.execute("SELECT MAX(booked) FROM bank WHERE ledger='bank'").fetchone()[0] or ''}
+            'bis': store.db.execute("SELECT MAX(booked) FROM bank WHERE ledger='bank' AND state!='void'").fetchone()[0] or ''}
 
 
 def ohne_beleg(store, year):
@@ -107,7 +107,7 @@ def notiz(store, bid, text, actor):
     _umsatz(store, bid)
     if not isinstance(text, str):
         raise ValueError('Ungültige Angaben.')
-    text = text.replace('\r\n', '\n').strip()
+    text = ''.join(c for c in text.replace('\r\n', '\n') if c == '\n' or (c.isprintable() and c not in '\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069')).strip()   # keine Steuer- und Richtungszeichen (stehen sonst im Prüfpaket)
     if len(text) > MAX_NOTIZ:
         raise ValueError(f'Notiz: höchstens {MAX_NOTIZ} Zeichen.')
     alt = store.db.execute('SELECT text FROM umsatz_notizen WHERE bank_id=?', (bid,)).fetchone()
@@ -154,7 +154,7 @@ def anheften(store, bid, name, suffix, size, actor, speichern):
 def beleg(store, rid, folder):
     """Angehefteter Beleg mit dem Pfad seiner Datei in `folder` (Daten/Belege) – `pfad` ist None, wenn die Datei fehlt oder nicht
     dorthin gehört. Unbekannte Kennung: ValueError."""
-    b = store.db.execute('SELECT * FROM umsatz_belege WHERE id=?', (rid,)).fetchone() if isinstance(rid, int) and not isinstance(rid, bool) else None
+    b = store.db.execute('SELECT * FROM umsatz_belege WHERE id=?', (rid,)).fetchone() if isinstance(rid, int) and not isinstance(rid, bool) and 0 < rid < 2 ** 62 else None
     if not b:
         raise ValueError('Beleg nicht gefunden.')
     root = Path(folder).resolve()

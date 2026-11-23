@@ -12,7 +12,7 @@ import { rpjField, bindRpj, rpjKind, rpjValue, rpjMissing } from '../rpj-field.j
 
 const option = (value, label, selected) => html`<option value="${value}" ${selected ? 'selected' : ''}>${label}</option>`;
 
-/** zusatz: eigenes Markup der Seite zwischen Kontierung und Knöpfen (Kontoumsätze: Notiz und Belege, ab 0.60). */
+/** zusatz: eigenes Markup der Seite zwischen Kontierung und Knöpfen (Kontoumsätze: Notiz und Belege, ab 0.58). */
 export function bookingEditor(container, b, { onBooked, onPark, zusatz = '' }) {
   const kind = b.amount > 0 ? 'income' : 'expense';
   // alle Konten des Kontenrahmens; 8100 nur mit Mitglied – bei Ausgängen als Rückzahlung bzw. Rücklastschrift eines Beitrags;

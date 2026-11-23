@@ -13,7 +13,7 @@ export const store = {
   data: null,        // /api/data: Mitglieder, Rechnungen, Bank, Konten, Journal, Einstellungen …
   household: null,   // /api/haushalt: Gesamthaushalt Plan/Ist
   workflow: null,    // /api/workflow: KV-Budgets, Parkkonto, Lernbeispiele
-  bank: { filter: 'open', search: '', selected: null, modus: 'liste' },   // Kontoumsätze: 'liste' oder 'verbuchen' (Maske, ab 0.60)
+  bank: { filter: 'open', search: '', selected: null, modus: 'liste' },   // Kontoumsätze: 'liste' oder 'verbuchen' (Maske, ab 0.58)
   cash: { filter: 'open', search: '', selected: null },   // Kasse (Kassenbelege, ab 0.25)
   budgets: { mode: 'household', onlyDeviations: false, kvSearch: '', kvAttention: false, kvSelected: null, kvKey: null, kvData: null },
   journal: { limit: 300, search: '' },

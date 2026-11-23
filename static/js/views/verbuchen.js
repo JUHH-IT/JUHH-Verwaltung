@@ -1,4 +1,4 @@
-// Verbuchen (0.60, REGELN Nr. 40): Arbeitsmodus der Kontoumsätze für offene und geparkte Umsätze. Links die Arbeitsliste, rechts
+// Verbuchen (0.58, REGELN Nr. 40): Arbeitsmodus der Kontoumsätze für offene und geparkte Umsätze. Links die Arbeitsliste, rechts
 // die bestehende Buchungsmaske (views/booking.js: Vorschläge, Teilbeträge, Lernen), dazu Parken und „ungültig“ aus views/bank.js
 // sowie Notiz und Belege (views/umsatz-akte.js). Gebucht wird wie bisher allein über /api/book und /api/park.
 import { html, mount } from '../html.js';

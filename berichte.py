@@ -595,7 +595,7 @@ def _audit_entries(store, year, data_dir, notes):
     yield f'Haushalt-{y}.pdf', haushalt.pdf_report(store, year)
 
     bank = store.rows("SELECT * FROM bank WHERE ledger='bank' AND substr(booked,1,4)=? ORDER BY booked,id", (y,))
-    import umsatzakte   # ab 0.60: Notiz und angeheftete Belege am Kontoumsatz
+    import umsatzakte   # ab 0.58: Notiz und angeheftete Belege am Kontoumsatz
     akten = umsatzakte.fuer_jahr(store, year)
     akte = lambda b: akten.get(b['id'], {'notiz': '', 'belege': []})  # noqa: E731
     yield f'Kontoumsaetze-{y}.csv', _csv([[b['id'], b['booked'], _eur(b['amount']), b['name'], b['reference'], b['state'], b['reversals'], b['source'], b['note'] if b['state'] == 'void' else '',

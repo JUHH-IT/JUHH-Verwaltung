@@ -1317,7 +1317,7 @@ table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offse
 }
 @media (max-width: 900px) { .ml-tabelle table { min-width: 940px; } }   /* schmale Bildschirme: die Tabelle rollt seitlich, die Zeilen bleiben zweizeilig */
 
-/* ---------- Kontoumsätze und Verbuchen (0.60, REGELN Nr. 40): Liste wie im Onlinebanking auf einem Blatt ---------- */
+/* ---------- Kontoumsätze und Verbuchen (0.58, REGELN Nr. 40): Liste wie im Onlinebanking auf einem Blatt ---------- */
 /* Aufbau: .blatt > .ku-lage | .kz-band | .ku-leiste | .blatt-reihe (.ku-liste | .ku-detail). Notiz und Belege: .ua-… (views/umsatz-akte.js). */
 .ku-mehr { position: relative; }
 .ku-mehr summary { list-style: none; }
@@ -1337,8 +1337,9 @@ table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offse
 .ku-monat button:disabled { opacity: 0.35; cursor: default; }
 .ku-leiste .segmented .zahl { margin-left: 2px; font-weight: 400; color: var(--muted); }
 .ku-reihe { align-items: flex-start; }
-.ku-reihe > .ku-liste { flex: 3 1 520px; padding: 4px 0 20px; }
-.ku-reihe > .ku-detail { flex: 2 1 360px; align-self: stretch; gap: 20px; border-left: 1px solid var(--line); }
+/* Der gewählte Umsatz bleibt neben der Liste stehen, auch wenn die Liste länger ist als das Fenster (Prüfung 0.58, wie .kn-detail) */
+.ku-reihe > .ku-liste { flex: 3 1 520px; padding: 4px 0 20px; border-right: 1px solid var(--line); }
+.ku-reihe > .ku-detail { flex: 2 1 360px; align-self: flex-start; gap: 20px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
 .ku-leer { margin: 0; padding: 40px 32px; color: var(--ink-2); }
 .ku-tag { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 20px 28px 8px 32px; }
 .ku-tag h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
@@ -1405,8 +1406,9 @@ table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offse
 .vb-fertig { gap: 4px; align-items: flex-start; }
 .vb-fertig p:last-child { margin: 20px 0 0; }
 .vb-reihe { align-items: flex-start; }
-.vb-reihe > .vb-liste { flex: 5 1 300px; padding: 20px 8px 20px; border-right: 1px solid var(--line); align-self: stretch; }
-.vb-reihe > .vb-maske { flex: 10 1 480px; padding: 28px 36px 32px; gap: 20px; }
+/* Arbeitsliste mit eigener Höhe, die Maske bleibt daneben stehen – sonst bucht Enter einen Umsatz, den man nicht sieht (Prüfung 0.58) */
+.vb-reihe > .vb-liste { flex: 5 1 300px; padding: 20px 8px 20px; border-right: 1px solid var(--line); align-self: flex-start; max-height: calc(100vh - 24px); overflow-y: auto; position: sticky; top: 12px; }
+.vb-reihe > .vb-maske { flex: 10 1 480px; padding: 28px 36px 32px; gap: 20px; align-self: flex-start; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
 .vb-liste .search { margin: 0 16px 8px; }
 .vb-liste h3 { margin: 0; padding: 16px 24px 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .vb-zeile { display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 60px; padding: 10px 20px 10px 24px; border: 0; border-top: 1px solid var(--line-2); background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
@@ -1442,9 +1444,10 @@ table.blatt-tab tr:focus-visible { outline: 2px solid var(--teal); outline-offse
 .vb-ungueltig { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 .vb-ungueltig p { margin: 0; flex: 1 1 280px; }
 @media (max-width: 900px) {
-  .ku-reihe > .ku-detail { border-left: 0; border-top: 1px solid var(--line); }
-  .vb-reihe > .vb-maske { border-top: 1px solid var(--line); }
-  .vb-reihe > .vb-liste { border-right: 0; max-height: 46vh; overflow-y: auto; }
+  .ku-reihe > .ku-liste { border-right: 0; }
+  .ku-reihe > .ku-detail { position: static; max-height: none; overflow: visible; border-top: 1px solid var(--line); }
+  .vb-reihe > .vb-maske { position: static; max-height: none; overflow: visible; border-top: 1px solid var(--line); }
+  .vb-reihe > .vb-liste { position: static; border-right: 0; max-height: 46vh; overflow-y: auto; }
 }
 @media (max-width: 640px) {
   .ku-leiste { padding: 16px 16px; }

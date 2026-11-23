@@ -1,4 +1,4 @@
-// Kontoumsätze (0.60, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026): alle Umsätze des Kontoauszugs untereinander wie im
+// Kontoumsätze (0.58, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026): alle Umsätze des Kontoauszugs untereinander wie im
 // Onlinebanking – nach Tagen, mit Suche, zugeordnetem Konto, Notiz und Belegen. Verbucht wird in der Maske (views/verbuchen.js,
 // dieselbe Kontierung wie bisher); diese Seite zeigt den Bestand und führt dorthin. Die Kasse bleibt bei views/bank.js.
 import { api } from '../api.js';
@@ -107,7 +107,7 @@ function auswahl(jahr, journal, grund) {
     .filter(({ b, s }) => !q || `${umsatzName(b)} ${b.reference || ''} ${eur(Math.abs(b.amount))} ${toInput(b.amount)} ${date(b.booked)} ${s.titel} ${s.zusatz}`.toLowerCase().includes(q));
   const zahl = { alle: bereich.length };
   for (const [id] of STAENDE.slice(1)) zahl[id] = bereich.filter(({ b }) => b.state === id).length;
-  const liste = sicht.stand === 'alle' ? bereich : sicht.stand === 'ohnebeleg' ? bereich.filter(({ b }) => b.ohne_beleg) : bereich.filter(({ b }) => b.state === sicht.stand);
+  const liste = sicht.stand === 'alle' ? bereich : sicht.stand === 'ohnebeleg' ? bereich.filter(({ b }) => b.ohne_beleg || b.id === sicht.id)   /* der gewählte bleibt stehen, auch wenn er gerade seinen Beleg bekommen hat – sonst landet der zweite Beleg am falschen Umsatz */ : bereich.filter(({ b }) => b.state === sicht.stand);
   return { q, zahl, liste };
 }
 
@@ -150,7 +150,7 @@ function zeichne(main) {
       <section class="blatt-teil ku-lage" aria-label="Lage">
         <div><h2 class="blatt-aussage gross">${!jahr.length && !zuTun ? `Für ${store.year} gibt es noch keine Kontoumsätze.` : !zuTun ? 'Alles verbucht.'
           : zuTun === 1 ? '1 Umsatz ist noch nicht verbucht.' : `${zuTun} Umsätze sind noch nicht verbucht.`}</h2>
-          <p class="blatt-text">${st.am ? `Zuletzt importiert am ${tag(st.am.slice(0, 10), { weekday: 'long', day: 'numeric', month: 'long' })}.${st.bis ? ` Der Auszug reicht bis zum ${tag(st.bis, { day: 'numeric', month: 'long' })}.` : ''}`
+          <p class="blatt-text">${st.am ? `Zuletzt importiert am ${tag(st.am.slice(0, 10), { weekday: 'long', day: 'numeric', month: 'long' })}.${st.bis ? ` Der Auszug reicht bis zum ${tag(st.bis, { day: 'numeric', month: 'long', year: 'numeric' })}.` : ''}`
             : 'Mit „Kontoauszug importieren“ kommen die Umsätze der Bank hierher.'}</p></div>
         ${zuTun && darf ? html`<button type="button" class="btn dark large" data-verbuchen>Offene verbuchen ${icon('right', 16)}</button>` : ''}
       </section>
@@ -160,8 +160,8 @@ function zeichne(main) {
         <div class="kz"><span class="label">Noch offen</span><span class="wert">${offenMonat.length}</span>
           <span class="note">${!offenMonat.length ? `${im} ist alles verbucht` : parkMonat ? `davon ${parkMonat} geparkt auf 1370` : 'noch zu verbuchen'}</span></div>
         <div class="kz"><span class="label">Ausgaben ohne Beleg</span><span class="wert">${ohne}</span>
-          <span class="note">${!ohne ? 'jede verbuchte Ausgabe hat einen Beleg' : html`Beleg direkt am Umsatz anheften.
-            <button type="button" class="blatt-link" data-ohne aria-pressed="${sicht.stand === 'ohnebeleg' ? 'true' : 'false'}">${sicht.stand === 'ohnebeleg' ? 'Wieder alle zeigen' : 'Nur diese zeigen'}</button>`}</span></div>
+          <span class="note">${!ohne ? 'jede verbuchte Ausgabe hat einen Beleg' : 'Beleg direkt am Umsatz anheften.'}
+            ${ohne || sicht.stand === 'ohnebeleg' ? html`<button type="button" class="blatt-link" data-ohne aria-pressed="${sicht.stand === 'ohnebeleg' ? 'true' : 'false'}">${sicht.stand === 'ohnebeleg' ? 'Wieder alle zeigen' : 'Nur diese zeigen'}</button>` : ''}</span></div>
       </section>
       <section class="ku-leiste" aria-label="Suche und Filter">
         <label class="search">${icon('search', 16)}<span class="sr-only">Umsätze durchsuchen</span>
@@ -196,7 +196,11 @@ function zeichne(main) {
   mehr.onkeydown = (e) => { if (e.key === 'Escape' && mehr.open) { e.stopPropagation(); mehr.open = false; mehr.querySelector('summary').focus(); } };
   mehr.querySelectorAll('.ku-menu button').forEach((k) => k.addEventListener('click', () => { mehr.open = false; }));
   main.querySelector('[data-verbuchen]')?.addEventListener('click', () => zurMaske());
-  main.querySelector('[data-ohne]')?.addEventListener('click', () => { sicht.stand = sicht.stand === 'ohnebeleg' ? 'alle' : 'ohnebeleg'; neu(); });
+  main.querySelector('[data-ohne]')?.addEventListener('click', () => {
+    sicht.stand = sicht.stand === 'ohnebeleg' ? 'alle' : 'ohnebeleg';
+    if (sicht.stand === 'ohnebeleg') sicht.id = null;   // beim Einschalten zählt nur die Regel; gehalten wird erst, was im Filter gewählt wurde
+    neu();
+  });
   main.querySelectorAll('[data-stand]').forEach((k) => (k.onclick = () => { sicht.stand = k.dataset.stand; neu(); }));
   main.querySelectorAll('[data-monat]').forEach((k) => (k.onclick = () => { sicht.monat = `${store.year}-${String(nr + Number(k.dataset.monat)).padStart(2, '0')}`; neu(); }));
   const suche = main.querySelector('#ku-suche');

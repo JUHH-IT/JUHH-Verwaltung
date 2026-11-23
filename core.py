@@ -111,7 +111,7 @@ class Store:
         import sepadatei
         sepadatei.init(self.db)   # Belege zu aufgeteilten SEPA-Sammelbuchungen (0.29)
         import umsatzakte
-        umsatzakte.init(self.db)   # Notiz und angeheftete Belege am Kontoumsatz (0.60)
+        umsatzakte.init(self.db)   # Notiz und angeheftete Belege am Kontoumsatz (0.58)
         import klaerfaelle
         klaerfaelle.init(self.db) # Klärfälle der Mitgliederverwaltung (0.31; nach beitraege und sepadatei: liest deren Tabellen)
         import rollen
@@ -633,7 +633,7 @@ class Store:
         """Umsätze und Kassenbelege für die Oberfläche (mit `hat_notiz`, `belege`, `ohne_beleg`, `bezug` aus umsatzakte.ergaenzen); 'fy' = Haushaltsjahr, in das eine neue Zuordnung fällt, wenn es vom Buchungsdatum
         abweicht (geparkt bzw. nach Storno: Jahr der früheren Buchung, z. B. Excel-Blatt) – wie in _book, für die Auswahl der RPJ-Projekte."""
         rows=self.rows('SELECT * FROM bank ORDER BY booked DESC,id DESC')
-        __import__('umsatzakte').ergaenzen(self,rows)   # ab 0.60: Notiz-Kennzeichen, Zahl der Belege, „Ausgabe ohne Beleg“, Bezug – Details auf Abruf
+        __import__('umsatzakte').ergaenzen(self,rows)   # ab 0.58: Notiz-Kennzeichen, Zahl der Belege, „Ausgabe ohne Beleg“, Bezug – Details auf Abruf
         for b in rows:
             if b['state']=='parked':
                 j=self.db.execute('SELECT year FROM journals WHERE source=?',(bank_source('bank',b),)).fetchone()

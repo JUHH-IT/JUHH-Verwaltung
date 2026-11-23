@@ -1,5 +1,5 @@
 // Buchungsplatz (Richtung B): Arbeitsliste links, ausgewählter Umsatz mit Kontierung rechts – ab 0.25 für die Kasse (cash,
-// views/cash.js): dieselbe Kontierung, nur das Gegenkonto ist 1400 statt 1420. Der Kontoauszug steht ab 0.60 auf eigenen Seiten
+// views/cash.js): dieselbe Kontierung, nur das Gegenkonto ist 1400 statt 1420. Der Kontoauszug steht ab 0.58 auf eigenen Seiten
 // (views/umsaetze.js Liste, views/verbuchen.js Maske) und nutzt von hier Parken, Ungültig und den Hinweis auf ein Storno.
 import { api } from '../api.js';
 import { html, mount } from '../html.js';

@@ -94,7 +94,7 @@ try {
   };
   // Arbeitsliste: in der Maske der Kontoumsätze (.vb-zeile) bzw. im Buchungsplatz der Kasse (.bank-item)
   const items = (n) => page.waitForFunction((count) => document.querySelectorAll('.vb-zeile, .bank-item').length === count, n, { timeout: 8000 }).then(() => true, () => false);
-  // Kontoumsätze (0.60): Zeilen der Liste, Zahl hinter einem Stand, Menü „Mehr“, Weg in die Maske
+  // Kontoumsätze (0.58): Zeilen der Liste, Zahl hinter einem Stand, Menü „Mehr“, Weg in die Maske
   const zeilen = (n) => page.waitForFunction((count) => document.querySelectorAll('.ku-zeile').length === count, n, { timeout: 8000 }).then(() => true, () => false);
   const standZahl = (id) => page.locator(`[data-stand=${id}] .zahl`).textContent().then((t) => Number(t));
   const mehr = async (ziel) => { await page.click('.ku-mehr summary'); await page.click(ziel); };
@@ -546,6 +546,7 @@ try {
   check((await toast()).includes('Beleg entfernt') && await page.locator('.ku-detail .ua-belege li').count() === 0
     && await page.locator('.ku-zeile:has-text("Getränke Demo") [aria-label="1 Beleg"]').count() === 0 && !(await page.request.get(origin + belegLink)).ok(), 'Beleg entfernt: weg am Umsatz, Datei nicht mehr abrufbar');
   // Beleg per Ziehen auf das Feld, danach wieder entfernen
+  await page.waitForSelector('.ku-detail [data-anheften]');   // die Akte lädt nach dem Neuzeichnen nach
   await page.evaluate(() => {
     const dt = new DataTransfer();
     dt.items.add(new File(['%PDF-1.4 gezogener Beleg'], 'gezogen.pdf', { type: 'application/pdf' }));
@@ -647,6 +648,17 @@ try {
     && (await page.locator('.kz:has-text("Ausgaben ohne Beleg") .wert').textContent()).trim() === '2', 'Liste: alles verbucht, 2 Ausgaben ohne Beleg (die dritte hat einen)');
   await page.click('[data-ohne]');
   check(await zeilen(2) && (await page.locator('.ku-liste').textContent()).includes('Büro Demo') && !(await page.locator('.ku-liste').textContent()).includes('Getränke Demo'), '„Nur diese zeigen“: die Ausgaben ohne Beleg');
+  // Prüfung 0.58: im Filter bleibt der gewählte Umsatz nach dem Anheften gewählt (sonst landet der zweite Beleg am falschen Umsatz), und es gibt einen Weg zurück
+  check(await page.evaluate(() => getComputedStyle(document.querySelector('.ku-detail')).position) === 'sticky', 'Kontoumsätze: der gewählte Umsatz bleibt beim Rollen neben der Liste stehen');
+  await page.locator('.ku-zeile').last().click();
+  const ohneId = await page.locator('.ku-zeile[aria-pressed=true]').getAttribute('data-id');
+  await page.waitForSelector('.ku-detail [data-datei]', { state: 'attached' });
+  await page.setInputFiles('.ku-detail [data-datei]', join(base, 'quittung.pdf'));
+  check((await toast()).includes('Beleg angeheftet') && await page.locator('.ku-zeile[aria-pressed=true]').getAttribute('data-id') === ohneId
+    && (await page.locator('[data-ohne]').textContent()).includes('Wieder alle zeigen'), 'Filter „ohne Beleg“: nach dem Anheften bleibt der Umsatz gewählt, „Wieder alle zeigen“ bleibt');
+  await page.click('.ku-detail [data-weg]');
+  await page.click('#modal [data-ok]');
+  check((await toast()).includes('Beleg entfernt') && await zeilen(2), 'Filter „ohne Beleg“: nach dem Entfernen wieder 2');
   await page.click('[data-ohne]');
   check((await page.locator('.ku-zeile:has-text("Getränke Demo") .ku-konto').textContent()).includes('2 Teilbeträge')
     && (await page.locator('.ku-zeile:has-text("Erika Musterfrau") .ku-konto').textContent()).includes(`Rechnung ${dueNumber}`)
@@ -2054,7 +2066,7 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await login();
   check(true, 'Abmelden und Anmelden');
 
-  // 6 bisherige + doppelte OV-Nummer + Beleg mit falschem Inhalt (0.60) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
+  // 6 bisherige + doppelte OV-Nummer + Beleg mit falschem Inhalt (0.58) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
   const expected = 8 + (existsSync(lockedPath) ? 2 : 0);
   check(rejected === expected, `Nur die ${expected} absichtlich falschen Eingaben abgelehnt (${rejected})`);
   check(errors.length === 0, 'Keine Fehler in der Browser-Konsole' + (errors.length ? ': ' + errors.join(' | ') : ''));

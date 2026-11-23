@@ -139,7 +139,7 @@ def purge_before(store, cutoff, actor):
         store.db.execute(f'DELETE FROM booking_examples WHERE bank_id IN ({marks(ids)})', ids)
         sepa = [r['stored'] for r in store.db.execute(f'SELECT stored FROM sepa_files WHERE bank_id IN ({marks(ids)})', ids) if r['stored']]
         store.db.execute(f'DELETE FROM sepa_files WHERE bank_id IN ({marks(ids)})', ids)   # SEPA-Dateien zu gelöschten Sammelbuchungen
-        store.db.execute(f'DELETE FROM umsatz_notizen WHERE bank_id IN ({marks(ids)})', ids)   # Notiz und Belege am Kontoumsatz (0.60)
+        store.db.execute(f'DELETE FROM umsatz_notizen WHERE bank_id IN ({marks(ids)})', ids)   # Notiz und Belege am Kontoumsatz (0.58)
         belege = [r['attachment'] for r in store.db.execute(f'SELECT attachment FROM umsatz_belege WHERE bank_id IN ({marks(ids)})', ids) if r['attachment']]
         store.db.execute(f'DELETE FROM umsatz_belege WHERE bank_id IN ({marks(ids)})', ids)
         store.db.execute(f'DELETE FROM bank WHERE id IN ({marks(ids)})', ids)

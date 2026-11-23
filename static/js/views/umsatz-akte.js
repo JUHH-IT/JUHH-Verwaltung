@@ -1,4 +1,4 @@
-// Notiz und Belege am Kontoumsatz (0.60, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026): ein Baustein für die Liste der
+// Notiz und Belege am Kontoumsatz (0.58, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026): ein Baustein für die Liste der
 // Kontoumsätze (views/umsaetze.js) und für die Buchungsmaske (views/verbuchen.js). Server: umsatzakte.py – lesen mit
 // „Buchhaltung lesen“ (/api/umsatz-akte, /api/umsatz-beleg), ändern mit „Buchhaltung ändern“.
 import { api, fileToBase64 } from '../api.js';

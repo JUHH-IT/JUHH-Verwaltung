@@ -122,7 +122,7 @@ POST = {
         '/api/bill-writeoff', '/api/series-preview', '/api/series', '/api/mail-send', '/api/mail-cancel', '/api/dues', '/api/invoice',
         '/api/cancel-invoice', '/api/preview-bank', '/api/preview-master', '/api/import-master', '/api/import-bank', '/api/book',
         '/api/park', '/api/forget', '/api/reverse-bank', '/api/umsatz-ungueltig', '/api/umsatz-gueltig',
-        '/api/umsatz-notiz', '/api/umsatz-beleg', '/api/umsatz-beleg-entfernen')},   # Notiz und Belege am Kontoumsatz (0.60)
+        '/api/umsatz-notiz', '/api/umsatz-beleg', '/api/umsatz-beleg-entfernen')},   # Notiz und Belege am Kontoumsatz (0.58)
     **{path: _w('verwaltung') for path in ('/api/benutzer', '/api/rolle', '/api/rolle-loeschen')},
     # Keycloak-Betrieb (0.36): Person abgleichen, neues Startpasswort, Authenticator-App zurücksetzen
     **{path: _w('verwaltung') for path in ('/api/benutzer-abgleichen', '/api/benutzer-startpasswort', '/api/benutzer-app-zuruecksetzen')},

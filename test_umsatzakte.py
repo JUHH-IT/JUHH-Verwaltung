@@ -1,4 +1,4 @@
-"""Notiz und Belege am Kontoumsatz (0.60, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026): eigene Ablage neben dem Grund für
+"""Notiz und Belege am Kontoumsatz (0.58, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026): eigene Ablage neben dem Grund für
 „ungültig“, Dateiart und Größe wie bei allen Belegen, Kennzeichen in den Gesamtdaten, „Ausgaben ohne Beleg“, Prüfpaket,
 Bereinigung und die Wege des Servers. Nur erfundene Daten."""
 import base64
@@ -91,11 +91,17 @@ class NotizTests(Basis):
         for text in ('x' * (umsatzakte.MAX_NOTIZ + 1), None, 7):
             with self.assertRaises(ValueError):
                 umsatzakte.notiz(self.s, bid, text, 'Lena')
-        for fremd in (bid + 99, '1', None, True):
+        for fremd in (bid + 99, '1', None, True, 0, -1, 2 ** 70):   # 2**70: früher Fehler der Datenbank statt Meldung (Prüfung 0.58)
             with self.assertRaises(ValueError):
                 umsatzakte.notiz(self.s, fremd, 'x', 'Lena')
             with self.assertRaises(ValueError):
                 umsatzakte.akte(self.s, fremd)
+
+    def test_notiz_ohne_steuerzeichen(self):
+        """Steuer- und Richtungszeichen stehen sonst unverändert im Prüfpaket; der Zeilenumbruch bleibt."""
+        bid = self.umsatz()
+        umsatzakte.notiz(self.s, bid, 'Zeile 1\r\nZeile\x00 2\x1b\u202e Ende', 'Lena')
+        self.assertEqual(umsatzakte.akte(self.s, bid)['notiz']['text'], 'Zeile 1\nZeile 2 Ende')
 
     def test_neben_dem_grund_fuer_ungueltig(self):
         bid = self.umsatz()
@@ -341,6 +347,10 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(antwort.headers['X-Content-Type-Options'], 'nosniff')
         self.assertEqual(request(f'/api/umsatz-beleg?id={zwei}').headers['Content-Type'], 'image/png')
         self.assertEqual(sorted(f.name for f in (app.DATA / 'Belege').iterdir()), [f'Umsatz-{self.bank}-{eins}.pdf', f'Umsatz-{self.bank}-{zwei}.png'])
+        for kaputt in ('text', 7, ['x'], {'name': 7, 'content': 'x'}, {'name': 'a.pdf'}, None):   # früher 500 (Prüfung 0.58)
+            self.assertEqual(fehler('/api/umsatz-beleg', {'id': self.bank, 'file': kaputt}, csrf)[0], 400, kaputt)
+        self.assertEqual(fehler(f'/api/umsatz-akte?id={2 ** 70}')[0], 400)
+        self.assertEqual(fehler(f'/api/umsatz-beleg?id={2 ** 70}')[0], 400)
         zeile = [b for b in json.load(request('/api/data?year=2026'))['bank'] if b['id'] == self.bank][0]
         self.assertEqual((zeile['hat_notiz'], zeile['belege']), (True, 2))
         for name, raw, teil in (('a.xml', b'<x/>', 'PDF, PNG oder JPG'), ('a.pdf', b'kein pdf', 'passt nicht'), ('a.exe', PDF, 'PDF, PNG oder JPG')):

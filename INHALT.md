@@ -699,7 +699,7 @@ Tests: test_beitraege.py, test_import.py, test_kasse.py, test_kvbudget.py, test_
 
 ### umsatzakte.py
 
-Notiz und angeheftete Belege am Kontoumsatz (ab 0.60, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026).
+Notiz und angeheftete Belege am Kontoumsatz (ab 0.58, REGELN Nr. 40, Wunsch Lennert Gust 23.11.2026).
 
 Tabellen: `umsatz_belege`, `umsatz_notizen`
 
