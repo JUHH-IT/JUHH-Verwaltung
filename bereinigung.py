@@ -139,6 +139,9 @@ def purge_before(store, cutoff, actor):
         store.db.execute(f'DELETE FROM booking_examples WHERE bank_id IN ({marks(ids)})', ids)
         sepa = [r['stored'] for r in store.db.execute(f'SELECT stored FROM sepa_files WHERE bank_id IN ({marks(ids)})', ids) if r['stored']]
         store.db.execute(f'DELETE FROM sepa_files WHERE bank_id IN ({marks(ids)})', ids)   # SEPA-Dateien zu gelöschten Sammelbuchungen
+        store.db.execute(f'DELETE FROM umsatz_notizen WHERE bank_id IN ({marks(ids)})', ids)   # Notiz und Belege am Kontoumsatz (0.58)
+        belege = [r['attachment'] for r in store.db.execute(f'SELECT attachment FROM umsatz_belege WHERE bank_id IN ({marks(ids)})', ids) if r['attachment']]
+        store.db.execute(f'DELETE FROM umsatz_belege WHERE bank_id IN ({marks(ids)})', ids)
         store.db.execute(f'DELETE FROM bank WHERE id IN ({marks(ids)})', ids)
         plans = 0
         for table in PLAN_TABLES:
@@ -152,7 +155,7 @@ def purge_before(store, cutoff, actor):
                 continue
             if not isinstance(detail, dict):
                 continue
-            if (r['action'].startswith('Bankumsatz') or 'Lernbeispiel' in r['action'] or r['action'] == 'SEPA-Sammler aufgeteilt') and _about_deleted(detail, deleted) \
+            if (r['action'].startswith(('Bankumsatz', 'Kontoumsatz')) or 'Lernbeispiel' in r['action'] or r['action'] == 'SEPA-Sammler aufgeteilt') and _about_deleted(detail, deleted) \
                     or (r['action'] in ('Mitgliedsbeitrag zugeordnet', 'Beitragszuordnung geändert') + CASE_ACTIONS + RPJ_ACTIONS
                         and detail.get('entry') in entry_ids) \
                     or (r['action'].startswith('RPJ-') and isinstance(detail.get('jahr'), int) and detail['jahr'] < int(cutoff[:4])):
@@ -177,7 +180,8 @@ def purge_before(store, cutoff, actor):
         store.db.execute("INSERT INTO settings(key,value) VALUES('data_start',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (cutoff,))
         result = {'umsaetze': len(ids), 'buchungen': len(journals), 'planwerte': plans + rpj_rows, 'protokolleintraege_bereinigt': redacted,
                   'protokolleintraege_entfernt': removed, 'datenbeginn': cutoff,
-                  **({'sepa_belege_von_hand_loeschen': sepa} if sepa else {})}   # Dateien in Daten/Belege (wie Daten/Importe, siehe REGELN Punkt 11)
+                  **({'sepa_belege_von_hand_loeschen': sepa} if sepa else {}),   # Dateien in Daten/Belege (wie Daten/Importe, siehe REGELN Punkt 11)
+                  **({'umsatz_belege_von_hand_loeschen': belege} if belege else {})}
         store.audit(actor, f'Daten vor dem {cutoff} endgültig gelöscht', result)
     store.db.execute('VACUUM')                  # gelöschte Inhalte auch aus dem freien Speicher der Datei entfernen
     return result

@@ -134,7 +134,7 @@ try {
   await page.screenshot({ path: join(shots, 's02-uebersicht.png') });
   await page.click('[data-page=bank]');
   await page.waitForTimeout(250);
-  await page.screenshot({ path: join(shots, 's03-buchungsplatz.png') });
+  await page.screenshot({ path: join(shots, 's03-kontoumsaetze.png') });
   await page.click('[data-page=budgets]');
   await page.waitForTimeout(300);
   await page.screenshot({ path: join(shots, 's04-haushalt.png') });
@@ -185,7 +185,7 @@ try {
   check(true, 'altes Passwort abgelehnt');
   await desk.close();
 
-  // ---------- Tablet quer (1024 px): Menü statt Seitenleiste, Buchungsplatz nebeneinander ----------
+  // ---------- Tablet quer (1024 px): Menü statt Seitenleiste, Kontoumsätze und Maske nebeneinander ----------
   const tab = await browser.newContext({ viewport: { width: 1024, height: 768 } });
   await guard(tab);
   const tp = await tab.newPage();
@@ -197,12 +197,18 @@ try {
   await tp.waitForSelector('.topbar');
   await tp.click('#menu-toggle');
   await tp.click('[data-page=bank]');
-  await tp.click('[data-filter=all]').catch(() => {});
-  await tp.waitForTimeout(400);
-  const list = await tp.locator('.worklist .list').boundingBox();
-  const detail = await tp.locator('.worklist .detail').boundingBox();
-  check(list && detail && detail.x > list.x + list.width - 1, 'Tablet: Liste und Kontierung nebeneinander');
-  await tp.screenshot({ path: join(shots, 's06-tablet-buchungsplatz.png') });
+  await tp.waitForSelector('.ku-zeile');
+  const list = await tp.locator('.ku-liste').boundingBox();
+  const detail = await tp.locator('.ku-detail').boundingBox();
+  check(list && detail && detail.x > list.x + list.width - 1, 'Tablet: Kontoumsätze und gewählter Umsatz nebeneinander');
+  await tp.screenshot({ path: join(shots, 's06-tablet-kontoumsaetze.png') });
+  await tp.click('[data-verbuchen]');
+  await tp.waitForSelector('.vb-page #book-form');
+  const offene = await tp.locator('.vb-liste').boundingBox();
+  const maske = await tp.locator('.vb-maske').boundingBox();
+  check(offene && maske && maske.x > offene.x + offene.width - 1, 'Tablet: Arbeitsliste und Maske nebeneinander');
+  check(await tp.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 0, 'Tablet Verbuchen: kein seitliches Scrollen');
+  await tp.screenshot({ path: join(shots, 's06b-tablet-verbuchen.png') });
   await tab.close();
 
   // ---------- Handy ----------

@@ -92,7 +92,18 @@ try {
     await clearToast();
     return text || '';
   };
-  const items = (n) => page.waitForFunction((count) => document.querySelectorAll('.bank-item').length === count, n, { timeout: 8000 }).then(() => true, () => false);
+  // Arbeitsliste: in der Maske der Kontoumsätze (.vb-zeile) bzw. im Buchungsplatz der Kasse (.bank-item)
+  const items = (n) => page.waitForFunction((count) => document.querySelectorAll('.vb-zeile, .bank-item').length === count, n, { timeout: 8000 }).then(() => true, () => false);
+  // Kontoumsätze (0.58): Zeilen der Liste, Zahl hinter einem Stand, Menü „Mehr“, Weg in die Maske
+  const zeilen = (n) => page.waitForFunction((count) => document.querySelectorAll('.ku-zeile').length === count, n, { timeout: 8000 }).then(() => true, () => false);
+  const standZahl = (id) => page.locator(`[data-stand=${id}] .zahl`).textContent().then((t) => Number(t));
+  const mehr = async (ziel) => { await page.click('.ku-mehr summary'); await page.click(ziel); };
+  const zurMaske = async (name) => {
+    await page.click('[data-page=bank]');
+    await page.click('[data-verbuchen]');
+    await page.waitForSelector('.vb-page #book-form');
+    if (name) await page.locator(`.vb-zeile:has-text("${name}")`).first().click();
+  };
   const shot = (name) => page.screenshot({ path: join(shots, name + '.png'), fullPage: false });
   const dialogClose = () => page.locator('#modal .dialog-head [data-close]').click();
 
@@ -478,9 +489,31 @@ try {
   await page.click('#confirm-import');
   check((await toast()).includes('4 Umsätze importiert'), 'CSV-Import');
   await page.selectOption('#year', '2026');
-  await page.waitForSelector('.bank-item');
-  check(await items(4), 'Arbeitsliste zeigt 4 offene Umsätze');
-  await shot('01-buchungsplatz');
+  await page.waitForSelector('.ku-zeile');
+  check(await page.locator('h1').textContent() === 'Kontoumsätze' && await zeilen(4) && (await page.locator('.ku-lage h2').textContent()) === '4 Umsätze sind noch nicht verbucht.'
+    && (await page.locator('.ku-monat strong').textContent()) === 'Juni 2026', 'Kontoumsätze: Liste zeigt die 4 importierten Umsätze im jüngsten Monat');
+  check((await page.locator('.ku-tag h3').allTextContents()).join('|') === 'Montag, 8. Juni|Sonntag, 7. Juni|Samstag, 6. Juni|Freitag, 5. Juni'
+    && (await page.locator('.ku-tag .zahl').first().textContent()).includes('9,90') && (await page.locator('.ku-zeile .ku-betrag.ein').textContent()).includes('+30,00'),
+  'Kontoumsätze: nach Tagen mit Tagessumme, Eingänge mit Plus');
+  check((await page.locator('.kz .wert').allTextContents()).map((t) => t.trim()).join('|') === '30,00\u00a0€|62,40\u00a0€|4|0'
+    && await standZahl('alle') === 4 && await standZahl('open') === 4 && await standZahl('booked') === 0, 'Kontoumsätze: Kennzahlen des Monats und Zahlen je Stand');
+  await shot('01-kontoumsaetze');
+  // Suche (Name, Zweck, Betrag) und Monatswähler
+  await page.fill('#ku-suche', 'stammtisch');
+  check(await zeilen(1) && (await page.locator('.ku-zeile').textContent()).includes('Getränke Demo') && (await page.locator('.ku-monat').textContent()).includes('Ganzes Jahr 2026'), 'Suche nach Zweck im ganzen Jahr');
+  await page.fill('#ku-suche', '12,50');
+  check(await zeilen(1) && (await page.locator('.ku-zeile').textContent()).includes('Büro Demo'), 'Suche nach Betrag');
+  await page.fill('#ku-suche', 'gibt-es-nicht');
+  check(await zeilen(0) && (await page.locator('.ku-leer').textContent()).includes('passt zur Suche'), 'Suche ohne Treffer sagt es');
+  await page.fill('#ku-suche', '');
+  await page.click('[data-monat="-1"]');
+  check(await zeilen(0) && (await page.locator('.ku-monat strong').textContent()) === 'Mai 2026' && (await page.locator('.ku-leer').textContent()).includes('Im Mai 2026 gibt es keine Umsätze')
+    && (await page.locator('.kz .wert').first().textContent()).trim() === '0,00\u00a0€', 'Monat zurück: Mai ohne Umsätze, Kennzahlen des Monats');
+  await page.fill('#ku-suche', 'unklar');
+  check(await zeilen(1), 'Suche findet auch aus einem anderen Monat');
+  await page.fill('#ku-suche', '');
+  await page.click('[data-monat="1"]');
+  check(await zeilen(4), 'Monat vor: wieder Juni');
 
   // 0.55: dieselbe Zahlung aus einem zweiten Abruf (andere Schreibweise) – abgewählt und markiert; trotzdem importiert, lässt sie sich für ungültig erklären
   writeFileSync(join(base, 'auszug-zweiter-abruf.csv'), 'Datum;Betrag;Name;Verwendungszweck\n06.06.2026;-12,50;Bürobedarf Zweitabruf;Drucker-Patronen\n');
@@ -491,22 +524,92 @@ try {
     && (await page.locator('#import-preview .badge.warn').textContent()).includes('Sehr ähnlicher Umsatz'), 'Import: sehr ähnlicher Umsatz ist abgewählt und markiert');
   await page.check('#import-preview .import-check');
   await page.click('#confirm-import');
-  check((await toast()).includes('1 Umsätze importiert') && await items(5), 'Import: ausdrücklich gewählt wird er übernommen');
-  await page.click('.bank-item:has-text("Bürobedarf Zweitabruf")');
+  check((await toast()).includes('1 Umsätze importiert') && await zeilen(5) && await standZahl('open') === 5, 'Import: ausdrücklich gewählt wird er übernommen');
+  await page.click('.ku-zeile:has-text("Bürobedarf Zweitabruf")');
   await page.click('main [data-void]');
   await page.waitForSelector('#bank-void');
   await page.click('#bank-void button[type=submit]');
-  check((await toast()).includes('ungültig') && await items(4), 'Doppelter Kontoumsatz für ungültig erklärt – nicht mehr offen');
-  await page.click('[data-filter=all]');
-  await page.click('.bank-item:has-text("Bürobedarf Zweitabruf")');
-  check((await page.locator('main .detail .notice').first().textContent()).includes('doppelt importiert') && await page.locator('main #editor').count() === 0, 'Ungültiger Umsatz bleibt unter „Alle“ mit Grund sichtbar, ohne Kontierung');
+  check((await toast()).includes('ungültig') && await standZahl('open') === 4 && (await page.locator('.ku-lage h2').textContent()).startsWith('4 Umsätze'),
+    'Doppelter Kontoumsatz für ungültig erklärt – nicht mehr offen');
+  check(await zeilen(5) && await page.locator('.ku-zeile.ungueltig:has-text("Bürobedarf Zweitabruf")').count() === 1
+    && (await page.locator('.ku-tag:has-text("6. Juni") .zahl').textContent()).includes('12,50'), 'Ungültiger Umsatz steht durchgestrichen unter „Alle“ und zählt nicht in der Tagessumme');
+  await page.click('.ku-zeile:has-text("Bürobedarf Zweitabruf")');
+  check((await page.locator('main .ku-detail .ku-abschnitt').textContent()).includes('doppelt importiert') && await page.locator('main [data-jetzt]').count() === 0
+    && (await page.locator('.ku-zeile.ungueltig .ku-konto').textContent()).includes('doppelt importiert'), 'Ungültiger Umsatz bleibt unter „Alle“ mit Grund sichtbar, ohne Verbuchen');
+  await page.click('[data-stand=open]');
+  check(await zeilen(4) && await page.locator('.ku-zeile.ungueltig').count() === 0, 'Filter „Offen“ zeigt den ungültigen nicht');
+  await page.click('[data-stand=alle]');
+  await page.click('.ku-zeile:has-text("Bürobedarf Zweitabruf")');
   await page.click('main [data-unvoid]');
   await page.click('#modal [data-ok]');
-  check((await toast()).includes('wieder offen') && await items(5), 'Ungültig zurückgenommen – wieder offen');
-  await page.click('.bank-item:has-text("Bürobedarf Zweitabruf")');
+  check((await toast()).includes('wieder offen') && await standZahl('open') === 5, 'Ungültig zurückgenommen – wieder offen');
+  await page.click('.ku-zeile:has-text("Bürobedarf Zweitabruf")');
   await page.click('main [data-void]');
   await page.click('#bank-void button[type=submit]');
-  check((await toast()).includes('ungültig') && await items(4), 'Erneut ungültig – die Arbeitsliste zeigt wieder 4 offene Umsätze');
+  check((await toast()).includes('ungültig') && await standZahl('open') === 4, 'Erneut ungültig – wieder 4 offene Umsätze');
+
+  // Notiz am Umsatz: speichert beim Verlassen des Feldes, zeigt wer und wann; Zeichen in der Liste
+  await page.click('.ku-zeile:has-text("Getränke Demo")');
+  await page.waitForSelector('.ku-detail [data-notiz]');
+  await page.fill('.ku-detail [data-notiz]', 'Quittung liegt beim Kreisschatzmeister');
+  await page.locator('.ku-detail [data-notiz]').blur();
+  check(await page.waitForFunction(() => document.querySelector('.ku-detail [data-notiz-stand]')?.textContent.startsWith('Gespeichert von '), null, { timeout: 8000 }).then(() => true, () => false)
+    && await page.locator('.ku-zeile:has-text("Getränke Demo") [aria-label="mit Notiz"]').count() === 1, 'Notiz gespeichert: wer und wann, Zeichen in der Liste');
+  await page.click('.ku-zeile:has-text("Büro Demo")');
+  await page.click('.ku-zeile:has-text("Getränke Demo")');
+  await page.waitForSelector('.ku-detail [data-notiz]');
+  check(await page.inputValue('.ku-detail [data-notiz]') === 'Quittung liegt beim Kreisschatzmeister' && (await page.locator('.ku-detail [data-notiz-stand]').textContent()).includes(NAME), 'Notiz steht nach erneuter Wahl wieder da');
+  // Beleg anheften (Auswahl), ansehen, falsche Dateiart, entfernen
+  writeFileSync(join(base, 'quittung.pdf'), '%PDF-1.4 erfundene Quittung');
+  writeFileSync(join(base, 'getarnt.pdf'), 'kein PDF');
+  await page.setInputFiles('.ku-detail [data-datei]', join(base, 'quittung.pdf'));
+  check((await toast()).includes('Beleg angeheftet') && (await page.locator('.ku-detail .ua-belege li').textContent()).includes('quittung.pdf')
+    && await page.locator('.ku-zeile:has-text("Getränke Demo") [aria-label="1 Beleg"]').count() === 1, 'Beleg angeheftet: steht am Umsatz und als Zeichen in der Liste');
+  const belegLink = await page.locator('.ku-detail .ua-belege a').getAttribute('href');
+  const belegAntwort = await page.request.get(origin + belegLink);
+  check(belegAntwort.ok() && (await belegAntwort.body()).toString() === '%PDF-1.4 erfundene Quittung' && belegAntwort.headers()['content-disposition'].startsWith('inline')
+    && await page.locator('.ku-detail .ua-belege a').getAttribute('target') === '_blank', 'Beleg ansehen: Datei im neuen Fenster, unverändert');
+  await page.setInputFiles('.ku-detail [data-datei]', join(base, 'getarnt.pdf'));
+  check((await toast()).includes('passt nicht zur Endung') && await page.locator('.ku-detail .ua-belege li').count() === 1, 'Beleg mit falschem Inhalt abgelehnt');
+  await page.click('.ku-detail [data-weg]');
+  check((await page.locator('#modal').textContent()).includes('endgültig gelöscht'), 'Entfernen fragt nach und sagt, dass die Datei gelöscht wird');
+  await page.click('#modal [data-ok]');
+  check((await toast()).includes('Beleg entfernt') && await page.locator('.ku-detail .ua-belege li').count() === 0
+    && await page.locator('.ku-zeile:has-text("Getränke Demo") [aria-label="1 Beleg"]').count() === 0 && !(await page.request.get(origin + belegLink)).ok(), 'Beleg entfernt: weg am Umsatz, Datei nicht mehr abrufbar');
+  // Beleg per Ziehen auf das Feld, danach wieder entfernen
+  await page.waitForSelector('.ku-detail [data-anheften]');   // die Akte lädt nach dem Neuzeichnen nach
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['%PDF-1.4 gezogener Beleg'], 'gezogen.pdf', { type: 'application/pdf' }));
+    document.querySelector('.ku-detail [data-anheften]').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  check((await toast()).includes('Beleg angeheftet') && (await page.locator('.ku-detail .ua-belege li').textContent()).includes('gezogen.pdf'), 'Beleg per Ziehen angeheftet');
+  await shot('01b-kontoumsatz-notiz');
+  await page.click('.ku-detail [data-weg]');
+  await page.click('#modal [data-ok]');
+  check((await toast()).includes('Beleg entfernt'), 'gezogenen Beleg wieder entfernt');
+
+  // Maske: „Offene verbuchen“ öffnet die Arbeitsliste, der älteste zuerst
+  await page.click('[data-verbuchen]');
+  await page.waitForSelector('.vb-page #book-form');
+  check(await page.locator('h1').textContent() === 'Verbuchen' && await items(4) && (await page.locator('.vb-stand h2').textContent()) === 'Umsatz 1 von 4 offenen'
+    && (await page.locator('.vb-stand p').textContent()).includes('Juni vollständig verbucht'), 'Verbuchen: Arbeitsliste mit 4 offenen, Fortschritt');
+  check(await page.locator('.vb-maske [data-notiz]').waitFor({ timeout: 8000 }).then(() => true, () => false) && await page.locator('.vb-maske [data-anheften]').count() === 1, 'Maske: Notiz und Beleg anheften am Umsatz');
+  await shot('01c-verbuchen');
+  // Tastatur wie bisher: J/K wechseln den Umsatz, „/“ springt in die Suche
+  await page.locator('body').click({ position: { x: 5, y: 890 } });
+  await page.keyboard.press('j');
+  const nachJ = await page.locator('.vb-zeile[aria-current=true]').textContent();
+  await page.keyboard.press('k');
+  check(nachJ.includes('Büro Demo') && (await page.locator('.vb-zeile[aria-current=true]').textContent()).includes('Erika Musterfrau'), 'Tasten J und K wechseln den Umsatz');
+  await page.keyboard.press('/');
+  check(await page.evaluate(() => document.activeElement?.id === 'bank-search'), 'Taste „/“ springt in die Suche');
+  await page.keyboard.type('getränke');
+  check(await items(1), 'Suche in der Arbeitsliste');
+  await page.fill('#bank-search', '');
+  await page.keyboard.press('Escape');
+  check(await items(4) && (await page.locator('.vb-zeile[aria-current=true]').textContent()).includes('Getränke Demo'), 'Suche geleert: wieder alle offenen, die Wahl bleibt');
+  await page.click('.vb-zeile:has-text("Erika Musterfrau")');
 
   // 1) Rechnung erkannt → übernehmen und verbuchen
   check(await page.locator('.suggestion:has-text("Rechnung erkannt")').count() === 1, 'Rechnung im Zweck erkannt');
@@ -529,6 +632,9 @@ try {
   // 3) Aufteilen: KV-Sammelkonto + Sachkonto (erst warten, bis der nächste Umsatz geladen ist)
   await items(2);
   await page.waitForFunction(() => document.querySelector('.part [data-amount]')?.value === '-40,00', null, { timeout: 8000 }).catch(() => {});
+  // die Notiz aus der Liste steht in der Maske; ein Beleg dort setzt die begonnene Kontierung nicht zurück
+  await page.waitForSelector('.vb-maske [data-notiz]');
+  check(await page.inputValue('.vb-maske [data-notiz]') === 'Quittung liegt beim Kreisschatzmeister', 'Maske zeigt die Notiz des Umsatzes');
   await page.fill('.part [data-amount]', '-30,00');
   await pick('.part [data-account]', 'KV');
   check((await page.locator('.part [data-title-hint]').textContent()).includes('Sammelkonto KV nur mit einem Kreisverband'), 'Sammelkonto KV ohne Kreisverband abgelehnt');
@@ -540,6 +646,9 @@ try {
   await pick(second.locator('[data-account]'), '4470');
   check(await second.locator('[data-title]').inputValue() === 'H44', 'Titel für Teilbetrag');
   check((await page.locator('#difference').textContent()).includes('Vollständig'), 'Differenz 0');
+  await page.setInputFiles('.vb-maske [data-datei]', join(base, 'quittung.pdf'));
+  check((await toast()).includes('Beleg angeheftet') && await page.locator('.vb-maske .ua-belege li').count() === 1 && await page.locator('.part').count() === 2
+    && await second.locator('[data-amount]').inputValue() === '-10,00', 'Beleg in der Maske angeheftet, die Aufteilung bleibt stehen');
   await page.click('#book-submit');
   check((await toast()).includes('verbucht'), 'Aufteilung verbucht');
 
@@ -555,36 +664,62 @@ try {
     } catch (e) { if (attempt >= 3) throw e; }
   }
   check((await toast()).includes('1370'), 'Parken');
-  check((await page.locator('.empty').textContent()).includes('Alles verbucht'), 'Leerer Zustand „Alles verbucht“');
-  await page.click('[data-filter=parked]');
-  check((await page.locator('.notice.warn').first().textContent()).includes('Beleg fehlt'), 'Klärungsgrund sichtbar');
+  check(await items(1) && (await page.locator('.vb-liste h3').allTextContents()).join('|') === 'Geparkt auf 1370'
+    && (await page.locator('.vb-stand h2').textContent()) === 'Geparkter Umsatz 1 von 1', 'Geparkter Umsatz bleibt in der Arbeitsliste, kein offener mehr');
+  check((await page.locator('.vb-hinweis').textContent()).includes('Beleg fehlt') && (await page.locator('.vb-zeile').textContent()).includes('Beleg fehlt'), 'Klärungsgrund sichtbar');
   await pick('.part [data-account]', '4210');
   await page.click('#book-submit');
   check((await toast()).includes('aufgelöst'), 'Parkkonto aufgelöst');
+  check((await page.locator('.vb-fertig').textContent()).includes('Alles verbucht'), 'Leerer Zustand „Alles verbucht“');
 
-  // 5) Storno einer verbuchten Zuordnung
-  await page.click('[data-filter=booked]');
-  await page.locator('.bank-item').first().click();
-  check((await page.locator('.booked-lines').textContent()).length > 5, 'Gebuchte Zeilen sichtbar');
+  // 5) Storno einer verbuchten Zuordnung: zurück zur Liste, dort stornieren, die Maske öffnet sich mit dem Umsatz
+  await page.locator('[data-zurueck]').first().click();
+  await page.waitForSelector('.ku-page');
+  check((await page.locator('.ku-lage h2').textContent()) === 'Alles verbucht.' && await page.locator('[data-verbuchen]').count() === 0 && await standZahl('booked') === 4
+    && (await page.locator('.kz:has-text("Ausgaben ohne Beleg") .wert').textContent()).trim() === '2', 'Liste: alles verbucht, 2 Ausgaben ohne Beleg (die dritte hat einen)');
+  await page.click('[data-ohne]');
+  check(await zeilen(2) && (await page.locator('.ku-liste').textContent()).includes('Büro Demo') && !(await page.locator('.ku-liste').textContent()).includes('Getränke Demo'), '„Nur diese zeigen“: die Ausgaben ohne Beleg');
+  // Prüfung 0.58: im Filter bleibt der gewählte Umsatz nach dem Anheften gewählt (sonst landet der zweite Beleg am falschen Umsatz), und es gibt einen Weg zurück
+  check(await page.evaluate(() => getComputedStyle(document.querySelector('.ku-detail')).position) === 'sticky', 'Kontoumsätze: der gewählte Umsatz bleibt beim Rollen neben der Liste stehen');
+  await page.locator('.ku-zeile').last().click();
+  const ohneId = await page.locator('.ku-zeile[aria-pressed=true]').getAttribute('data-id');
+  await page.waitForSelector('.ku-detail [data-datei]', { state: 'attached' });
+  await page.setInputFiles('.ku-detail [data-datei]', join(base, 'quittung.pdf'));
+  check((await toast()).includes('Beleg angeheftet') && await page.locator('.ku-zeile[aria-pressed=true]').getAttribute('data-id') === ohneId
+    && (await page.locator('[data-ohne]').textContent()).includes('Wieder alle zeigen'), 'Filter „ohne Beleg“: nach dem Anheften bleibt der Umsatz gewählt, „Wieder alle zeigen“ bleibt');
+  await page.click('.ku-detail [data-weg]');
+  await page.click('#modal [data-ok]');
+  check((await toast()).includes('Beleg entfernt') && await zeilen(2), 'Filter „ohne Beleg“: nach dem Entfernen wieder 2');
+  await page.click('[data-ohne]');
+  check((await page.locator('.ku-zeile:has-text("Getränke Demo") .ku-konto').textContent()).includes('2 Teilbeträge')
+    && (await page.locator('.ku-zeile:has-text("Erika Musterfrau") .ku-konto').textContent()).includes(`Rechnung ${dueNumber}`)
+    && (await page.locator('.ku-zeile:has-text("Büro Demo") .ku-konto').textContent()).includes('4210 Bürobedarf'), 'Liste zeigt das zugeordnete Konto, Teilbeträge und die Rechnung');
+  await page.fill('#ku-suche', '4210');
+  check(await zeilen(2), 'Suche nach Konto');
+  await page.fill('#ku-suche', '');
+  await page.click('[data-stand=booked]');
+  await page.locator('.ku-zeile:has-text("Unklar GmbH")').click();
+  check((await page.locator('.ku-gebucht').textContent()).includes('4210') && (await page.locator('.ku-stand').textContent()).includes('Verbucht'), 'Gebuchte Zeilen sichtbar');
   await page.click('[data-reverse]');
   await page.click('#modal [data-ok]');
   check((await toast()).includes('storniert'), 'Storno');
-  check(await page.locator('[data-filter=open][aria-selected=true]').count() === 1, 'nach Storno: Ansicht „Offen“');
-  check((await page.locator('.bank-item[aria-current=true]').textContent()).includes('Storniert – neu zuordnen'), 'Umsatz wieder offen und markiert');
-  check((await page.locator('.detail .notice').first().textContent()).includes('Zuletzt gebucht auf'), 'frühere Kontierung sichtbar');
+  check(await page.locator('.vb-page #book-form').count() === 1 && await items(1), 'nach Storno: Maske mit dem wieder offenen Umsatz');
+  check((await page.locator('.vb-zeile[aria-current=true]').textContent()).includes('storniert, neu zuordnen'), 'Umsatz wieder offen und markiert');
+  check((await page.locator('.vb-maske .notice').first().textContent()).includes('Zuletzt gebucht auf'), 'frühere Kontierung sichtbar');
   await shot('24-storno-neu-zuordnen');
   await pick('.part [data-account]', '4210');
   await page.click('#book-submit');
   check((await toast()).includes('verbucht'), 'stornierten Umsatz neu verbucht');
 
-  // Lernbeispiele
-  await page.click('[data-learning]');
+  // Lernbeispiele und Excel-Übernahme stehen auf der Liste unter „Mehr“
+  await page.locator('[data-zurueck]').first().click();
+  await mehr('[data-learning]');
   check(await page.locator('#modal [data-forget]').count() === 1, 'Lernbeispiel gespeichert');
   await page.click('#modal [data-forget]');
   check((await toast()).includes('entfernt'), 'Lernbeispiel entfernen');
 
   // Excel-Übernahme (erfundene Masterdatei)
-  await page.click('[data-master]');
+  await mehr('[data-master]');
   await page.setInputFiles('#master-file', masterPath);
   await page.waitForSelector('#confirm-master');
   await shot('03-excel-uebernahme');
@@ -597,8 +732,7 @@ try {
   await page.setInputFiles('#bank-file', join(base, 'auszug-beitrag.csv'));
   await page.click('#confirm-import');
   check((await toast()).includes('importiert'), 'Beitragszahlung importiert');
-  await page.click('[data-filter=open]');
-  await page.locator('.bank-item:has-text("Lena Lastschrift")').first().click();
+  await zurMaske('Lena Lastschrift');
   await page.locator('.part [data-account]').first().click();
   await page.fill('#account-query', '8100');
   await page.keyboard.press('Enter');
@@ -641,8 +775,7 @@ try {
   await page.setInputFiles('#bank-file', join(base, 'auszug-extern.csv'));
   await page.click('#confirm-import');
   check((await toast()).includes('importiert'), 'Zahlung einer ausgetretenen Person und SEPA-Sammler importiert');
-  await page.click('[data-filter=open]');
-  await page.locator('.bank-item:has-text("Otto Ehemalig")').first().click();
+  await zurMaske('Otto Ehemalig');
   await page.locator('.part [data-account]').first().click();
   await page.fill('#account-query', '8100');
   await page.keyboard.press('Enter');
@@ -1319,10 +1452,10 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await page.setInputFiles('#bank-file', join(base, 'abbuchung.csv'));
   await page.click('#confirm-import');
   check((await toast()).includes('1 Umsätze importiert'), 'Kontoauszug mit Abbuchung');
-  await page.click('[data-filter=open]');
-  await page.locator('.bank-item:has-text("Druckerei")').click();
-  check(await page.locator('.suggestion:has-text("Eingangsrechnung erkannt")').waitFor({ timeout: 8000 }).then(() => true, () => false), 'Buchungsplatz erkennt die Eingangsrechnung');
+  await zurMaske('Druckerei');
+  check(await page.locator('.suggestion:has-text("Eingangsrechnung erkannt")').waitFor({ timeout: 8000 }).then(() => true, () => false), 'Maske erkennt die Eingangsrechnung');
   check(await page.locator('.part[data-mode=bill]').count() === 1 && (await page.locator('.part [data-bill]').inputValue()) !== '', 'Zuordnung zur Eingangsrechnung vorbelegt');
+  await page.locator('[data-zurueck]').first().click();
   await page.click('[data-reconcile]');
   await page.waitForSelector('#modal [data-apply]');
   check((await page.locator('#modal tbody').textContent()).includes(billNo), 'Abgleich schlägt Zuordnung vor');
@@ -1964,8 +2097,8 @@ open(${JSON.stringify(join(base, 'begleitzettel.pdf'))}, 'wb').write(t.begleitze
   await login();
   check(true, 'Abmelden und Anmelden');
 
-  // 6 bisherige + doppelte OV-Nummer + ungültige Steuernummer (0.59) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
-  const expected = 8 + (existsSync(lockedPath) ? 2 : 0);
+  // 6 bisherige + doppelte OV-Nummer + ungültige Steuernummer (0.59) + Beleg mit falschem Inhalt (0.58) + geschützte Datei (Kennwort fehlt, Kennwort falsch)
+  const expected = 9 + (existsSync(lockedPath) ? 2 : 0);
   check(rejected === expected, `Nur die ${expected} absichtlich falschen Eingaben abgelehnt (${rejected})`);
   check(errors.length === 0, 'Keine Fehler in der Browser-Konsole' + (errors.length ? ': ' + errors.join(' | ') : ''));
 } catch (e) {

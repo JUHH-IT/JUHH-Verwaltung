@@ -345,6 +345,29 @@ class RollenHttpTests(unittest.TestCase):
         self.assertIn('issuer', self.get(who, '/api/data?year=2026')[1]['settings'])                  # fachliche Rolle: Stammdaten lesbar
         self.assertNotEqual(self.post(who, '/api/klaerfall-notiz', {})[0], 403)                        # darf (scheitert nur an den fehlenden Angaben)
 
+    def test_umsatz_notiz_und_belege_nach_recht(self):
+        """0.58: Notiz und Belege am Kontoumsatz – ansehen mit „Buchhaltung lesen“, ändern nur mit „Buchhaltung ändern“, ohne Buchhaltung nichts."""
+        import base64
+        datei = {'name': 'quittung.pdf', 'content': base64.b64encode(b'%PDF-1.4 erfunden').decode()}
+        schatz = self.person('Schatz-Person', 'Schatzmeister')
+        self.assertEqual(self.post(schatz, '/api/umsatz-notiz', {'id': 1, 'text': 'Beleg folgt'})[0], 200)
+        status, body = self.post(schatz, '/api/umsatz-beleg', {'id': 1, 'file': datei})
+        self.assertEqual(status, 200, body)
+        beleg = body['id']
+        leser = self.person('Lese-Person', 'Landesgeschäftsführer')
+        status, akte = self.get(leser, '/api/umsatz-akte?id=1')
+        self.assertEqual((status, akte['notiz']['text'], [x['name'] for x in akte['belege']]), (200, 'Beleg folgt', ['quittung.pdf']))
+        for path, data in (('/api/umsatz-notiz', {'id': 1, 'text': 'geändert'}), ('/api/umsatz-beleg', {'id': 1, 'file': datei}),
+                           ('/api/umsatz-beleg-entfernen', {'id': beleg})):
+            self.assertEqual(self.post(leser, path, data)[0], 403, path)
+        fremd = self.person('Mitglieder-Person', 'Landesmitgliederbeauftragter')
+        for path in ('/api/umsatz-akte?id=1', f'/api/umsatz-beleg?id={beleg}'):
+            self.assertEqual(self.get(fremd, path)[0], 403, path)
+        self.assertEqual(self.post(fremd, '/api/umsatz-notiz', {'id': 1, 'text': 'x'})[0], 403)
+        self.assertEqual(self.get(fremd, '/api/data?year=2026')[1]['bank_stand'], {'am': '', 'bis': ''})   # gleiche Form, kein Inhalt
+        self.assertEqual(self.get(schatz, '/api/umsatz-akte?id=1')[1]['notiz']['text'], 'Beleg folgt')      # nichts davon hat etwas geändert
+        self.assertEqual(self.post(schatz, '/api/umsatz-beleg-entfernen', {'id': beleg})[0], 200)
+
     def test_read_only_roles_cannot_change_anything(self):
         for number, role in enumerate(('Landesgeschäftsführer', 'Landesvorsitzender')):
             who = self.person(f'leitung{number}', role)
