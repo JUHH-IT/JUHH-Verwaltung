@@ -207,6 +207,7 @@ def austritt(store, member_id, left_on, reason, actor):
 
 
 MAX_NOTE = 1000
+ABGEHAKT = 'Änderungen zur Kenntnis genommen'   # kenntnis.abhaken (kenntnis.ABGEHAKT; hier ohne Import, kenntnis importiert mitglieder)
 VERLAUF = ('Mitglied angelegt', 'Mitglied geändert', 'Austritt eingetragen', 'Austritt zurückgenommen', 'Notiz zum Mitglied geändert',
            'Mitglieder zusammengeführt')
 
@@ -250,9 +251,11 @@ def verlauf(store, member_id, limit=50):
         neu = [r[0] for r in store.db.execute("SELECT json_extract(detail,'$.entfaellt.id') FROM audit WHERE action='Mitglieder zusammengeführt' "
                                               f"AND json_extract(detail,'$.id') IN ({','.join('?' * len(neu))})", neu) if r[0] not in ids]
         ids.update(neu)
-    rows = store.db.execute(f"SELECT time,actor,action,detail FROM audit WHERE action IN ({','.join('?' * len(VERLAUF))}) "
-                            f"AND json_extract(detail,'$.id') IN ({','.join('?' * len(ids))}) ORDER BY id DESC LIMIT ?",
-                            (*VERLAUF, *ids, limit)).fetchall()
+    wer = ','.join('?' * len(ids))
+    rows = store.db.execute(f"SELECT time,actor,action,detail FROM audit WHERE (action IN ({','.join('?' * len(VERLAUF))}) "
+                            f"AND json_extract(detail,'$.id') IN ({wer})) OR (action=? AND EXISTS(SELECT 1 FROM json_each(detail,'$.ids') "
+                            f"WHERE value IN ({wer}))) ORDER BY id DESC LIMIT ?",
+                            (*VERLAUF, *ids, ABGEHAKT, *ids, limit)).fetchall()
     out = []
     for time, actor, action, raw in rows:
         detail = json.loads(raw or '{}')
@@ -267,7 +270,9 @@ def verlauf(store, member_id, limit=50):
             text = f"Zusammengeführt mit Nr. {(detail.get('entfaellt') or {}).get('number', '?')}"
             if detail.get('ergaenzt'):
                 text += ' – ergänzt: ' + ', '.join(LABELS.get(f, 'Notiz' if f == 'note' else f) for f in detail['ergaenzt'])
-        if detail.get('id') != member_id:
+        if action == ABGEHAKT:
+            text = 'Änderung zur Kenntnis genommen'
+        elif detail.get('id') != member_id:
             text += f" (Nr. {detail.get('number', '?')})"
         out.append({'time': time, 'actor': actor, 'text': text})
     return out

@@ -336,8 +336,8 @@ export function assignDialog({ all = false } = {}) {
       e.target.disabled = true;
       try {
         const r = await api('/api/rpj-zuordnen-mehrere', { entry_ids: chosen().map((x) => x.id), target: bulkTarget.value, category: bulkCategory.hidden ? '' : bulkCategory.value });
-        toast(`${r.count} RPJ-${r.count === 1 ? 'Buchung' : 'Buchungen'} zugeordnet.`);
         await refresh();
+        toast(`${r.count} RPJ-${r.count === 1 ? 'Buchung' : 'Buchungen'} zugeordnet.`);
         await load();
       } finally { e.target.disabled = false; }
     });

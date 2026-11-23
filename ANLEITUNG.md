@@ -309,6 +309,7 @@ Der Ortsverband richtet sich nach dem Stadtteil der Anschrift. Dafür braucht je
   - „Abgehakt“ zeigt, was in den letzten 30 Tagen erledigt wurde und von wem. Danach löscht das Programm die alten Werte.
   - Beträge (Jahresbeitrag) und die Notiz werden nie festgehalten.
   - Die Liste „Änderung offen“ in der Mitgliederliste zeigt dieselben Mitglieder.
+- **Ab 0.56:** Wer wann abgehakt hat, steht im **Verlauf** des Mitglieds („Änderung zur Kenntnis genommen“). Die Akte zeigt einen Hinweis, solange eine Änderung offen ist. Unter Einstellungen → Schalter → „Zur Kenntnis: Umfang und Höchstfrist“ lassen sich einzelne Angaben **ausnehmen** (z. B. Telefon; sie werden dann nicht mehr festgehalten) und eine **Höchstfrist** wählen, nach der nie abgehakte Änderungen gelöscht werden (Vorgabe: sie bleiben, bis jemand abhakt).
 - **Einstellen** (Einstellungen → Schalter): „Änderungen an Mitgliedern zur Kenntnis nehmen“ schaltet das Ganze aus – dann hält das Programm nichts fest und löscht innerhalb einer Stunde, was schon festgehalten war. „Eigene Änderungen der Mitgliederverwaltung gelten als gesehen“: jede Änderung durch eine Person mit dem Recht „Mitglieder ändern“ ist sofort abgehakt. Weil nur diese Personen Mitglieder ändern können, bleibt dann nichts offen; „Abgehakt“ zeigt weiter 30 Tage lang, wer was geändert hat.
 
 ### Mitgliederstatus und Wahlberechtigung (ab 0.37)

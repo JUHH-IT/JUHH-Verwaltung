@@ -5,6 +5,8 @@ Jede Änderung gilt sofort. Zusätzlich hält die Datenbank selbst fest, welche 
 Mitglied einen Punkt mit Vorher und Jetzt und hakt ihn ab. Beträge (Jahresbeitrag, Kontostand) und die Notiz werden nie festgehalten.
 Die alten Werte bleiben bis zum Abhaken und danach `FRIST` Tage; dann werden die Zeilen gelöscht (Datensparsamkeit).
 Abschalten: Einstellungen → Schalter (`kenntnis` = no): dann hält die Datenbank nichts fest.
+Ab 0.55: einzelne Angaben lassen sich ausnehmen (`kenntnis_ohne`), eine Höchstfrist löscht nie abgehakte Änderungen
+(`kenntnis_hoechstfrist`, 0 = keine), und das Abhaken steht im Verlauf des Mitglieds (`ABGEHAKT` im Protokoll mit den Kennungen).
 """
 from datetime import date, datetime, timedelta
 
@@ -15,7 +17,7 @@ FELDER = tuple(f for f in mitglieder.FIELDS if f not in ('dues', 'external_balan
 JA_NEIN = ('dues_free', 'guest', 'no_mail', 'ov_fest')
 DATUM = ('birth', 'joined', 'left_on', 'kv_joined')
 ANGELEGT = 'angelegt'   # Feldname der Zeile „Mitglied neu angelegt“
-AUSLOESER = 'mitglied_aenderung_v1'   # bei geänderter Feldliste hochzählen – init entfernt die alten
+AUSLOESER = 'mitglied_aenderung_v2'   # bei geänderter Feldliste hochzählen – init entfernt die alten
 # Vorgänge des Protokolls, die Mitglieder ändern → Herkunft der Änderung (alles andere ordnet nichts zu)
 ANLASS = {'Mitglied angelegt': 'hand', 'Mitglied geändert': 'hand', 'Austritt eingetragen': 'hand', 'Austritt zurückgenommen': 'hand',
           'Mitgliederliste importiert': 'import', 'Mitglieder zusammengeführt': 'zusammen',
@@ -25,6 +27,8 @@ HERKUNFT = {'hand': 'von Hand', 'import': 'Import der Mitgliederliste', 'abgleic
             'programm': 'Programm'}
 FRIST = 30          # Tage, die Abgehaktes sichtbar bleibt
 MAX_AUSWAHL = 5000
+HOECHSTFRISTEN = ('0', '90', '180', '365')   # Tage; 0 = nie abgehakte Änderungen bleiben, bis jemand abhakt
+ABGEHAKT = 'Änderungen zur Kenntnis genommen'   # Vorgang im Protokoll; mitglieder.verlauf zeigt ihn am Mitglied
 
 
 def _jetzt():
@@ -44,8 +48,9 @@ def init(db):
     an = "COALESCE((SELECT value FROM settings WHERE key='kenntnis'),'yes')<>'no'"
     zeit = "strftime('%Y-%m-%dT%H:%M:%S','now','localtime')"
     leer = lambda f: '0' if f in JA_NEIN else "''"
+    ohne = "(','||COALESCE((SELECT value FROM settings WHERE key='kenntnis_ohne'),'')||',')"   # ausgenommene Angaben: gar nicht erst festhalten
     zeilen = ''.join(f"INSERT INTO mitglied_aenderungen(member_id,zeit,feld,alt,neu) SELECT NEW.id,{zeit},'{f}',OLD.{f},NEW.{f} "
-                     f"WHERE COALESCE(OLD.{f},{leer(f)})<>COALESCE(NEW.{f},{leer(f)});" for f in FELDER)
+                     f"WHERE COALESCE(OLD.{f},{leer(f)})<>COALESCE(NEW.{f},{leer(f)}) AND instr({ohne},',{f},')=0;" for f in FELDER)
     db.execute(f'CREATE TRIGGER IF NOT EXISTS {AUSLOESER}_u AFTER UPDATE ON members WHEN {an} BEGIN {zeilen} END')
     db.execute(f"CREATE TRIGGER IF NOT EXISTS {AUSLOESER}_i AFTER INSERT ON members WHEN {an} BEGIN "
                f"INSERT INTO mitglied_aenderungen(member_id,zeit,feld) VALUES(NEW.id,{zeit},'{ANGELEGT}'); END")
@@ -54,6 +59,17 @@ def init(db):
     if db.execute('SELECT 1 FROM mitglied_aenderungen WHERE actor IS NULL LIMIT 1').fetchone():
         db.execute("UPDATE mitglied_aenderungen SET actor='Programm',anlass='programm' WHERE actor IS NULL")
     db.commit()
+
+
+def felder():
+    """Angaben, die festgehalten werden können, mit Beschriftung – für die Auswahl „ausnehmen“ in den Einstellungen."""
+    return [[f, mitglieder.LABELS.get(f, f)] for f in FELDER]
+
+
+def ohne(db):
+    """Angaben, die nicht festgehalten werden (Einstellung `kenntnis_ohne`, mit Komma getrennt)."""
+    row = db.execute("SELECT value FROM settings WHERE key='kenntnis_ohne'").fetchone()
+    return {f for f in (row[0] if row else '').split(',') if f in FELDER}
 
 
 def an(db):
@@ -212,18 +228,31 @@ def abhaken(store, punkte, bis, actor):
             if n:
                 mitgliederzahl.add(mid)
         if zeilen:
-            store.audit(actor, 'Änderungen zur Kenntnis genommen', {'mitglieder': len(mitgliederzahl), 'angaben': zeilen})
+            store.audit(actor, ABGEHAKT, {'mitglieder': len(mitgliederzahl), 'angaben': zeilen, 'ids': sorted(mitgliederzahl)})   # ids: für den Verlauf am Mitglied
     return {'mitglieder': len(mitgliederzahl)}
 
 
 def bereinigen(store, today=None):
     """Abgehakte Zeilen nach `FRIST` Tagen löschen; offene Zeilen ohne Unterschied (hin und zurück geändert) löschen; ist die
-    Kenntnisnahme ausgeschaltet, alles löschen (dann soll das Programm keine alten Werte aufbewahren)."""
-    ab = ((today or date.today()) - timedelta(days=FRIST)).isoformat()
+    Kenntnisnahme ausgeschaltet, alles löschen (dann soll das Programm keine alten Werte aufbewahren). Ebenso Zeilen ausgenommener
+    Angaben und – mit Höchstfrist – offene Zeilen, die älter sind (das steht im Protokoll, nur mit der Anzahl).
+    Läuft stündlich und gleich nach dem Speichern der Einstellungen."""
+    heute = today or date.today()
+    ab = (heute - timedelta(days=FRIST)).isoformat()
     with store.db:
         if not an(store.db):
             return store.db.execute('DELETE FROM mitglied_aenderungen').rowcount
         n = store.db.execute('DELETE FROM mitglied_aenderungen WHERE gesehen_am IS NOT NULL AND gesehen_am<?', (ab,)).rowcount
+        weg = sorted(ohne(store.db))
+        if weg:
+            n += store.db.execute(f"DELETE FROM mitglied_aenderungen WHERE feld IN ({','.join('?' * len(weg))})", weg).rowcount
+        frist = store.db.execute("SELECT value FROM settings WHERE key='kenntnis_hoechstfrist'").fetchone()
+        tage = int(frist[0]) if frist and frist[0] in HOECHSTFRISTEN else 0
+        if tage:
+            alt = store.db.execute('DELETE FROM mitglied_aenderungen WHERE gesehen_am IS NULL AND zeit<?', ((heute - timedelta(days=tage)).isoformat(),)).rowcount
+            if alt:
+                store.audit('Programm', 'Nicht abgehakte Änderungen nach Höchstfrist gelöscht', {'angaben': alt, 'tage': tage})
+            n += alt
         sichtbar = {(p['id'], p['sammel']) for p in _offen(store.db)}
         for r in store.db.execute('SELECT * FROM mitglied_aenderungen WHERE gesehen_am IS NULL AND actor IS NOT NULL').fetchall():
             if (r['member_id'], _sammel(r)) not in sichtbar:
