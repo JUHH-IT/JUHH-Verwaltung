@@ -19,7 +19,7 @@ BEREICHE = (
     ('Kern', 'app core formate stammdaten kontenrahmen regelwerk'),
     ('Mitgliederverwaltung', 'mitglieder mitgliederlisten doppelte gliederung ovabgleich kenntnis klaerfaelle wahlrecht karte adressen auswertung'),
     ('Mitgliedsbeiträge', 'beitraege mitgliederkonto opliste sepadatei lastschrift'),
-    ('Buchhaltung', 'bankimport uebernahme workflow kasse verbindlichkeiten erstattung erechnung freigabe berichte'),
+    ('Buchhaltung', 'bankimport uebernahme workflow umsatzakte kasse verbindlichkeiten erstattung erechnung freigabe berichte'),
     ('Rechnungen und Versand', 'rechnung_pdf pdfschrift versand geheimnis'),
     ('Verband', 'haushalt kvbudget kvabgleich rpj'),
     ('Serverbetrieb und Sicherheit', 'zugang rollen sicherheit schutz keycloak verwaltung'),
