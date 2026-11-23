@@ -8,11 +8,15 @@ import { dialog, table, badge, safe, toast, icon, mailPreview, empty } from '../
 /** Sinnvoll per E-Mail zu senden (Vorauswahl): offen, unbezahlt, nicht versendet, Adresse vorhanden. */
 export const sendable = (i) => i.status === 'issued' && !i.pilot && i.total > 0 && i.paid === 0 && !!i.mail_to && !i.sent_at && i.last_status !== 'unknown';
 
+/** Zusatz zum letzten Versand (mailings.erechnung): als E-Rechnung – oder, bei eingeschaltetem Schalter, warum als normale PDF. */
+const versandArt = (i) => (i.sent_erechnung === '' ? html`<span class="sub" data-versandart>als E-Rechnung</span>`
+  : i.sent_erechnung && store.data.erechnung?.an ? html`<span class="sub" data-versandart>ohne E-Rechnung: ${i.sent_erechnung}</span>` : '');
+
 export function mailBadge(i) {
   if (i.status !== 'issued') return '';
   if (i.pilot) return badge('Vorversion – nicht versenden');
   if (i.last_status === 'unknown') return html`<span class="badge danger" title="${i.last_error || ''}">Zustellung unklar</span>`;
-  if (i.sent_at) return badge('Versendet ' + shortDate(i.sent_at.slice(0, 10)), 'ok');
+  if (i.sent_at) return html`${badge('Versendet ' + shortDate(i.sent_at.slice(0, 10)), 'ok')}${versandArt(i)}`;
   if (i.last_error) return html`<span class="badge danger" title="${i.last_error}">Fehler beim Versand</span>`;
   if (!i.mail_to) return badge('Keine E-Mail');
   if (i.total > 0 && i.paid >= i.total) return badge('Nicht versendet');   // schon bezahlt: kein Handlungsbedarf
@@ -26,12 +30,17 @@ export function reminderBadge(i) {
   return i.reminders ? badge(`${i.reminders}× erinnert, zuletzt ${shortDate(i.reminded_at.slice(0, 10))}`, 'warn') : '';
 }
 
-/** E-Rechnung (zugferd.py): je Rechnungsart ein Satz, was noch fehlt – leer, wenn alles vollständig oder der Schalter aus ist. */
+/** E-Rechnung (zugferd.py): je Rechnungsart ein Satz, was Rechnungen fehlt, die ab jetzt erstellt werden – leer, wenn alles vollständig
+ *  oder der Schalter aus ist. Eine Rechnung behält die Angaben vom Tag ihrer Ausstellung: Was dort fehlt, lässt sich nicht nachtragen. */
 export function erechnungFehlt(kinds = ['dues', 'normal']) {
   const e = store.data.erechnung || {};
   if (!e.an) return [];
-  return kinds.filter((k) => e[k]?.length).map((k) => `${k === 'dues' ? 'Beitragsrechnungen' : 'Rechnungen'} gehen noch als normale PDF hinaus – es fehlt: ${e[k].join('; ')}.`);
+  return kinds.filter((k) => e[k]?.length).map((k) => `Neue ${k === 'dues' ? 'Beitragsrechnungen' : 'Rechnungen'} bleiben dauerhaft normale PDF – es fehlt: ${e[k].join('; ')}.`);
 }
+
+/** Hinweis vor dem Festschreiben (Beitragslauf, Rechnung erstellen): danach lässt sich die Angabe für diese Rechnungen nicht mehr nachtragen. */
+export const erechnungHinweis = (kind) => (erechnungFehlt([kind]).length ? html`<p class="notice warn" data-erechnung>E-Rechnung (ZUGFeRD): ${erechnungFehlt([kind])[0]}
+  Erst unter Einstellungen → „Verein &amp; Bank“ eintragen, dann festschreiben.</p>` : '');
 
 /** Sammel-PDF zum Drucken (z. B. für Mitglieder ohne E-Mail). */
 export const printLink = (ids, label = 'PDF zum Drucken') => html`<a class="btn" href="/api/invoices.pdf?ids=${ids.join(',')}" target="_blank" rel="noopener">${icon('print', 16)} ${label}</a>`;
@@ -65,11 +74,8 @@ export async function sendDialog(preselect = null) {
     const mailable = selected.filter((i) => !i.pilot && i.total > i.paid && i.mail_to && (resend || (!i.sent_at && i.last_status !== 'unknown')));
     const already = selected.filter((i) => i.sent_at || i.last_status === 'unknown').length;
     const missing = [!cfg.mail_from || !cfg.smtp_user ? 'Absenderadresse und Benutzername' : '', !status.password ? 'Passwort' : ''].filter(Boolean);
-    const ohneE = erechnungFehlt([...new Set(selected.map((i) => (i.kind === 'dues' ? 'dues' : 'normal')))]);
     const el = dialog('Rechnungen per E-Mail versenden', html`
       ${missing.length ? html`<p class="notice warn">Für den Versand fehlt in den Stammdaten: ${missing.join(' und ')}.
-        <button type="button" class="link" data-settings>Zu den Einstellungen</button></p>` : ''}
-      ${ohneE.length ? html`<p class="notice warn" data-erechnung>E-Rechnung (ZUGFeRD): ${ohneE.join(' ')}
         <button type="button" class="link" data-settings>Zu den Einstellungen</button></p>` : ''}
       <div class="toolbar"><div class="segmented" role="group" aria-label="Anzeige">
         ${preselect ? html`<button type="button" data-view="chosen" aria-pressed="${view === 'chosen'}">Neu erstellt</button>` : ''}
@@ -95,7 +101,8 @@ export async function sendDialog(preselect = null) {
     const again = el.querySelector('[data-resend]');
     if (again) again.onchange = () => { resend = again.checked; render(); };
     el.querySelectorAll('[data-look]').forEach((b) => (b.onclick = () => mailPreview('id=' + b.dataset.look, 'Vorschau ' + issued.find((i) => i.id === Number(b.dataset.look)).number)));
-    el.querySelectorAll('[data-settings]').forEach((b) => (b.onclick = () => { el.close(); go('settings'); }));
+    const toSettings = el.querySelector('[data-settings]');
+    if (toSettings) toSettings.onclick = () => { el.close(); go('settings'); };
     el.querySelector('[data-test]').onclick = (e) => safe(async () => {
       e.target.disabled = true;
       try {

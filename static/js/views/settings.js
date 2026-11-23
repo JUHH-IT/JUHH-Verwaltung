@@ -68,11 +68,13 @@ function schalter(s) {
     <div class="switch-row">
       <div class="switch-text"><h2>Rechnungen als E-Rechnung versenden (ZUGFeRD)</h2>
         <p class="muted"><strong>An:</strong> Jede Rechnung, die per E-Mail hinausgeht oder einzeln geöffnet wird, ist eine E-Rechnung: die gewohnte PDF,
-          in der zusätzlich die Rechnungsdaten zum Einlesen stecken (ZUGFeRD, Profil EN 16931) – eine Datei, kein zweiter Anhang. Fehlt eine Angabe,
-          geht die bisherige PDF hinaus. <strong>Aus (Vorgabe):</strong> immer die bisherige PDF. Zahlungserinnerungen, Vorschauen, das Sammel-PDF zum Drucken und
+          in der zusätzlich die Rechnungsdaten zum Einlesen stecken (ZUGFeRD, Profil EN 16931) – eine Datei, kein zweiter Anhang. Fehlte bei der Ausstellung
+          eine Angabe, geht die bisherige PDF hinaus. <strong>Aus (Vorgabe):</strong> immer die bisherige PDF. Zahlungserinnerungen, Vorschauen, das Sammel-PDF zum Drucken und
           stornierte Rechnungen bleiben immer normale PDF.</p>
-        ${s.erechnung !== 'yes' ? '' : erechnungFehlt().length ? html`<p class="notice warn" data-erechnung-stand>${erechnungFehlt().join(' ')} Eintragen unter „Verein &amp; Bank“ → E-Rechnung.</p>`
-          : html`<p class="small" data-erechnung-stand>Die Angaben sind vollständig: Beitragsrechnungen und Rechnungen gehen als E-Rechnung hinaus.</p>`}</div>
+        ${s.erechnung !== 'yes' ? '' : erechnungFehlt().length ? html`<p class="notice warn" data-erechnung-stand>${erechnungFehlt().join(' ')} Eintragen unter „Verein &amp; Bank“ → E-Rechnung.
+            Das gilt für Rechnungen, die ab jetzt erstellt werden; schon erstellte behalten die Angaben vom Tag ihrer Ausstellung.</p>`
+          : html`<p class="small" data-erechnung-stand>Die Angaben sind vollständig: Rechnungen, die ab jetzt erstellt werden, gehen als E-Rechnung hinaus.
+            Schon erstellte behalten die Angaben vom Tag ihrer Ausstellung – fehlte dort etwas, bleiben sie normale PDF.</p>`}</div>
       <label class="switch"><input type="checkbox" name="erechnung" role="switch" aria-label="Rechnungen als E-Rechnung versenden" ${s.erechnung === 'yes' ? 'checked' : ''}><span class="switch-track" aria-hidden="true"></span>
         <span class="switch-label" data-switch-label>${s.erechnung === 'yes' ? 'An' : 'Aus'}</span></label>
     </div>

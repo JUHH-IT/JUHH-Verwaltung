@@ -109,7 +109,8 @@ DEFAULTS = {
     'pdf_normal_text': 'wir stellen dir folgende Leistungen in Rechnung:',
 }
 
-ERECHNUNG = ('tax_number', 'vat_id', 'tax_category', 'creditor_id')   # Angaben für die E-Rechnung – mit jeder Rechnung festgeschrieben (zugferd.py)
+# Angaben für die E-Rechnung – mit jeder Rechnung festgeschrieben, auch leer (zugferd.py liest nur dieses Abbild; fehlen die Schlüssel, ist die Rechnung von vor 0.58)
+ERECHNUNG = ('tax_number', 'vat_id', 'tax_category', 'creditor_id')
 TEXT_KEYS = {'issuer', 'issuer_address', 'bank_name', 'liability_name', 'chair_name', 'treasurer_name', 'contact_phone', 'website', 'tax_note', 'mail_from_name',
              'tpl_dues_subject', 'tpl_dues_body', 'tpl_normal_subject', 'tpl_normal_body',
              'tpl_reminder_subject', 'tpl_reminder_body', 'tpl_debit_body', 'pdf_dues_text', 'pdf_normal_text'}

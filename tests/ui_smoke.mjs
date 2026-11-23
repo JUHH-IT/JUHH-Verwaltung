@@ -165,8 +165,8 @@ try {
   await page.click('form[data-save] button[type=submit]');
   await toast();
   check(await page.locator('.switch input[name=erechnung]').isChecked()
-    && /^Rechnungen gehen noch als normale PDF hinaus – es fehlt: Umsatzsteuer/.test((await page.locator('[data-erechnung-stand]').textContent()).trim()),
-    'E-Rechnung: Schalter ist an und nennt, was für normale Rechnungen fehlt (Beiträge sind vollständig)');
+    && /^Neue Rechnungen bleiben dauerhaft normale PDF – es fehlt: Umsatzsteuer.*ab jetzt erstellt/s.test((await page.locator('[data-erechnung-stand]').textContent()).trim()),
+    'E-Rechnung: Schalter ist an und nennt, was neuen normalen Rechnungen fehlt (Beiträge sind vollständig)');
   await shot('02c-erechnung-schalter');
   await page.click('[data-tab=verein]');
   check(await page.inputValue('input[name=liability_account]') === '1600', 'Verbindlichkeitenkonto vorbelegt (1600)');
@@ -330,6 +330,10 @@ try {
   const duePdf = await (await page.request.get(`http://127.0.0.1:${port}${await page.locator(`main tbody tr:has-text("${dueNumber}") a:has-text("PDF")`).getAttribute('href')}`)).body();
   check(duePdf.subarray(0, 8).toString() === '%PDF-1.7' && duePdf.includes('/AFRelationship /Alternative') && duePdf.includes('<ram:ID>' + dueNumber + '</ram:ID>') && duePdf.includes('/GTS_PDFA1'),
     'E-Rechnung: Beitragsrechnung als PDF/A-3 mit eingebetteter factur-x.xml');
+  check((await page.locator(`main tbody tr:has-text("${dueNumber}") [data-versandart]`).textContent()) === 'als E-Rechnung', 'E-Rechnung: die Liste zeigt, dass die Rechnung als E-Rechnung versendet wurde');
+  await page.click(`main tbody tr:has-text("${dueNumber}") [data-look]`);
+  check(await page.frameLocator('#preview iframe.mail-frame').locator(`text=${dueNumber}.pdf – E-Rechnung (ZUGFeRD)`).first().waitFor({ timeout: 8000 }).then(() => true, () => false), 'E-Rechnung: die E-Mail-Vorschau nennt die Art des Anhangs');
+  await page.locator('#preview [data-close]').first().click();
 
   // Rechnung für mehrere Empfänger (Mitglied + Gast) mit Vorschau
   await page.click('[data-normal]');
@@ -341,11 +345,13 @@ try {
   await page.fill('[data-other="0"][data-key=name]', 'Test GmbH');
   await page.fill('[data-other="0"][data-key=address]', 'Adresse 1\n20000 Hamburg');
   check((await page.locator('#modal .bulkbar strong').textContent()).includes('2 Empfänger'), 'Empfänger werden gezählt');
+  check((await page.locator('#series-form').textContent()).includes('Anschrift im Ausland: das Land in die letzte Zeile schreiben.'), 'Hinweis zur Auslandsanschrift bei weiteren Empfängern');
   await page.click('[data-rtab=members]');
   await shot('18-rechnung-formular');
   await page.click('#series-form button[type=submit]');
   await page.waitForSelector('#modal [data-issue]');
   check(await page.locator('#modal tbody tr').count() === 2, 'Vorschau zeigt beide Rechnungen');
+  check((await page.locator('#modal [data-erechnung]').textContent()).includes('Neue Rechnungen bleiben dauerhaft normale PDF – es fehlt: Umsatzsteuer'), 'E-Rechnung: vor dem Festschreiben steht, was fehlt');
   await shot('17-rechnung-vorschau');
   await page.click('#modal [data-mail="1"]');
   check(await page.frameLocator('#preview iframe.mail-frame').locator('text=keine E-Mail-Adresse').first().waitFor({ timeout: 8000 }).then(() => true, () => false), 'Vorschau zeigt fehlende E-Mail');
@@ -369,13 +375,14 @@ try {
   await page.click('main [data-send-picked]');
   await page.waitForSelector('#modal [data-go]');
   check((await page.locator('#modal .bulkbar strong').textContent()).includes('1 per E-Mail'), 'Ohne E-Mail nur Druck');
-  check((await page.locator('#modal [data-erechnung]').textContent()).includes('Rechnungen gehen noch als normale PDF hinaus – es fehlt: Umsatzsteuer'), 'E-Rechnung: Versanddialog nennt vorher, was fehlt');
   await page.click('#modal [data-go]');
   await page.click('#modal [data-start]');
   await page.waitForFunction(() => (document.querySelector('#modal h2')?.textContent || '').includes('abgeschlossen'), null, { timeout: 15000 });
-  check(/Als normale PDF ohne E-Rechnung versendet: 1 × In den Einstellungen fehlt: Umsatzsteuer/.test(await page.locator('#modal [data-einfach]').textContent()), 'E-Rechnung: nach dem Versand stehen Anzahl und Grund der normalen PDF');
+  check(/Als normale PDF ohne E-Rechnung versendet: 1 × Bei der Ausstellung fehlte: Umsatzsteuer/.test(await page.locator('#modal [data-einfach]').textContent()), 'E-Rechnung: nach dem Versand stehen Anzahl und Grund der normalen PDF');
   await shot('18b-versand-ohne-erechnung');
   await page.click('#modal [data-done]');
+  await page.click('[data-filter=all]');
+  check((await page.locator('main tbody tr:has-text("ohne E-Rechnung")').first().textContent()).includes('ohne E-Rechnung: Bei der Ausstellung fehlte: Umsatzsteuer'), 'E-Rechnung: die Liste nennt, warum eine Rechnung als normale PDF versendet wurde');
   check(mails().length === 3, 'Zweite Rechnung versendet, keine Doppelversendung');
 
   // Zahlungserinnerung für eine überfällige Rechnung (Fälligkeit und Rechnungsversand in der Testdatenbank zurückdatiert)

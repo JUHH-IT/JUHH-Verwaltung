@@ -4,9 +4,13 @@ Eine Datei: die gewohnte Rechnungs-PDF als PDF/A-3b mit den Rechnungsdaten als e
 (UN/CEFACT Cross Industry Invoice). Gilt für festgeschriebene, nicht stornierte Beitrags- und Ausgangsrechnungen mit Betrag –
 einzeln per E-Mail oder als Download. Vorschauen, Sammel-PDF, Zahlungserinnerungen und stornierte Rechnungen bleiben normale PDF.
 
-Fehlt eine Pflichtangabe, geht die bisherige PDF hinaus und `pdf` nennt den Grund – nie eine ungültige E-Rechnung, nie ein Fehler.
-Umsatzsteuer: Beitragsrechnungen sind „nicht steuerbar“ (Kategorie O); für andere Rechnungen entscheidet die Einstellung
-`tax_category` (O oder E = steuerbefreit), der Begründungstext ist der Steuerhinweis der Rechnung.
+Eine Rechnungsnummer hat einen Inhalt: Die Rechnungsdaten kommen nur aus der Rechnung und ihrem festgeschriebenen Abbild
+(`snapshot`), nie aus den heutigen Einstellungen. Fehlte bei der Ausstellung eine Pflichtangabe oder stammt die Rechnung von vor 0.58,
+bleibt sie für immer eine normale PDF; der Schalter entscheidet nur, ob eine vollständige Rechnung als E-Rechnung hinausgeht.
+Wie auf der PDF folgen nur Zahlungsstand und Zahlungsweg dem heutigen Stand (bereits bezahlt, entfallene Lastschrift).
+Geht die bisherige PDF hinaus, nennt `pdf` den Grund – nie eine ungültige E-Rechnung, nie ein Fehler.
+Umsatzsteuer: Beitragsrechnungen sind „nicht steuerbar“ (Kategorie O); für andere Rechnungen entscheidet die festgeschriebene
+Angabe `tax_category` (O oder E = steuerbefreit), der Begründungstext ist der Steuerhinweis der Rechnung.
 Ohne Zusatzbibliothek: XML mit der Standardbibliothek, Einbetten mit pypdf (ist ohnehin Abhängigkeit, sepadatei.py).
 """
 import io
@@ -35,12 +39,9 @@ for _kurz, _uri in (('rsm', RSM), ('ram', RAM), ('udt', UDT), ('qdt', QDT)):
     ET.register_namespace(_kurz, _uri)
 _ORT = re.compile(r'(?:D-|DE-)?(\d{5})\s+(\S.*)')
 _UNERLAUBT = re.compile(r'[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]')   # in XML 1.0 nicht erlaubte Zeichen
-
-
-def angaben(cfg, snap):
-    """Angaben für die E-Rechnung: festgeschriebener Wert der Rechnung, sonst der heutige aus den Einstellungen
-    (Rechnungen von vor 0.58 und solche, die vor dem Eintragen festgeschrieben wurden, sollen nicht für immer ohne bleiben)."""
-    return {'an': cfg.get('erechnung') == 'yes', **{k: snap.get(k) or cfg.get(k) or '' for k in stammdaten.ERECHNUNG}}
+_TAG = re.compile(r'\d{4}-\d{2}-\d{2}')
+UNERWARTET = 'E-Rechnung konnte nicht erzeugt werden (unerwarteter Fehler)'
+melden = lambda wo: None   # app.py setzt hier `log_error` ein: Art und Programmstelle der laufenden Ausnahme ins Serverprotokoll
 
 
 def anschrift(text):
@@ -56,7 +57,8 @@ def anschrift(text):
 
 
 def kategorie(kind, e):
-    """Umsatzsteuer-Kategorie der Rechnung: Beitrag immer O, sonst laut Einstellung ('' = noch nicht entschieden)."""
+    """Umsatzsteuer-Kategorie der Rechnung: Beitrag immer O, sonst laut Angabe ('' = noch nicht entschieden).
+    `e` trägt die Angaben `stammdaten.ERECHNUNG`: das Abbild der Rechnung, für künftige Rechnungen die Einstellungen."""
     return 'O' if kind == 'dues' else e.get('tax_category') or ''
 
 
@@ -65,9 +67,9 @@ def luecken(kind, e, issuer_address):
     cat, out = kategorie(kind, e), []
     if cat not in KATEGORIEN:
         out.append('Umsatzsteuer normaler Rechnungen (nicht steuerbar oder steuerbefreit)')
-    elif cat == 'E' and not (e['tax_number'] or e['vat_id']):      # BR-E-01
+    elif cat == 'E' and not (e.get('tax_number') or e.get('vat_id')):      # BR-E-01
         out.append('Steuernummer oder USt-IdNr.')
-    elif cat == 'O' and not (e['tax_number'] or e['creditor_id']):  # BR-CO-26; eine USt-IdNr. darf bei O nicht stehen (BR-O-02)
+    elif cat == 'O' and not (e.get('tax_number') or e.get('creditor_id')):  # BR-CO-26; eine USt-IdNr. darf bei O nicht stehen (BR-O-02)
         out.append('Steuernummer oder Gläubiger-ID')
     if not anschrift(issuer_address):
         out.append('Anschrift des Ausstellers mit Postleitzahl und Ort in der letzten Zeile')
@@ -75,18 +77,26 @@ def luecken(kind, e, issuer_address):
 
 
 def stand(cfg):
-    """Stand für Einstellungen und Versanddialog: Schalter und was je Rechnungsart noch fehlt."""
-    e = angaben(cfg, {})
-    return {'an': e['an'], **{kind: luecken(kind, e, cfg.get('issuer_address')) for kind in ('dues', 'normal')}}
+    """Stand für die Oberfläche: Schalter und was Rechnungen, die ab jetzt ausgestellt werden, je Rechnungsart fehlt.
+    Für schon ausgestellte Rechnungen zählt allein ihr Abbild (`fehlt`)."""
+    return {'an': cfg.get('erechnung') == 'yes', **{kind: luecken(kind, cfg, cfg.get('issuer_address')) for kind in ('dues', 'normal')}}
+
+
+def faellig(inv):
+    """Fälligkeit wie auf der PDF: Einzugsdatum der geltenden Lastschrift, sonst die Zahlungsfrist."""
+    from rechnung_pdf import debit_of
+    debit = debit_of(inv)
+    return debit['date'] if debit else lastschrift.payable_by(inv)
 
 
 def fehlt(inv):
-    """Grund, warum diese Rechnung als normale PDF hinausgeht – None, wenn sie eine gültige E-Rechnung wird."""
-    e, snap = inv.get('erechnung'), inv['snap']
-    if inv.get('preview') or not e:
+    """Grund, warum diese Rechnung als normale PDF hinausgeht – None, wenn sie eine gültige E-Rechnung wird.
+    Bis auf Schalter, Erinnerung und Storno hängt der Grund nur an der Rechnung selbst: er ändert sich später nicht mehr."""
+    snap = inv['snap']
+    if inv.get('preview') or 'erechnung' not in inv:
         return 'Vorschau'
-    if not e['an']:
-        return 'E-Rechnung ist ausgeschaltet'
+    if not inv['erechnung']:
+        return 'E-Rechnung ausgeschaltet'
     if inv.get('reminder'):
         return 'Zahlungserinnerung'
     if inv['status'] != 'issued':
@@ -95,17 +105,34 @@ def fehlt(inv):
         return 'Pilotrechnung aus einer Vorversion'
     if inv['total'] <= 0 or not inv['lines']:
         return 'Rechnung ohne Betrag'
-    offen = luecken(inv['kind'], e, snap.get('issuer_address'))
+    if any(k not in snap for k in stammdaten.ERECHNUNG):
+        return 'vor Einführung der E-Rechnung ausgestellt'
+    offen = luecken(inv['kind'], snap, snap.get('issuer_address'))
     if offen:
-        return 'In den Einstellungen fehlt: ' + '; '.join(offen)
+        return 'Bei der Ausstellung fehlte: ' + '; '.join(offen)
     if not anschrift(inv['address']):
         return 'Anschrift des Empfängers endet nicht mit Postleitzahl und Ort (nur Deutschland)'
     if not iban_valid(snap.get('iban')):
         return 'IBAN des Ausstellers ist ungültig'
+    # direkt veränderte Altdaten: das Programm selbst schreibt solche Rechnungen nicht fest
+    if not (_t(snap.get('issuer')) and _t(inv['recipient']) and all(_t(l['description']) for l in inv['lines'])
+            and _TAG.fullmatch(str(inv['issued'])[:10]) and _TAG.fullmatch(str(faellig(inv) or '')[:10])):
+        return 'Aussteller, Empfänger, Datum, Fälligkeit oder Positionstext fehlt'
+    if sum(l['amount'] for l in inv['lines']) != inv['total']:
+        return 'Summe der Positionen weicht vom Rechnungsbetrag ab'
     texte = [inv['recipient'], inv['address'], *(l['description'] for l in inv['lines']), *snap.values(), *(snap.get('debit') or {}).values()]
-    if not all(covers(t) for t in texte if isinstance(t, str)):      # sonst stünden Kästchen in der PDF – und PDF/A verbietet fehlende Zeichen
+    if not all(covers(z) for t in texte if isinstance(t, str) for z in t.split('\n')):   # sonst stünden Kästchen in der PDF – und PDF/A verbietet fehlende Zeichen
         return 'Die Rechnung enthält Zeichen, die die PDF-Schrift nicht kennt'
     return None
+
+
+def grund(inv):
+    """Wie `fehlt`, scheitert aber nie: unerwartete Daten sind auch ein Grund für die normale PDF (für `pdf` und die E-Mail-Vorschau)."""
+    try:
+        return fehlt(inv)
+    except Exception:
+        melden('E-Rechnung prüfen')
+        return UNERWARTET
 
 
 # ---------------------------------------------------------------- XML
@@ -146,9 +173,9 @@ def _partei(parent, name, kennung, bezeichnung, adr):
 def xml(inv):
     """Rechnungsdaten als Cross Industry Invoice (EN 16931). Nur aufrufen, wenn `fehlt(inv)` None ist."""
     from rechnung_pdf import amount_due, debit_of
-    snap, e, debit = inv['snap'], inv['erechnung'], debit_of(inv)
-    cat = kategorie(inv['kind'], e)
-    grund = snap.get('tax_note') or f'Umsatzsteuer: {KATEGORIEN[cat]}'
+    snap, debit = inv['snap'], debit_of(inv)
+    cat = kategorie(inv['kind'], snap)
+    begruendung = _t(snap.get('tax_note')) or f'Umsatzsteuer: {KATEGORIEN[cat]}'   # nie ein leeres Element (auch nicht bei einem Hinweis nur aus Leerraum)
 
     root = ET.Element(f'{{{RSM}}}CrossIndustryInvoice')
     _el(_el(_el(root, 'ExchangedDocumentContext', ns=RSM), 'GuidelineSpecifiedDocumentContextParameter'), 'ID', PROFIL)
@@ -173,11 +200,11 @@ def xml(inv):
         _el(_el(settle, 'SpecifiedTradeSettlementLineMonetarySummation'), 'LineTotalAmount', _betrag(line['amount']))
 
     agreement = _el(tx, 'ApplicableHeaderTradeAgreement')
-    seller = _partei(agreement, 'SellerTradeParty', e['creditor_id'] or e['tax_number'], snap.get('issuer'), anschrift(snap.get('issuer_address')))
-    if e['tax_number']:
-        _el(_el(seller, 'SpecifiedTaxRegistration'), 'ID', e['tax_number'], schemeID='FC')
-    if e['vat_id'] and cat != 'O':
-        _el(_el(seller, 'SpecifiedTaxRegistration'), 'ID', e['vat_id'], schemeID='VA')
+    seller = _partei(agreement, 'SellerTradeParty', snap['creditor_id'] or snap['tax_number'], snap.get('issuer'), anschrift(snap.get('issuer_address')))
+    if snap['tax_number']:
+        _el(_el(seller, 'SpecifiedTaxRegistration'), 'ID', snap['tax_number'], schemeID='FC')
+    if snap['vat_id'] and cat != 'O':
+        _el(_el(seller, 'SpecifiedTaxRegistration'), 'ID', snap['vat_id'], schemeID='VA')
     _partei(agreement, 'BuyerTradeParty', snap.get('member_number'), inv['recipient'], anschrift(inv['address']))
     _el(_el(_el(tx, 'ApplicableHeaderTradeDelivery'), 'ShipToTradeParty'), 'Name', inv['recipient'])   # Leistungsempfänger = Rechnungsempfänger; leere Elemente rügt die Prüfung
 
@@ -199,7 +226,7 @@ def xml(inv):
     tax = _el(settle, 'ApplicableTradeTax')
     _el(tax, 'CalculatedAmount', '0.00')
     _el(tax, 'TypeCode', 'VAT')
-    _el(tax, 'ExemptionReason', grund)
+    _el(tax, 'ExemptionReason', begruendung)
     _el(tax, 'BasisAmount', _betrag(inv['total']))
     _el(tax, 'CategoryCode', cat)
     if cat == 'O':
@@ -211,7 +238,7 @@ def xml(inv):
         _datum(period, 'StartDateTime', f"{inv['year']}-01-01")
         _datum(period, 'EndDateTime', f"{inv['year']}-12-31")
     terms = _el(settle, 'SpecifiedTradePaymentTerms')
-    _datum(terms, 'DueDateDateTime', debit['date'] if debit else lastschrift.payable_by(inv))
+    _datum(terms, 'DueDateDateTime', faellig(inv))
     if debit:
         _el(terms, 'DirectDebitMandateID', debit['mandate'])
     total = _el(settle, 'SpecifiedTradeSettlementHeaderMonetarySummation')
@@ -292,10 +319,11 @@ def pdf(inv):
     """Rechnungs-PDF für Versand und Download: (E-Rechnung, None) oder (bisherige PDF, Grund). Scheitert nie an der E-Rechnung."""
     import rechnung_pdf
     einfach = rechnung_pdf.render([inv])
-    grund = fehlt(inv)
-    if grund:
-        return einfach, grund
+    warum = grund(inv)
+    if warum:
+        return einfach, warum
     try:
         return einbetten(einfach, xml(inv), inv['number'], _t(inv['snap'].get('issuer'))), None
     except Exception:   # Versand und Download gehen vor: lieber die bisherige PDF als gar keine
-        return einfach, 'E-Rechnung konnte nicht erzeugt werden (unerwarteter Fehler)'
+        melden('E-Rechnung erzeugen')
+        return einfach, UNERWARTET

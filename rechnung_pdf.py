@@ -58,7 +58,7 @@ def invoice_data(store, iid):
     debit = lastschrift.info(store, data)
     data['debit_active'] = bool(debit and debit['active'])
     data['pay_by'] = debit.get('pay_by') if debit else None
-    data['erechnung'] = zugferd.angaben(store.config(), data['snap'])   # nur festgeschriebene Rechnungen werden E-Rechnungen (zugferd.pdf)
+    data['erechnung'] = store.config().get('erechnung') == 'yes'   # nur der Schalter – die Rechnungsdaten liest zugferd allein aus dem Abbild
     return data
 
 
@@ -292,7 +292,7 @@ def _debit_box(inv, width, debit):
 
 def _payment_box(inv, width):
     snap = inv['snap']
-    if debit_of(inv) and not inv.get('reminder'):
+    if debit_of(inv) and not inv.get('reminder') and amount_due(inv) > 0:
         return _debit_box(inv, width, debit_of(inv))
     facts = [('Empfänger', snap.get('issuer', '')), ('IBAN', iban_pretty(snap.get('iban', '')))]
     if snap.get('bic'):
@@ -303,9 +303,11 @@ def _payment_box(inv, width):
     if inv.get('paid'):
         facts += [('Rechnungsbetrag', euro(inv['total'])), ('Bereits bezahlt', euro(inv['paid']))]
     facts += [('Offener Betrag' if inv.get('paid') else 'Betrag', euro(due)), ('Verwendungszweck', inv['number'])]
-    text = (f"Bitte überweise <b>{escape(euro(due))}</b> bis zum <b>{escape(german_date(deadline))}</b> "
-            f"und gib als Verwendungszweck <b>{escape(inv['number'])}</b> an.<br/><br/>"
-            + '<br/>'.join(f'<font color="#5b6b7f">{escape(k)}:</font> {escape(v)}' for k, v in facts))
+    # bezahlt (ab 0.58 zeigt auch der Download den Zahlungsstand): keine Aufforderung über 0,00 €
+    text = ('Diese Rechnung ist bezahlt. Es ist keine Zahlung mehr erforderlich.' if due <= 0 else
+            f"Bitte überweise <b>{escape(euro(due))}</b> bis zum <b>{escape(german_date(deadline))}</b> "
+            f"und gib als Verwendungszweck <b>{escape(inv['number'])}</b> an.")
+    text += '<br/><br/>' + '<br/>'.join(f'<font color="#5b6b7f">{escape(k)}:</font> {escape(v)}' for k, v in facts)
     left = Paragraph(text, S['pay'])
     payload = epc_payload(inv)
     if payload:

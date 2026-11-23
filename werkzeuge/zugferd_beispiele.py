@@ -66,6 +66,7 @@ def beispiele(ordner):
         s.save_settings({'tax_category': 'O', 'tax_number': '22/123/45678'}, 'Beispiel')   # nicht steuerbar, nur mit Steuernummer
         schreiben('rechnung-O-nur-steuernummer', s.issue_series(dict(kv='LV', due='', member_ids=[erika], recipients=[], lines=[
             dict(description='Teilnahme Seminar', amount='40', account='8504')]), 'Beispiel')[0])
+        s.db.close()
     return namen
 
 

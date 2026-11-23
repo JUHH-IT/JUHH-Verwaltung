@@ -463,13 +463,14 @@ def cancel():
     _cancel.set()
 
 
-def _log(store, iid, to, subject, outcome, error, message_id, actor, kind='invoice'):
-    """Protokolliert eine Nachricht; bei gesperrter Datenbank einige Male erneut versuchen."""
+def _log(store, iid, to, subject, outcome, error, message_id, actor, kind='invoice', erechnung=None):
+    """Protokolliert eine Nachricht; bei gesperrter Datenbank einige Male erneut versuchen.
+    erechnung: '' = Anhang war eine E-Rechnung, sonst der Grund für die normale PDF (None = nicht erfasst, z. B. Erinnerung)."""
     for attempt in range(6):
         try:
             with store.db:
-                store.db.execute('INSERT INTO mailings(invoice_id,time,recipient,subject,status,error,message_id,actor,kind) VALUES(?,?,?,?,?,?,?,?,?)',
-                                 (iid, datetime.now().isoformat(timespec='seconds'), to, subject, outcome, error, message_id, actor, kind))
+                store.db.execute('INSERT INTO mailings(invoice_id,time,recipient,subject,status,error,message_id,actor,kind,erechnung) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                                 (iid, datetime.now().isoformat(timespec='seconds'), to, subject, outcome, error, message_id, actor, kind, erechnung))
             return True
         except Exception:
             time.sleep(1 + attempt)
@@ -501,7 +502,7 @@ def _run(db_path, items, cfg, password, actor, kind='invoice', resend=False):
                 break
             with _job_lock:
                 _job['current'] = f"{item['number']} an {item['to']}"
-            subject, outcome, error, msgid, stop, einfach = item['number'], 'failed', None, None, False, None
+            subject, outcome, error, msgid, stop, einfach, erechnung = item['number'], 'failed', None, None, False, None, None
             try:
                 reason = _recheck(store, item, kind, resend)
             except Exception:
@@ -518,6 +519,7 @@ def _run(db_path, items, cfg, password, actor, kind='invoice', resend=False):
                     inv['reminder'] = reminder_terms(cfg, item['level'])
                 # Rechnung mit offenem Betrag und Frist – als E-Rechnung, sonst die bisherige PDF mit Grund; Erinnerungen bleiben normale PDF
                 datei, einfach = (rechnung_pdf.render([inv]), None) if kind == 'reminder' else zugferd.pdf(inv)
+                erechnung = None if kind == 'reminder' else einfach or ''   # je Nachricht festhalten (mailings.erechnung)
                 msg = message(cfg, inv, datei, item['to'])
                 subject, msgid = msg['Subject'], msg['Message-ID']
             except Exception as e:  # Fehler beim Erstellen betreffen nur diese Rechnung
@@ -537,7 +539,7 @@ def _run(db_path, items, cfg, password, actor, kind='invoice', resend=False):
                     stop = lost >= 2  # zweimal hintereinander keine Verbindung → anhalten
                 except Exception as e:
                     error = friendly(e)
-            logged = _log(store, item['id'], item['to'], subject, outcome, error, msgid, actor, kind)
+            logged = _log(store, item['id'], item['to'], subject, outcome, error, msgid, actor, kind, erechnung)
             with _job_lock:
                 _job['done'] += 1
                 _job[{'sent': 'sent', 'unknown': 'unknown'}.get(outcome, 'failed')] += 1

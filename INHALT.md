@@ -84,7 +84,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 - `static/js/views/klaerfaelle.js`: cases → /api/klaerfaelle, /api/klaerfall-klaeren, /api/klaerfall-notiz
 - `static/js/views/konten.js`: konten, saldo → /api/konten, /api/konto, /api/konto.csv
 - `static/js/views/kv.js`: bindKv, bindKvPage, bindTransfers, kvPage, kvTable, masterDialog, needsAttention, openKv, planRest, transferDialog, transferList, valuesDialog → /api/import-kv-master, /api/kv-detail, /api/kv-label, /api/kv-plan, /api/kv-transfer, /api/kv-transfer-reverse, /api/kv-values, /api/kv.pdf, /api/op-liste.pdf, /api/preview-kv-master
-- `static/js/views/mailing.js`: afterIssue, erechnungFehlt, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
+- `static/js/views/mailing.js`: afterIssue, erechnungFehlt, erechnungHinweis, mailBadge, printLink, reminderBadge, reminderDialog, sendDialog, sendable → /api/invoices.pdf, /api/mail-cancel, /api/mail-send, /api/mail-status, /api/mail-test, /api/reminders
 - `static/js/views/members.js`: account, balanceCell, importMembersDialog, memberDialog, members, openList, wahlBadge → /api/adresse-pruefen, /api/beitrag-nach-alter, /api/member, /api/member-account, /api/member-account.pdf, /api/member-austritt, /api/member-delete, /api/member-notiz, /api/member-target, /api/member-update, /api/members-import, /api/members-preview, /api/mitglieder-liste, /api/mitgliedsnummer, /api/sepa-mandat-vergessen
 - `static/js/views/mitglieder-ueberblick.js`: anlaesse, mitgliederUeberblick → /api/auswertung, /api/doppelte, /api/kenntnis, /api/kenntnis-abhaken, /api/ov-abgleich, /api/regelwerk
 - `static/js/views/open-items.js`: openItems → /api/invoice.pdf, /api/op-liste, /api/op-liste.csv, /api/op-liste.pdf, /api/op-listen.zip
@@ -105,7 +105,7 @@ Recht aus `rollen.GET`/`rollen.POST`; ⚠ = Passwortbestätigung (`app.CONFIRM`)
 
 JU Hamburg Finanzen – local authenticated pilot server.
 
-Tests: test_doppelte.py, test_http.py, test_karte.py, test_keycloak_app.py, test_mitgliederverwaltung.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_static.py, test_uebernahme.py
+Tests: test_doppelte.py, test_http.py, test_karte.py, test_keycloak_app.py, test_mitgliederverwaltung.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_static.py, test_uebernahme.py, test_zugferd.py
 
 - `backups_dir()`
 - `save_receipt(store, table, rid, number, filename, suffix, raw)` – Beleg (Eingangsrechnung oder Kassenbeleg) in Daten/Belege speichern – nie einen vorhandenen überschreiben.
@@ -128,6 +128,7 @@ Tests: test_doppelte.py, test_http.py, test_karte.py, test_keycloak_app.py, test
   - `LocalServer.server_bind()`
 - Klasse `LocalServer6`
 - `preview_invoice(store, query, actor)` – Rechnung für Vorschau oder Testmail: festgeschrieben (id), Beitragsentwurf (dues+year),
+- `anhang_art(inv)` – Zusatz zur Zeile „Anhang“ der E-Mail-Vorschau: ob die PDF einer festgeschriebenen Rechnung eine E-Rechnung ist, sonst der Grund
 - `mail_preview_page(cfg, inv)` – HTML-Seite für die Vorschau im Programm: Kopfangaben und die E-Mail, wie sie verschickt wird.
 - `prune_previews()`
 - Klasse `Handler`
@@ -179,10 +180,11 @@ Local JU Hamburg finance pilot. All currency values are integer cents.
 
 Tabellen: `accounts`, `audit`, `bank`, `budgets`, `entries`, `imports`, `invoices`, `journals`, `kv`, `lines`, `mailings`, `members`, `payments`, `reversed_allocations`, `settings`, `users`
 
-Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_kenntnis.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_umsatz_ungueltig.py, test_verbindlichkeiten.py, test_wahlrecht.py
+Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte.py, test_core.py, test_doppelte.py, test_erechnung.py, test_erstattung.py, test_freigabe.py, test_gliederung.py, test_haushaltsposten.py, test_http.py, test_import.py, test_karte.py, test_kasse.py, test_kenntnis.py, test_keycloak_app.py, test_konten.py, test_kvabgleich.py, test_kvbudget.py, test_lastschrift.py, test_mahnung.py, test_mitgliedbank.py, test_mitglieder.py, test_mitgliederkonto.py, test_mitgliederverwaltung.py, test_opliste.py, test_ovabgleich.py, test_pdfschrift.py, test_pruefung.py, test_rechnungen.py, test_regelwerk.py, test_rollen.py, test_rpj.py, test_schutz.py, test_sepadatei.py, test_server.py, test_sicherheit.py, test_storno.py, test_uebernahme.py, test_umsatz_ungueltig.py, test_verbindlichkeiten.py, test_wahlrecht.py, test_zugferd.py
 
 - `bank_source(kind, b)` – Journal-Quelle eines Bankumsatzes je Zuordnungsrunde: bank:7, nach dem ersten Storno bank:7/1 usw.
 - `ensure_rows(db, table, rows)` – Grunddaten (Bereiche, Konten) anlegen, falls sie fehlen. Erst lesen: Store() entsteht je Anfrage, ein INSERT OR IGNORE
+- `zeilen(text)` – Leerraum je Zeile zusammenfassen, leere Zeilen entfallen (wie bei Mitgliedern, mitglieder._clean) – ein Tabulator oder
 - Klasse `Store`
   - `Store.rows(sql, args=…)`
   - `Store.data_start()` – Datenbeginn (JJJJ-MM-TT): ältere Umsätze werden nicht mehr importiert (gesetzt beim Löschen eines Jahres).
@@ -222,7 +224,7 @@ Tests: test_auswertung.py, test_beitraege.py, test_bereinigung.py, test_berichte
 
 Geld- und Datumsformate. Alle Geldbeträge werden als ganze Cent geführt.
 
-Tests: test_import.py
+Tests: test_import.py, test_zugferd.py
 
 - `money(value)` – Liest einen Betrag im deutschen oder englischen Format und liefert Cent.
 - `cents_from_number(value)` – Zahl aus einer Tabellenzelle (float) exakt in Cent umrechnen.
@@ -608,7 +610,7 @@ SEPA-Basislastschrift (CORE) für Mitgliedsbeiträge – Mandate, Vorabankündig
 
 Tabellen: `debit_batches`, `debit_notices`, `debits`, `mandates`
 
-Tests: test_lastschrift.py, test_mitgliedbank.py, test_sepadatei.py, test_wahlrecht.py
+Tests: test_lastschrift.py, test_mitgliedbank.py, test_sepadatei.py, test_wahlrecht.py, test_zugferd.py
 
 - `init(db)`
 - `creditor_id_valid(value)` – Gläubiger-Identifikationsnummer: Land, Prüfziffer (ISO 7064 Mod 97, ohne Geschäftsbereich), Geschäftsbereich, Kennung.
@@ -811,7 +813,7 @@ Tests: test_berichte.py, test_erstattung.py, test_freigabe.py
 
 Berichte: Monatsbericht für den Landesvorstand (PDF) und Kassenprüfer-Paket (ZIP, Satzung § 19 Abs. 2).
 
-Tests: test_beitraege.py, test_berichte.py, test_erechnung.py, test_kasse.py, test_mitgliederkonto.py, test_rpj.py, test_umsatz_ungueltig.py
+Tests: test_beitraege.py, test_berichte.py, test_erechnung.py, test_kasse.py, test_mitgliederkonto.py, test_rpj.py, test_umsatz_ungueltig.py, test_zugferd.py
 
 - `balance(store, account, until=…)` – Saldo Soll − Haben eines Kontos bis einschließlich until (Buchungsdatum).
 - `report_day(month=…, data_start=…, today=…)` – Stichtag des Monatsberichts: Monatsende des Monats JJJJ-MM, im laufenden Monat heute; ohne Monat heute.
@@ -859,12 +861,13 @@ Ausgangsrechnungen als E-Rechnung: ZUGFeRD/Factur-X, Profil EN 16931 (COMFORT) �
 
 Tests: test_zugferd.py
 
-- `angaben(cfg, snap)` – Angaben für die E-Rechnung: festgeschriebener Wert der Rechnung, sonst der heutige aus den Einstellungen
 - `anschrift(text)` – Freitext-Anschrift → {'zeilen': [höchstens 3], 'plz', 'ort'}; None, wenn die letzte Zeile nicht „PLZ Ort“ (Deutschland) ist.
-- `kategorie(kind, e)` – Umsatzsteuer-Kategorie der Rechnung: Beitrag immer O, sonst laut Einstellung ('' = noch nicht entschieden).
+- `kategorie(kind, e)` – Umsatzsteuer-Kategorie der Rechnung: Beitrag immer O, sonst laut Angabe ('' = noch nicht entschieden).
 - `luecken(kind, e, issuer_address)` – Was dem Aussteller für E-Rechnungen dieser Art fehlt (Texte für die Oberfläche; leer = vollständig).
-- `stand(cfg)` – Stand für Einstellungen und Versanddialog: Schalter und was je Rechnungsart noch fehlt.
+- `stand(cfg)` – Stand für die Oberfläche: Schalter und was Rechnungen, die ab jetzt ausgestellt werden, je Rechnungsart fehlt.
+- `faellig(inv)` – Fälligkeit wie auf der PDF: Einzugsdatum der geltenden Lastschrift, sonst die Zahlungsfrist.
 - `fehlt(inv)` – Grund, warum diese Rechnung als normale PDF hinausgeht – None, wenn sie eine gültige E-Rechnung wird.
+- `grund(inv)` – Wie `fehlt`, scheitert aber nie: unerwartete Daten sind auch ein Grund für die normale PDF (für `pdf` und die E-Mail-Vorschau).
 - `xml(inv)` – Rechnungsdaten als Cross Industry Invoice (EN 16931). Nur aufrufen, wenn `fehlt(inv)` None ist.
 - `einbetten(pdf, xml_bytes, titel, autor)` – Rechnungs-PDF (reportlab) → PDF/A-3b mit eingebetteter Rechnungs-XML: XMP mit Factur-X-Schema, Farbprofil (OutputIntent),
 - `pdf(inv)` – Rechnungs-PDF für Versand und Download: (E-Rechnung, None) oder (bisherige PDF, Grund). Scheitert nie an der E-Rechnung.
@@ -873,10 +876,10 @@ Tests: test_zugferd.py
 
 Schrift für alle PDF-Dateien: Liberation Sans (SIL OFL 1.1, Laufweite wie Helvetica/Arial).
 
-Tests: test_pdfschrift.py
+Tests: test_pdfschrift.py, test_zugferd.py
 
 - `exclusive(fn)` – PDF-Erzeugung nacheinander: reportlab bildet Teilschriften über eine gemeinsame Leseposition der TTF-Datei,
-- `covers(text, font=…)` – True, wenn die Schrift alle Zeichen des Textes darstellen kann (Leerraum ausgenommen).
+- `covers(text, font=…)` – True, wenn die Schrift jedes Zeichen des Textes darstellen kann. Ausgenommen sind nur Leerzeichen und geschütztes
 
 ### versand.py
 
@@ -1043,7 +1046,7 @@ Tests: test_bereinigung.py, test_rpj.py
 
 Anmeldung mit Benutzername und Passwort im Serverbetrieb (Ubuntu-Server hinter Tailscale).
 
-Tests: test_http.py, test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_uebernahme.py
+Tests: test_http.py, test_keycloak_app.py, test_rollen.py, test_schutz.py, test_server.py, test_sicherheit.py, test_uebernahme.py, test_zugferd.py
 
 - `check_new(password)` – Anforderungen an ein neues Passwort; Fehlermeldung als ValueError.
 - `hash_password(password)`

@@ -27,6 +27,11 @@ def ensure_rows(db,table,rows):
 
 MAX_LINE_TEXT=300   # Zeichen je Rechnungsposition (längere Texte sprengen die PDF-Tabelle)
 
+def zeilen(text):
+    """Leerraum je Zeile zusammenfassen, leere Zeilen entfallen (wie bei Mitgliedern, mitglieder._clean) – ein Tabulator oder
+    U+3000 stünde sonst als Kästchen in der Rechnungs-PDF. Nur beim Festschreiben neuer Rechnungen, bestehende bleiben, wie sie sind."""
+    return '\n'.join(z for z in (' '.join(l.split()) for l in str(text or '').splitlines()) if z)
+
 class Store:
     def __init__(self,path):
         self.db=sqlite3.connect(path)
@@ -64,6 +69,9 @@ class Store:
         if 'kind' not in cols('mailings'):
             # Art der Nachricht: Rechnung oder Zahlungserinnerung
             self.db.execute("ALTER TABLE mailings ADD COLUMN kind TEXT NOT NULL DEFAULT 'invoice' CHECK(kind IN ('invoice','reminder'))");self.db.commit()
+        if 'erechnung' not in cols('mailings'):
+            # ab 0.58: leer ('') = die Rechnung ging als E-Rechnung hinaus, sonst der Grund für die normale PDF; NULL = nicht erfasst (vor 0.58, Erinnerung, keine PDF erstellt)
+            self.db.execute('ALTER TABLE mailings ADD COLUMN erechnung TEXT');self.db.commit()
         import gliederung
         gliederung.init(self.db)   # Ortsverbände und Nummer der Mitgliederverwaltung je Kreisverband (0.27)
         import mitglieder
@@ -372,10 +380,11 @@ class Store:
         lines=[]
         for l in data.get('lines') or []:
             amount=money(l.get('amount',''))
-            if amount<=0 or not str(l.get('description','')).strip(): raise ValueError('Positionen benötigen einen positiven Betrag und eine Beschreibung.')
-            if len(str(l['description']).strip())>MAX_LINE_TEXT: raise ValueError(f'Positionstext höchstens {MAX_LINE_TEXT} Zeichen.')
+            text=zeilen(l.get('description'))
+            if amount<=0 or not text: raise ValueError('Positionen benötigen einen positiven Betrag und eine Beschreibung.')
+            if len(text)>MAX_LINE_TEXT: raise ValueError(f'Positionstext höchstens {MAX_LINE_TEXT} Zeichen.')
             if l.get('account') not in allowed: raise ValueError('Für diese Rechnung bitte ein Einnahmenkonto 85xx wählen.')
-            lines.append({'description':str(l['description']).strip(),'amount':amount,'account':l['account']})
+            lines.append({'description':text,'amount':amount,'account':l['account']})
         if not lines: raise ValueError('Mindestens eine Position erforderlich.')
         if data.get('kv') not in {k for k,_ in KVS}: raise ValueError('Bitte einen Bereich wählen.')
         today=date.today().isoformat()
@@ -389,7 +398,7 @@ class Store:
             seen.add(m['id'])
             recipients.append({'member':m,'name':m['name'],'address':m['address'],'email':m['email'] or ''})
         for r in data.get('recipients') or []:
-            name,address=str(r.get('name','')).strip(),str(r.get('address','')).strip()
+            name,address=' '.join(str(r.get('name') or '').split()),zeilen(r.get('address'))
             if not name and not address and not str(r.get('email','')).strip(): continue
             if not name or not address: raise ValueError('Weitere Empfänger benötigen Name und Anschrift.')
             recipients.append({'member':None,'name':name,'address':address,'email':email_address(r.get('email'))})
@@ -426,6 +435,7 @@ class Store:
         return self.rows("""SELECT i.*,COALESCE((SELECT SUM(p.amount) FROM payments p JOIN bank b ON b.id=p.bank_id WHERE p.invoice_id=i.id AND b.state='booked'),0) paid,
             COALESCE(NULLIF(i.email,''),(SELECT m.email FROM members m WHERE m.id=i.member_id),'') mail_to,
             (SELECT MAX(time) FROM mailings WHERE invoice_id=i.id AND kind='invoice' AND status='sent') sent_at,
+            (SELECT erechnung FROM mailings WHERE invoice_id=i.id AND kind='invoice' AND status='sent' ORDER BY id DESC LIMIT 1) sent_erechnung,
             (SELECT error FROM mailings WHERE invoice_id=i.id AND kind='invoice' ORDER BY id DESC LIMIT 1) last_error,
             (SELECT status FROM mailings WHERE invoice_id=i.id AND kind='invoice' ORDER BY id DESC LIMIT 1) last_status,
             (SELECT COUNT(*) FROM mailings WHERE invoice_id=i.id AND kind='reminder' AND status='sent') reminders,
