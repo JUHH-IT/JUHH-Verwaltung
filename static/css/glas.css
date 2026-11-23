@@ -109,7 +109,7 @@
 [data-design="glas"] .main { padding: 28px 36px 64px; }
 
 /* ---------- Flächen ---------- */
-[data-design="glas"] .panel, [data-design="glas"] .card, [data-design="glas"] .task-card, [data-design="glas"] .kv-tile,
+[data-design="glas"] .panel, [data-design="glas"] .card, [data-design="glas"] .kv-tile,
 [data-design="glas"] .detail-card, [data-design="glas"] .transfer-card, [data-design="glas"] .approval-card, [data-design="glas"] .map-frame,
 [data-design="glas"] .akte-card {
   background: var(--g-flaeche); box-shadow: var(--g-rand), var(--shadow);

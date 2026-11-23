@@ -399,8 +399,8 @@ try {
   await mb.waitForSelector('.sidebar');
   const nav = await mb.locator('.nav [data-page]').evaluateAll((els) => els.map((e) => e.dataset.page));
   check(JSON.stringify(nav) === JSON.stringify(['overview', 'mv-overview', 'kenntnis', 'members', 'auswertung', 'cases', 'map', 'wahl', 'regelwerk', 'settings']), `Mitgliederbeauftragte: nur ihre Seiten (${nav.join(', ')})`);
-  check(await mb.locator('.cards').count() === 0 && await mb.locator('[data-monthly]').count() === 0, 'Mitgliederbeauftragte: Start ohne Finanzkennzahlen');
-  check(await mb.locator('.task-card').count() === 1, 'Mitgliederbeauftragte: Start zeigt nur die Mitgliederverwaltung');
+  check(await mb.locator('main .blatt').count() === 1 && await mb.locator('.kz-band').count() === 0 && await mb.locator('[data-monthly]').count() === 0, 'Mitgliederbeauftragte: Start ohne Finanzkennzahlen');
+  check(await mb.locator('main [data-bereich]').count() === 1 && await mb.locator('main [data-bereich=mv]').count() === 1, 'Mitgliederbeauftragte: Start zeigt nur die Mitgliederverwaltung');
   await mb.screenshot({ path: join(shots, 's43-start-mitgliederbeauftragte.png') });
   await mb.click('[data-page=members]');
   await mb.waitForTimeout(400);
